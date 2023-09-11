@@ -1,0 +1,11 @@
+[package]
+name = "whippit"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+chumsky = "1.0.0-alpha.4"
+clap = { version = "4.4.2", features = ["derive"] }
+env_logger = "0.10.0"
+log = "0.4.20"
+path-dsl = "0.6.1"
