@@ -157,7 +157,6 @@ pub(crate) mod wpt {
             .slice();
 
             section_name()
-                // .then_ignore(inline_whitespace().or_not()) // TODO: necessary?
                 .then_ignore(newline())
                 .then(contents)
                 .map(|(name, contents)| Test { name, contents })
