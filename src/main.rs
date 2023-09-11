@@ -142,7 +142,7 @@ pub(crate) mod wpt {
                 comment().parse("# asdf # blarg").into_result(),
                 Ok("asdf # blarg")
             );
-            assert!(comment().parse(" # asdf # blarg").into_result().is_err()); // TODO: controversial?
+            assert!(comment().parse(" # asdf # blarg").into_result().is_err());
         }
 
         fn test<'a>() -> impl Parser<'a, &'a str, Test<'a>, ParseError<'a>> {
