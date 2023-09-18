@@ -56,7 +56,7 @@ pub(crate) mod wpt {
                 Ok(vec![
                     Test {
                         name: "blarg",
-                        contents: ""
+                        contents: "\n"
                     },
                     Test {
                         name: "stuff",
