@@ -38,7 +38,7 @@ fn main() {
             };
             let wpt_expectations = fs::read_to_string(&wpt_expectation_file_path).unwrap();
             eprintln!("{}", wpt_expectation_file_path.display());
-            let test_names = wpt::expectations::parser()
+            let test_names = wpt::expectations::test_exps()
                 .parse(&wpt_expectations)
                 .unwrap()
                 .into_iter()

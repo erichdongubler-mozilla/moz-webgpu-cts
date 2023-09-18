@@ -10,7 +10,7 @@ pub(crate) mod wpt {
 
         pub type ParseError<'a> = Full<Rich<'a, char>, (), ()>;
 
-        pub fn parser<'a>() -> impl Parser<'a, &'a str, Vec<TestExp<'a>>, ParseError<'a>> {
+        pub fn test_exps<'a>() -> impl Parser<'a, &'a str, Vec<TestExp<'a>>, ParseError<'a>> {
             filler()
                 .ignore_then(test_exp())
                 .then_ignore(filler())
@@ -24,25 +24,25 @@ pub(crate) mod wpt {
 
         #[test]
         fn smoke_parser() {
-            assert_eq!(parser().parse("").into_result(), Ok(vec![]));
-            assert!(parser().parse("[hoot]").into_result().is_err()); // missing newline
+            assert_eq!(test_exps().parse("").into_result(), Ok(vec![]));
+            assert!(test_exps().parse("[hoot]").into_result().is_err()); // missing newline
             assert_eq!(
-                parser().parse("[blarg]\n").into_result(),
+                test_exps().parse("[blarg]\n").into_result(),
                 Ok(vec![TestExp {
                     name: "blarg",
                     contents: ""
                 }])
             );
             assert_eq!(
-                parser().parse("[blarg]\n").into_result(),
+                test_exps().parse("[blarg]\n").into_result(),
                 Ok(vec![TestExp {
                     name: "blarg",
                     contents: ""
                 }])
             );
-            assert!(parser().parse("[blarg]\n[stuff]").into_result().is_err()); // missing newline
+            assert!(test_exps().parse("[blarg]\n[stuff]").into_result().is_err()); // missing newline
             assert_eq!(
-                parser().parse("\n[blarg]\n[stuff]\n").into_result(),
+                test_exps().parse("\n[blarg]\n[stuff]\n").into_result(),
                 Ok(vec![
                     TestExp {
                         name: "blarg",
@@ -55,7 +55,7 @@ pub(crate) mod wpt {
                 ])
             );
             assert_eq!(
-                parser().parse("\n[blarg]\n\n[stuff]\n").into_result(),
+                test_exps().parse("\n[blarg]\n\n[stuff]\n").into_result(),
                 Ok(vec![
                     TestExp {
                         name: "blarg",
@@ -68,7 +68,7 @@ pub(crate) mod wpt {
                 ])
             );
             assert_eq!(
-                parser()
+                test_exps()
                     .parse("\n[blarg]\n  expected: PASS\n[stuff]\n")
                     .into_result(),
                 Ok(vec![
