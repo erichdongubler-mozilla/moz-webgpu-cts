@@ -7,7 +7,7 @@ use chumsky::Parser as _;
 use clap::Parser;
 use path_dsl::path;
 
-use lib::wpt::{self, expectations::Test};
+use lib::wpt::{self, expectations::TestExp};
 
 #[derive(Debug, Parser)]
 struct Cli {
@@ -42,7 +42,7 @@ fn main() {
                 .parse(&wpt_expectations)
                 .unwrap()
                 .into_iter()
-                .map(|Test { name, contents: _ }| name.to_owned())
+                .map(|TestExp { name, contents: _ }| name.to_owned())
                 .collect::<Vec<_>>();
             test_names
         })

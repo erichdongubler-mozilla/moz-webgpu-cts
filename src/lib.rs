@@ -10,9 +10,9 @@ pub(crate) mod wpt {
 
         pub type ParseError<'a> = Full<Rich<'a, char>, (), ()>;
 
-        pub fn parser<'a>() -> impl Parser<'a, &'a str, Vec<Test<'a>>, ParseError<'a>> {
+        pub fn parser<'a>() -> impl Parser<'a, &'a str, Vec<TestExp<'a>>, ParseError<'a>> {
             filler()
-                .ignore_then(test())
+                .ignore_then(test_exp())
                 .then_ignore(filler())
                 .repeated()
                 .collect()
@@ -28,14 +28,14 @@ pub(crate) mod wpt {
             assert!(parser().parse("[hoot]").into_result().is_err()); // missing newline
             assert_eq!(
                 parser().parse("[blarg]\n").into_result(),
-                Ok(vec![Test {
+                Ok(vec![TestExp {
                     name: "blarg",
                     contents: ""
                 }])
             );
             assert_eq!(
                 parser().parse("[blarg]\n").into_result(),
-                Ok(vec![Test {
+                Ok(vec![TestExp {
                     name: "blarg",
                     contents: ""
                 }])
@@ -44,11 +44,11 @@ pub(crate) mod wpt {
             assert_eq!(
                 parser().parse("\n[blarg]\n[stuff]\n").into_result(),
                 Ok(vec![
-                    Test {
+                    TestExp {
                         name: "blarg",
                         contents: ""
                     },
-                    Test {
+                    TestExp {
                         name: "stuff",
                         contents: ""
                     }
@@ -57,11 +57,11 @@ pub(crate) mod wpt {
             assert_eq!(
                 parser().parse("\n[blarg]\n\n[stuff]\n").into_result(),
                 Ok(vec![
-                    Test {
+                    TestExp {
                         name: "blarg",
                         contents: "\n"
                     },
-                    Test {
+                    TestExp {
                         name: "stuff",
                         contents: ""
                     }
@@ -72,11 +72,11 @@ pub(crate) mod wpt {
                     .parse("\n[blarg]\n  expected: PASS\n[stuff]\n")
                     .into_result(),
                 Ok(vec![
-                    Test {
+                    TestExp {
                         name: "blarg",
                         contents: "  expected: PASS\n"
                     },
-                    Test {
+                    TestExp {
                         name: "stuff",
                         contents: ""
                     }
@@ -85,7 +85,7 @@ pub(crate) mod wpt {
         }
 
         #[derive(Debug, Eq, PartialEq)]
-        pub struct Test<'a> {
+        pub struct TestExp<'a> {
             pub name: &'a str,
             pub contents: &'a str,
         }
@@ -110,7 +110,7 @@ pub(crate) mod wpt {
             assert!(comment().parse(" # asdf # blarg").into_result().is_err());
         }
 
-        fn test<'a>() -> impl Parser<'a, &'a str, Test<'a>, ParseError<'a>> {
+        fn test_exp<'a>() -> impl Parser<'a, &'a str, TestExp<'a>, ParseError<'a>> {
             let contents = choice((
                 just("  ")
                     .ignore_then(any().and_is(newline().not()).repeated())
@@ -124,23 +124,23 @@ pub(crate) mod wpt {
             section_name()
                 .then_ignore(newline())
                 .then(contents)
-                .map(|(name, contents)| Test { name, contents })
+                .map(|(name, contents)| TestExp { name, contents })
         }
 
         #[test]
-        fn smoke_test() {
+        fn smoke_test_exp() {
             assert_eq!(
-                test().parse("[stuff and things]\n").into_result(),
-                Ok(Test {
+                test_exp().parse("[stuff and things]\n").into_result(),
+                Ok(TestExp {
                     name: "stuff and things",
                     contents: "",
                 })
             );
             assert_eq!(
-                test()
+                test_exp()
                     .parse("[stuff and things]\n  expected: PASS\n")
                     .into_result(),
-                Ok(Test {
+                Ok(TestExp {
                     name: "stuff and things",
                     contents: "  expected: PASS\n",
                 })
