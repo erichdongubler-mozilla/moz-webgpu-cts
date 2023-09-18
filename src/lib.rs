@@ -39,6 +39,19 @@ pub(crate) mod wpt {
             );
             assert!(parser().parse("[blarg]\n[stuff]").into_result().is_err()); // missing newline
             assert_eq!(
+                parser().parse("\n[blarg]\n[stuff]\n").into_result(),
+                Ok(vec![
+                    Test {
+                        name: "blarg",
+                        contents: ""
+                    },
+                    Test {
+                        name: "stuff",
+                        contents: ""
+                    }
+                ])
+            );
+            assert_eq!(
                 parser().parse("\n[blarg]\n\n[stuff]\n").into_result(),
                 Ok(vec![
                     Test {
