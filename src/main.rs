@@ -13,41 +13,56 @@ use lib::wpt::{self, expectations::TestExp};
 struct Cli {
     #[clap(long)]
     gecko_checkout: PathBuf,
+    #[clap(subcommand)]
+    subcommand: Subcommand,
+}
+
+#[derive(Debug, Parser)]
+enum Subcommand {
+    DumpTestExps,
 }
 
 fn main() {
     env_logger::init();
 
-    let Cli { gecko_checkout } = Cli::parse();
-    let mut test_names = (1..=51)
-        .into_iter()
-        .map(|chunk| {
-            let wpt_expectation_file_path = {
-                let chunk = chunk.to_string();
-                path!(
-                    &gecko_checkout
-                        | "testing"
-                        | "web-platform"
-                        | "mozilla"
-                        | "meta"
-                        | "webgpu"
-                        | "chunked"
-                        | &chunk
-                        | "cts.https.html.ini"
-                )
-            };
-            let wpt_expectations = fs::read_to_string(&wpt_expectation_file_path).unwrap();
-            eprintln!("{}", wpt_expectation_file_path.display());
-            let test_names = wpt::expectations::test_exps()
-                .parse(&wpt_expectations)
-                .unwrap()
+    let Cli {
+        gecko_checkout,
+        subcommand,
+    } = Cli::parse();
+    match subcommand {
+        Subcommand::DumpTestExps => {
+            let mut test_names = (1..=51)
                 .into_iter()
-                .map(|TestExp { name, contents: _ }| name.to_owned())
+                .map(|chunk| {
+                    let wpt_expectation_file_path = {
+                        let chunk = chunk.to_string();
+                        path!(
+                            &gecko_checkout
+                                | "testing"
+                                | "web-platform"
+                                | "mozilla"
+                                | "meta"
+                                | "webgpu"
+                                | "chunked"
+                                | &chunk
+                                | "cts.https.html.ini"
+                        )
+                    };
+                    let wpt_expectations = fs::read_to_string(&wpt_expectation_file_path).unwrap();
+                    eprintln!("{}", wpt_expectation_file_path.display());
+                    let test_names = wpt::expectations::test_exps()
+                        .parse(&wpt_expectations)
+                        .unwrap()
+                        .into_iter()
+                        .map(|TestExp { name, contents: _ }| name.to_owned())
+                        .collect::<Vec<_>>();
+                    // TODO: strip `name` down to WebGPU test path
+                    test_names
+                })
+                .flatten()
                 .collect::<Vec<_>>();
-            test_names
-        })
-        .flatten()
-        .collect::<Vec<_>>();
-    test_names.sort();
-    dbg!(test_names);
+            test_names.sort();
+            dbg!(test_names);
+        }
+    }
 }
