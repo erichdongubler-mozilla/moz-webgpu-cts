@@ -79,7 +79,7 @@ fn main() {
                         .map(|test_exp| {
                             let TestExp { name, contents } = test_exp;
                             (
-                                name,
+                                name.strip_prefix("cts.https.html?q=").unwrap(),
                                 TestExpEntry {
                                     contents,
                                     orig_path: path,
