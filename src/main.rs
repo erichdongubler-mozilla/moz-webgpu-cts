@@ -13,6 +13,7 @@ use indexmap::IndexMap;
 use path_dsl::path;
 
 use lib::wpt::{self, expectations::TestExp};
+use regex::Regex;
 
 #[derive(Debug, Parser)]
 struct Cli {
@@ -25,6 +26,7 @@ struct Cli {
 #[derive(Debug, Parser)]
 enum Subcommand {
     DumpTestExps,
+    ReadTestVariants,
 }
 
 fn main() {
@@ -89,6 +91,51 @@ fn main() {
                 })
                 .collect::<BTreeMap<_, _>>();
             dbg!(test_exps_by_name);
+        }
+        Subcommand::ReadTestVariants => {
+            let tests_by_path = (1..=51)
+                .into_iter()
+                .map(|chunk| {
+                    let wpt_file_path = {
+                        let chunk = chunk.to_string();
+                        path!(
+                            &gecko_checkout
+                                | "testing"
+                                | "web-platform"
+                                | "mozilla"
+                                | "tests"
+                                | "webgpu"
+                                | "chunked"
+                                | &chunk
+                                | "cts.https.html"
+                        )
+                    };
+                    eprintln!("{}", wpt_file_path.display());
+                    let contents = fs::read_to_string(&wpt_file_path).unwrap();
+                    (
+                        wpt_file_path
+                            .strip_prefix(&gecko_checkout)
+                            .unwrap()
+                            .to_owned(),
+                        contents,
+                    )
+                })
+                .collect::<IndexMap<_, _>>();
+
+            let meta_variant_re =
+                Regex::new(r#"^<meta name=variant content='\?q=(?P<variant_path>.*?)'>$"#).unwrap();
+            let meta_variant_re = &meta_variant_re;
+            let variants = tests_by_path
+                .iter()
+                .flat_map(|(test_path, file_path)| {
+                    file_path.lines().filter_map(move |line| {
+                        meta_variant_re.captures(line).map(move |captures| {
+                            (captures.name("variant_path").unwrap().as_str(), test_path)
+                        })
+                    })
+                })
+                .collect::<BTreeMap<_, _>>();
+            dbg!(variants);
         }
     }
 }

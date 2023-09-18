@@ -413,6 +413,7 @@ dependencies = [
  "indexmap",
  "log",
  "path-dsl",
+ "regex",
 ]
 
 [[package]]
