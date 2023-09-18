@@ -11,12 +11,15 @@ pub(crate) mod wpt {
         pub type ParseError<'a> = Full<Rich<'a, char>, (), ()>;
 
         pub fn parser<'a>() -> impl Parser<'a, &'a str, Vec<Test<'a>>, ParseError<'a>> {
-            let filler = || choice((comment().ignored(), newline())).repeated();
             filler()
                 .ignore_then(test())
                 .then_ignore(filler())
                 .repeated()
                 .collect()
+        }
+
+        fn filler<'a>() -> impl Parser<'a, &'a str, (), ParseError<'a>> {
+            choice((comment().ignored(), newline())).repeated()
         }
 
         #[test]
