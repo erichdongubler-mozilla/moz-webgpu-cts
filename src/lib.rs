@@ -155,7 +155,7 @@ pub(crate) mod wpt {
                         Some(c) => match c {
                             ']' => break,
                             // TODO: escapes
-                            '\\' => input.parse(just("\\]").ignored())?,
+                            '\\' => input.parse(choice((just("\\]"), just("\\\""))).ignored())?,
                             c if c.is_control() => break,
                             _other => input.skip(),
                         },
