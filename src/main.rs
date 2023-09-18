@@ -1,10 +1,15 @@
 #![allow(special_module_name)]
 mod lib;
 
-use std::{fs, path::PathBuf};
+use std::{
+    collections::BTreeMap,
+    fs,
+    path::{Path, PathBuf},
+};
 
 use chumsky::Parser as _;
 use clap::Parser;
+use indexmap::IndexMap;
 use path_dsl::path;
 
 use lib::wpt::{self, expectations::TestExp};
@@ -31,7 +36,7 @@ fn main() {
     } = Cli::parse();
     match subcommand {
         Subcommand::DumpTestExps => {
-            let mut test_names = (1..=51)
+            let raw_test_exps_by_path = (1..=51)
                 .into_iter()
                 .map(|chunk| {
                     let wpt_expectation_file_path = {
@@ -48,21 +53,42 @@ fn main() {
                                 | "cts.https.html.ini"
                         )
                     };
-                    let wpt_expectations = fs::read_to_string(&wpt_expectation_file_path).unwrap();
                     eprintln!("{}", wpt_expectation_file_path.display());
-                    let test_names = wpt::expectations::test_exps()
-                        .parse(&wpt_expectations)
+                    let contents = fs::read_to_string(&wpt_expectation_file_path).unwrap();
+                    (
+                        wpt_expectation_file_path
+                            .strip_prefix(&gecko_checkout)
+                            .unwrap()
+                            .to_owned(),
+                        contents,
+                    )
+                })
+                .collect::<IndexMap<_, _>>();
+            #[derive(Debug)]
+            struct TestExpEntry<'a> {
+                contents: &'a str,
+                orig_path: &'a Path,
+            }
+            let test_exps_by_name = raw_test_exps_by_path
+                .iter()
+                .flat_map(|(path, file_contents)| {
+                    wpt::expectations::test_exps()
+                        .parse(file_contents)
                         .unwrap()
                         .into_iter()
-                        .map(|TestExp { name, contents: _ }| name.to_owned())
-                        .collect::<Vec<_>>();
-                    // TODO: strip `name` down to WebGPU test path
-                    test_names
+                        .map(|test_exp| {
+                            let TestExp { name, contents } = test_exp;
+                            (
+                                name,
+                                TestExpEntry {
+                                    contents,
+                                    orig_path: path,
+                                },
+                            )
+                        })
                 })
-                .flatten()
-                .collect::<Vec<_>>();
-            test_names.sort();
-            dbg!(test_names);
+                .collect::<BTreeMap<_, _>>();
+            dbg!(test_exps_by_name);
         }
     }
 }
