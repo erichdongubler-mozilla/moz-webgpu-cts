@@ -121,7 +121,7 @@ pub(crate) mod wpt {
             .repeated()
             .slice();
 
-            section_name()
+            section_name(0)
                 .then_ignore(newline())
                 .then(contents)
                 .map(|(name, contents)| TestExp { name, contents })
@@ -147,7 +147,7 @@ pub(crate) mod wpt {
             );
         }
 
-        fn section_name<'a>() -> impl Parser<'a, &'a str, &'a str, ParseError<'a>> {
+        fn section_name<'a>(indentation: u8) -> impl Parser<'a, &'a str, &'a str, ParseError<'a>> {
             let name = custom::<_, &str, _, _>(|input| {
                 let start_offset = input.offset();
                 loop {
@@ -174,18 +174,21 @@ pub(crate) mod wpt {
                 }
                 slice
             });
-            name.delimited_by(just('['), just(']'))
+            just(' ')
+                .repeated()
+                .exactly(usize::from(indentation) * 2)
+                .ignore_then(name.delimited_by(just('['), just(']')))
         }
 
         #[test]
         fn smoke_section_name() {
-            assert!(section_name().parse("hoot").into_result().is_err());
-            assert_eq!(section_name().parse("[hoot]").into_result(), Ok("hoot"));
+            assert!(section_name(0).parse("hoot").into_result().is_err());
+            assert_eq!(section_name(0).parse("[hoot]").into_result(), Ok("hoot"));
             assert_eq!(
-                section_name().parse("[asdf\\]blarg]").into_result(),
+                section_name(0).parse("[asdf\\]blarg]").into_result(),
                 Ok("asdf\\]blarg")
             );
-            assert!(section_name().parse("[asdf]blarg]").into_result().is_err());
+            assert!(section_name(0).parse("[asdf]blarg]").into_result().is_err());
         }
     }
 }
