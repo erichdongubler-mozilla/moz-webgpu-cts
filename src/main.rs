@@ -31,11 +31,14 @@ enum Subcommand {
 
 fn main() {
     env_logger::init();
+    run(Cli::parse())
+}
 
+fn run(cli: Cli) {
     let Cli {
         gecko_checkout,
         subcommand,
-    } = Cli::parse();
+    } = cli;
     match subcommand {
         Subcommand::DumpTestExps => {
             let raw_test_exps_by_path = (1..=51)
