@@ -1,6 +1,3 @@
-#![allow(special_module_name)]
-mod lib;
-
 use std::{
     collections::BTreeMap,
     fs,
@@ -14,8 +11,8 @@ use indexmap::IndexMap;
 use miette::{Diagnostic, NamedSource, SourceSpan};
 use path_dsl::path;
 
-use lib::wpt::metadata;
 use regex::Regex;
+use whippit::metadata;
 
 #[derive(Debug, Parser)]
 struct Cli {
