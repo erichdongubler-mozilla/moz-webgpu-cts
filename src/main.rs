@@ -14,7 +14,7 @@ use indexmap::IndexMap;
 use miette::{Diagnostic, NamedSource, SourceSpan};
 use path_dsl::path;
 
-use lib::wpt::{self, expectations::TestExp};
+use lib::wpt::metadata;
 use regex::Regex;
 
 #[derive(Debug, Parser)]
@@ -43,7 +43,7 @@ fn run(cli: Cli) -> ExitCode {
     } = cli;
     match subcommand {
         Subcommand::DumpTestExps => {
-            let raw_test_exps_by_path = {
+            let raw_test_files_by_path = {
                 let mut found_read_err = false;
                 let data = (1..=51)
                     .into_iter()
@@ -85,30 +85,25 @@ fn run(cli: Cli) -> ExitCode {
                 data
             };
             #[derive(Debug)]
-            struct TestExpEntry<'a> {
+            struct Test<'a> {
                 orig_path: &'a Path,
-                inner: TestExp<'a>,
+                inner: metadata::Test<'a>,
             }
-            let test_exps_by_name = {
+            let tests_by_name = {
                 let mut found_parse_err = false;
-                let extracted = raw_test_exps_by_path
+                let extracted = raw_test_files_by_path
                     .iter()
                     .filter_map(|(path, file_contents)| {
-                        match wpt::expectations::test_exps()
-                            .parse(file_contents)
-                            .into_result()
-                        {
-                            Ok(parsed_expectations) => {
-                                Some(parsed_expectations.into_iter().map(|inner| {
-                                    (
-                                        inner.name.strip_prefix("cts.https.html?q=").unwrap(),
-                                        TestExpEntry {
-                                            inner,
-                                            orig_path: path,
-                                        },
-                                    )
-                                }))
-                            }
+                        match metadata::File::parser().parse(file_contents).into_result() {
+                            Ok(metadata::File { tests }) => Some(tests.into_iter().map(|inner| {
+                                (
+                                    inner.name.strip_prefix("cts.https.html?q=").unwrap(),
+                                    Test {
+                                        inner,
+                                        orig_path: path,
+                                    },
+                                )
+                            })),
                             Err(errors) => {
                                 #[derive(Debug, Diagnostic, thiserror::Error)]
                                 #[error("{inner}")]
@@ -148,7 +143,7 @@ fn run(cli: Cli) -> ExitCode {
                 }
                 extracted
             };
-            println!("{test_exps_by_name:#?}");
+            println!("{tests_by_name:#?}");
             ExitCode::SUCCESS
         }
         Subcommand::ReadTestVariants => {
