@@ -88,25 +88,41 @@ fn run(cli: Cli) -> ExitCode {
                 orig_path: &'a Path,
                 inner: TestExp<'a>,
             }
-            let test_exps_by_name = raw_test_exps_by_path
-                .iter()
-                .flat_map(|(path, file_contents)| {
-                    wpt::expectations::test_exps()
-                        .parse(file_contents)
-                        .unwrap()
-                        .into_iter()
-                        .map(|inner| {
-                            (
-                                inner.name.strip_prefix("cts.https.html?q=").unwrap(),
-                                TestExpEntry {
-                                    inner: inner,
-                                    orig_path: path,
-                                },
-                            )
-                        })
-                })
-                .collect::<BTreeMap<_, _>>();
-            dbg!(test_exps_by_name);
+            let test_exps_by_name = {
+                let mut found_parse_err = false;
+                let extracted = raw_test_exps_by_path
+                    .iter()
+                    .filter_map(|(path, file_contents)| {
+                        match wpt::expectations::test_exps()
+                            .parse(file_contents)
+                            .into_result()
+                        {
+                            Ok(parsed_expectations) => {
+                                Some(parsed_expectations.into_iter().map(|inner| {
+                                    (
+                                        inner.name.strip_prefix("cts.https.html?q=").unwrap(),
+                                        TestExpEntry {
+                                            inner,
+                                            orig_path: path,
+                                        },
+                                    )
+                                }))
+                            }
+                            Err(errors) => {
+                                found_parse_err = true;
+                                log::error!("failed to parse {}: {errors:#?}", path.display());
+                                return None;
+                            }
+                        }
+                    })
+                    .flatten()
+                    .collect::<BTreeMap<_, _>>();
+                if found_parse_err {
+                    return ExitCode::FAILURE;
+                }
+                extracted
+            };
+            println!("{test_exps_by_name:#?}");
             ExitCode::SUCCESS
         }
         Subcommand::ReadTestVariants => {
