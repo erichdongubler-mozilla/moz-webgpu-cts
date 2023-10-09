@@ -68,8 +68,8 @@ fn main() {
                 .collect::<IndexMap<_, _>>();
             #[derive(Debug)]
             struct TestExpEntry<'a> {
-                contents: &'a str,
                 orig_path: &'a Path,
+                inner: TestExp<'a>,
             }
             let test_exps_by_name = raw_test_exps_by_path
                 .iter()
@@ -78,12 +78,11 @@ fn main() {
                         .parse(file_contents)
                         .unwrap()
                         .into_iter()
-                        .map(|test_exp| {
-                            let TestExp { name, contents } = test_exp;
+                        .map(|inner| {
                             (
-                                name.strip_prefix("cts.https.html?q=").unwrap(),
+                                inner.name.strip_prefix("cts.https.html?q=").unwrap(),
                                 TestExpEntry {
-                                    contents,
+                                    inner: inner,
                                     orig_path: path,
                                 },
                             )

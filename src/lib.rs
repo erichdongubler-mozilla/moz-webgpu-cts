@@ -4,9 +4,11 @@ pub(crate) mod wpt {
             extra::Full,
             prelude::Rich,
             primitive::{any, choice, custom, end, just},
-            text::newline,
+            span::SimpleSpan,
+            text::{ident, inline_whitespace, newline},
             IterParser, Parser,
         };
+        use indexmap::IndexMap;
 
         pub type ParseError<'a> = Full<Rich<'a, char>, (), ()>;
 
@@ -30,14 +32,18 @@ pub(crate) mod wpt {
                 test_exps().parse("[blarg]\n").into_result(),
                 Ok(vec![TestExp {
                     name: "blarg",
-                    contents: ""
+                    properties: IndexMap::new(),
+                    subtests: IndexMap::new(),
+                    span: SimpleSpan::new(0, 8),
                 }])
             );
             assert_eq!(
                 test_exps().parse("[blarg]\n").into_result(),
                 Ok(vec![TestExp {
                     name: "blarg",
-                    contents: ""
+                    properties: IndexMap::new(),
+                    subtests: IndexMap::new(),
+                    span: SimpleSpan::new(0, 8),
                 }])
             );
             assert!(test_exps().parse("[blarg]\n[stuff]").into_result().is_err()); // missing newline
@@ -46,11 +52,15 @@ pub(crate) mod wpt {
                 Ok(vec![
                     TestExp {
                         name: "blarg",
-                        contents: ""
+                        properties: IndexMap::new(),
+                        subtests: IndexMap::new(),
+                        span: SimpleSpan::new(1, 9),
                     },
                     TestExp {
                         name: "stuff",
-                        contents: ""
+                        properties: IndexMap::new(),
+                        subtests: IndexMap::new(),
+                        span: SimpleSpan::new(9, 17),
                     }
                 ])
             );
@@ -59,12 +69,16 @@ pub(crate) mod wpt {
                 Ok(vec![
                     TestExp {
                         name: "blarg",
-                        contents: "\n"
+                        properties: IndexMap::new(),
+                        subtests: IndexMap::new(),
+                        span: SimpleSpan::new(1, 10),
                     },
                     TestExp {
                         name: "stuff",
-                        contents: ""
-                    }
+                        properties: IndexMap::new(),
+                        subtests: IndexMap::new(),
+                        span: SimpleSpan::new(10, 18),
+                    },
                 ])
             );
             assert_eq!(
@@ -74,11 +88,15 @@ pub(crate) mod wpt {
                 Ok(vec![
                     TestExp {
                         name: "blarg",
-                        contents: "  expected: PASS\n"
+                        properties: IndexMap::from_iter([("expected", "PASS"),]),
+                        subtests: IndexMap::new(),
+                        span: SimpleSpan::new(1, 26),
                     },
                     TestExp {
                         name: "stuff",
-                        contents: ""
+                        properties: IndexMap::new(),
+                        subtests: IndexMap::new(),
+                        span: SimpleSpan::new(26, 34),
                     }
                 ])
             );
@@ -87,7 +105,9 @@ pub(crate) mod wpt {
         #[derive(Debug, Eq, PartialEq)]
         pub struct TestExp<'a> {
             pub name: &'a str,
-            pub contents: &'a str,
+            pub properties: IndexMap<&'a str, &'a str>,
+            pub subtests: IndexMap<&'a str, IndexMap<&'a str, &'a str>>,
+            span: SimpleSpan,
         }
 
         fn comment<'a>() -> impl Parser<'a, &'a str, &'a str, ParseError<'a>> {
@@ -111,20 +131,80 @@ pub(crate) mod wpt {
         }
 
         fn test_exp<'a>() -> impl Parser<'a, &'a str, TestExp<'a>, ParseError<'a>> {
-            let contents = choice((
-                just("  ")
-                    .ignore_then(any().and_is(newline().not()).repeated())
-                    .then_ignore(choice((newline(), end())))
-                    .ignored(),
-                newline(),
+            #[derive(Clone, Debug)]
+            enum Item<'a> {
+                Subtest {
+                    name: &'a str,
+                    properties: IndexMap<&'a str, &'a str>,
+                },
+                Property {
+                    key: &'a str,
+                    value: &'a str,
+                },
+                Newline,
+                Comment,
+            }
+            let property = |indentation: u8| {
+                just(' ')
+                    .repeated()
+                    .exactly(usize::from(indentation) * 2)
+                    .ignore_then(ident())
+                    .then_ignore(just(':'))
+                    .then_ignore(inline_whitespace())
+                    .then(
+                        any()
+                            .and_is(newline().not())
+                            .repeated()
+                            .slice()
+                            .then_ignore(newline()),
+                    )
+            };
+            let items = choice((
+                section_name(1)
+                    .then_ignore(newline())
+                    .then(property(2).repeated().collect::<Vec<_>>())
+                    .map(|(subtest_name, properties)| Item::Subtest {
+                        name: subtest_name,
+                        properties: properties.into_iter().collect(),
+                    }),
+                property(1).map(|(key, value)| Item::Property { key, value }),
+                newline().to(Item::Newline),
+                comment().to(Item::Comment),
             ))
             .repeated()
-            .slice();
+            .collect::<Vec<_>>()
+            .validate(|items, _span, emitter| {
+                let mut properties = IndexMap::new();
+                let mut subtests = IndexMap::new();
+                for item in items {
+                    match item {
+                        Item::Property { key, value } => {
+                            if let Some(_old) = properties.insert(key, value) {
+                                emitter
+                                    .emit(Rich::custom(_span, format!("duplicate {key} property")))
+                            }
+                        }
+                        Item::Subtest { name, properties } => {
+                            if let Some(_old) = subtests.insert(name, properties) {
+                                emitter
+                                    .emit(Rich::custom(_span, format!("duplicate {name} subtest")))
+                            }
+                        }
+                        Item::Newline | Item::Comment => (),
+                    }
+                }
+                (properties, subtests)
+            });
 
             section_name(0)
                 .then_ignore(newline())
-                .then(contents)
-                .map(|(name, contents)| TestExp { name, contents })
+                .then(items)
+                .map_with_span(|(name, (properties, subtests)), span| TestExp {
+                    name,
+                    span,
+                    properties,
+                    subtests,
+                })
         }
 
         #[test]
@@ -133,7 +213,9 @@ pub(crate) mod wpt {
                 test_exp().parse("[stuff and things]\n").into_result(),
                 Ok(TestExp {
                     name: "stuff and things",
-                    contents: "",
+                    properties: IndexMap::new(),
+                    subtests: IndexMap::new(),
+                    span: SimpleSpan::new(0, 19),
                 })
             );
             assert_eq!(
@@ -142,7 +224,9 @@ pub(crate) mod wpt {
                     .into_result(),
                 Ok(TestExp {
                     name: "stuff and things",
-                    contents: "  expected: PASS\n",
+                    properties: IndexMap::from_iter([("expected", "PASS"),]),
+                    subtests: IndexMap::new(),
+                    span: SimpleSpan::new(0, 36),
                 })
             );
         }
