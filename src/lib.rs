@@ -31,7 +31,7 @@ pub mod metadata {
     }
 
     fn filler<'a>() -> impl Parser<'a, &'a str, (), ParseError<'a>> {
-        choice((comment().ignored(), newline())).repeated()
+        choice((comment(0).ignored(), newline())).repeated()
     }
 
     #[test]
@@ -177,9 +177,8 @@ pub mod metadata {
     #[derive(Clone, Debug, Eq, PartialEq)]
     pub struct Condition<'a>(&'a str);
 
-    fn comment<'a>() -> impl Parser<'a, &'a str, &'a str, ParseError<'a>> {
-        just('#')
-            .ignore_then(just(' ').or_not())
+    fn comment<'a>(indentation: u8) -> impl Parser<'a, &'a str, &'a str, ParseError<'a>> {
+        group((indent(indentation), just('#'), just(' ').or_not()))
             .ignore_then(any().and_is(newline().not()).repeated().slice())
             .then_ignore(choice((newline(), end())))
             .labelled("comment")
@@ -187,15 +186,15 @@ pub mod metadata {
 
     #[test]
     fn smoke_comment() {
-        assert_debug_snapshot!(comment().parse("asdf"), @r###"
-            ParseResult {
-                output: None,
-                errs: [
-                    found ''a'' at 0..1 expected ''#'',
-                ],
-            }
-            "###);
-        assert_debug_snapshot!(comment().parse("# asdf"), @r###"
+        assert_debug_snapshot!(comment(0).parse("asdf"), @r###"
+        ParseResult {
+            output: None,
+            errs: [
+                found ''a'' at 0..1 expected "comment",
+            ],
+        }
+        "###);
+        assert_debug_snapshot!(comment(0).parse("# asdf"), @r###"
             ParseResult {
                 output: Some(
                     "asdf",
@@ -203,7 +202,7 @@ pub mod metadata {
                 errs: [],
             }
             "###);
-        assert_debug_snapshot!(comment().parse("# "), @r###"
+        assert_debug_snapshot!(comment(0).parse("# "), @r###"
             ParseResult {
                 output: Some(
                     "",
@@ -211,7 +210,7 @@ pub mod metadata {
                 errs: [],
             }
             "###);
-        assert_debug_snapshot!(comment().parse("#"), @r###"
+        assert_debug_snapshot!(comment(0).parse("#"), @r###"
             ParseResult {
                 output: Some(
                     "",
@@ -220,7 +219,7 @@ pub mod metadata {
             }
             "###);
         assert_debug_snapshot!(
-            comment().parse("# asdf # blarg"),
+            comment(0).parse("# asdf # blarg"),
             @r###"
             ParseResult {
                 output: Some(
@@ -230,11 +229,99 @@ pub mod metadata {
             }
             "###
         );
-        assert_debug_snapshot!(comment().parse(" # asdf # blarg"), @r###"
+        assert_debug_snapshot!(comment(0).parse(" # asdf # blarg"), @r###"
             ParseResult {
                 output: None,
                 errs: [
-                    found '' '' at 0..1 expected ''#'',
+                    found '' '' at 0..1 expected "comment",
+                ],
+            }
+            "###);
+        assert_debug_snapshot!(comment(0).parse("  # asdf # blarg"), @r###"
+            ParseResult {
+                output: None,
+                errs: [
+                    found '' '' at 0..1 expected "comment",
+                ],
+            }
+            "###);
+        assert_debug_snapshot!(comment(1).parse("    # asdf # blarg"), @r###"
+            ParseResult {
+                output: None,
+                errs: [
+                    found '' '' at 2..3 expected something else,
+                ],
+            }
+            "###);
+        assert_debug_snapshot!(comment(1).parse("   # asdf # blarg"), @r###"
+            ParseResult {
+                output: None,
+                errs: [
+                    found '' '' at 2..3 expected something else,
+                ],
+            }
+            "###);
+        assert_debug_snapshot!(comment(1).parse(" # asdf # blarg"), @r###"
+            ParseResult {
+                output: None,
+                errs: [
+                    found ''#'' at 1..2 expected '' '',
+                ],
+            }
+                "###);
+        assert_debug_snapshot!(comment(1).parse("# asdf # blarg"), @r###"
+            ParseResult {
+                output: None,
+                errs: [
+                    found ''#'' at 0..1 expected "comment",
+                ],
+            }
+            "###);
+        assert_debug_snapshot!(comment(2).parse("      # asdf # blarg"), @r###"
+            ParseResult {
+                output: None,
+                errs: [
+                        found '' '' at 4..5 expected something else,
+                    ],
+            }
+            "###);
+        assert_debug_snapshot!(comment(2).parse("     # asdf # blarg"), @r###"
+            ParseResult {
+                output: None,
+                errs: [
+                    found '' '' at 4..5 expected something else,
+                ],
+            }
+            "###);
+        assert_debug_snapshot!(comment(2).parse("    # asdf # blarg"), @r###"
+            ParseResult {
+                output: Some(
+                    "asdf # blarg",
+                ),
+                errs: [],
+            }
+            "###);
+        assert_debug_snapshot!(comment(2).parse("   # asdf # blarg"), @r###"
+            ParseResult {
+                output: None,
+                errs: [
+                    found ''#'' at 3..4 expected '' '',
+                ],
+            }
+            "###);
+        assert_debug_snapshot!(comment(2).parse(" # asdf # blarg"), @r###"
+            ParseResult {
+                output: None,
+                errs: [
+                    found ''#'' at 1..2 expected '' '',
+                ],
+            }
+            "###);
+        assert_debug_snapshot!(comment(2).parse("# asdf # blarg"), @r###"
+            ParseResult {
+                output: None,
+                errs: [
+                    found ''#'' at 0..1 expected "comment",
                 ],
             }
             "###);
@@ -278,7 +365,7 @@ pub mod metadata {
                 .labelled("test property")
                 .map(|(key, value)| Item::Property { key, value }),
             newline().labelled("empty line").to(Item::Newline),
-            comment().to(Item::Comment),
+            comment(1).to(Item::Comment),
         ))
         .repeated()
         .collect::<Vec<_>>()
