@@ -125,7 +125,10 @@ fn run(cli: Cli) -> ExitCode {
                                             source_code.clone(),
                                         ),
                                         inner: error.clone().into_owned(),
-                                        span: SourceSpan::new(span.start.into(), span.end.into()),
+                                        span: SourceSpan::new(
+                                            span.start.into(),
+                                            (span.end - span.start).into(),
+                                        ),
                                     };
                                     let error = miette::Report::new(error);
                                     log::error!("{error:?}");
