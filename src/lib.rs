@@ -182,6 +182,7 @@ pub mod metadata {
             .ignore_then(just(' ').or_not())
             .ignore_then(any().and_is(newline().not()).repeated().slice())
             .then_ignore(choice((newline(), end())))
+            .labelled("comment")
     }
 
     #[test]
@@ -307,11 +308,18 @@ pub mod metadata {
         let items = choice((
             section_name(1)
                 .then_ignore(newline())
-                .then(property(2).repeated().collect::<Vec<_>>())
+                .labelled("subtest section header")
+                .then(
+                    property(2)
+                        .labelled("subtest property")
+                        .repeated()
+                        .collect::<Vec<_>>(),
+                )
                 .map(|(subtest_name, properties)| Item::Subtest {
                     name: subtest_name,
                     properties: properties.into_iter().collect(),
-                }),
+                })
+                .labelled("subtest"),
             property(1).map(|(key, value)| Item::Property { key, value }),
             newline().to(Item::Newline),
             comment().to(Item::Comment),
@@ -339,8 +347,11 @@ pub mod metadata {
             (properties, subtests)
         });
 
-        section_name(0)
+        let test_header = section_name(0)
             .then_ignore(newline())
+            .labelled("test section header");
+
+        test_header
             .then(items)
             .map_with_span(|(name, (properties, subtests)), span| Test {
                 name,
@@ -392,7 +403,12 @@ pub mod metadata {
     }
 
     fn indent<'a>(level: u8) -> impl Parser<'a, &'a str, (), ParseError<'a>> {
-        just(' ').repeated().exactly(usize::from(level) * 2)
+        let level_as_space_count = usize::from(level) * 2;
+        just(' ')
+            .repeated()
+            .exactly(level_as_space_count)
+            .then_ignore(just(" ").not())
+            .labelled("indentation at the proper level")
     }
 
     fn section_name<'a>(indentation: u8) -> impl Parser<'a, &'a str, &'a str, ParseError<'a>> {
