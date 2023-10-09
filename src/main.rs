@@ -94,7 +94,11 @@ fn run(cli: Cli) -> ExitCode {
                         match metadata::File::parser().parse(file_contents).into_result() {
                             Ok(metadata::File { tests }) => Some(tests.into_iter().map(|inner| {
                                 (
-                                    inner.name.strip_prefix("cts.https.html?q=").unwrap(),
+                                    inner
+                                        .name
+                                        .strip_prefix("cts.https.html?q=")
+                                        .unwrap()
+                                        .to_owned(),
                                     Test {
                                         inner,
                                         orig_path: path,

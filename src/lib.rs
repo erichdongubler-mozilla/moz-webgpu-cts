@@ -159,9 +159,9 @@ pub mod metadata {
 
     #[derive(Clone, Debug, Eq, PartialEq)]
     pub struct Test<'a> {
-        pub name: &'a str,
+        pub name: String,
         pub properties: IndexMap<&'a str, PropertyValue<'a>>,
-        pub subtests: IndexMap<&'a str, IndexMap<&'a str, PropertyValue<'a>>>, // TODO: use strongly typed subtest name key?
+        pub subtests: IndexMap<String, IndexMap<&'a str, PropertyValue<'a>>>,
         span: SimpleSpan,
     }
 
@@ -244,7 +244,7 @@ pub mod metadata {
         #[derive(Clone, Debug)]
         enum Item<'a> {
             Subtest {
-                name: &'a str,
+                name: String,
                 properties: IndexMap<&'a str, PropertyValue<'a>>,
             },
             Property {
@@ -337,9 +337,11 @@ pub mod metadata {
                         }
                     }
                     Item::Subtest { name, properties } => {
-                        if let Some(_old) = subtests.insert(name, properties) {
+                        if subtests.contains_key(&name) {
+                            // TODO: use old and new item span, better msg.
                             emitter.emit(Rich::custom(_span, format!("duplicate {name} subtest")))
                         }
+                        subtests.insert(name, properties);
                     }
                     Item::Newline | Item::Comment => (),
                 }
@@ -411,32 +413,44 @@ pub mod metadata {
             .labelled("indentation at the proper level")
     }
 
-    fn section_name<'a>(indentation: u8) -> impl Parser<'a, &'a str, &'a str, ParseError<'a>> {
+    fn section_name<'a>(indentation: u8) -> impl Parser<'a, &'a str, String, ParseError<'a>> {
         let name = custom::<_, &str, _, _>(|input| {
-            let start_offset = input.offset();
+            let mut escaped_name = String::new();
             loop {
                 match input.peek() {
-                    Some(c) => match c {
-                        ']' => break,
-                        // TODO: escapes
-                        '\\' => input.parse(choice((just("\\]"), just("\\\""))).ignored())?,
-                        c if c.is_control() => break,
-                        _other => input.skip(),
-                    },
-                    None => break,
+                    None => {
+                        let start = input.offset();
+                        input.skip();
+                        let span = input.span_since(start);
+                        return Err(Rich::custom(
+                            span,
+                            "reached end of input before ending section header",
+                        ));
+                    }
+                    Some(']') => break,
+                    Some('\\') => {
+                        let c = input.parse(choice((just("\\]").to(']'), just("\\\"").to('"'))))?;
+                        escaped_name.push(c);
+                    }
+                    Some(other) => {
+                        escaped_name.push(other);
+                        input.skip();
+                    }
                 }
             }
-            let slice = input.slice(start_offset..input.offset());
-            Ok(slice)
+            Ok(escaped_name)
         })
-        .validate(|slice, span, emitter| {
-            if slice.is_empty() {
-                emitter.emit(Rich::custom(
-                    span,
-                    "empty test name found; test names cannot be empty",
-                ));
+        .validate(|escaped_name, span, emitter| {
+            for (idx, c) in escaped_name.char_indices() {
+                if c.is_control() {
+                    let span_idx = span.start.checked_add(idx).unwrap();
+                    emitter.emit(Rich::custom(
+                        SimpleSpan::new(span_idx, span_idx),
+                        "found illegal character in section header",
+                    ));
+                }
             }
-            slice
+            escaped_name
         });
         indent(indentation).ignore_then(name.delimited_by(just('['), just(']')))
     }
@@ -462,7 +476,7 @@ pub mod metadata {
         assert_debug_snapshot!(section_name(0).parse("[asdf\\]blarg]"), @r###"
             ParseResult {
                 output: Some(
-                    "asdf\\]blarg",
+                    "asdf]blarg",
                 ),
                 errs: [],
             }
