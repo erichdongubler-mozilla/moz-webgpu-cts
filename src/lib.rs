@@ -3,9 +3,9 @@ pub(crate) mod wpt {
         use chumsky::{
             extra::Full,
             prelude::Rich,
-            primitive::{any, choice, custom, end, just},
+            primitive::{any, choice, custom, end, group, just},
             span::SimpleSpan,
-            text::{ident, inline_whitespace, newline},
+            text::{ident, inline_whitespace, keyword, newline},
             IterParser, Parser,
         };
         use indexmap::IndexMap;
@@ -88,7 +88,10 @@ pub(crate) mod wpt {
                 Ok(vec![
                     TestExp {
                         name: "blarg",
-                        properties: IndexMap::from_iter([("expected", "PASS"),]),
+                        properties: IndexMap::from_iter([(
+                            "expected",
+                            PropertyValue::Unconditional("PASS")
+                        ),]),
                         subtests: IndexMap::new(),
                         span: SimpleSpan::new(1, 26),
                     },
@@ -105,10 +108,22 @@ pub(crate) mod wpt {
         #[derive(Debug, Eq, PartialEq)]
         pub struct TestExp<'a> {
             pub name: &'a str,
-            pub properties: IndexMap<&'a str, &'a str>,
-            pub subtests: IndexMap<&'a str, IndexMap<&'a str, &'a str>>,
+            pub properties: IndexMap<&'a str, PropertyValue<'a>>,
+            pub subtests: IndexMap<&'a str, IndexMap<&'a str, PropertyValue<'a>>>, // TODO: use strongly typed subtest name key?
             span: SimpleSpan,
         }
+
+        #[derive(Clone, Debug, Eq, PartialEq)]
+        pub enum PropertyValue<'a> {
+            Unconditional(&'a str),
+            Conditional {
+                conditions: Vec<(Condition<'a>, &'a str)>,
+                fallback: &'a str,
+            },
+        }
+
+        #[derive(Clone, Debug, Eq, PartialEq)]
+        pub struct Condition<'a>(&'a str);
 
         fn comment<'a>() -> impl Parser<'a, &'a str, &'a str, ParseError<'a>> {
             just('#')
@@ -135,27 +150,65 @@ pub(crate) mod wpt {
             enum Item<'a> {
                 Subtest {
                     name: &'a str,
-                    properties: IndexMap<&'a str, &'a str>,
+                    properties: IndexMap<&'a str, PropertyValue<'a>>,
                 },
                 Property {
                     key: &'a str,
-                    value: &'a str,
+                    value: PropertyValue<'a>,
                 },
                 Newline,
                 Comment,
             }
-            let property = |indentation| {
+
+            let property = |indentation: u8| {
+                let unconditional_value = any()
+                    .and_is(newline().not())
+                    .repeated()
+                    .slice()
+                    .then_ignore(newline());
+                let conditional_rule = group((
+                    indent(
+                        indentation
+                            .checked_add(1)
+                            .expect("unexpectedly high indentation level"),
+                    ),
+                    keyword("if"),
+                    just(' '),
+                ))
+                .ignore_then(
+                    // TODO: actual expression tree
+                    any()
+                        .and_is(choice((newline(), just(":").to(()))).not())
+                        .repeated()
+                        .slice()
+                        .map(Condition)
+                        .then_ignore(group((just(':'), inline_whitespace())))
+                        .then(
+                            any()
+                                .and_is(choice((newline(), just(':').to(()))).not())
+                                .repeated()
+                                .slice(),
+                        ),
+                );
+                let conditional_fallback = keyword("if")
+                    .not()
+                    .ignore_then(any().and_is(newline().not()))
+                    .slice();
+
                 indent(indentation)
                     .ignore_then(ident())
                     .then_ignore(just(':'))
                     .then_ignore(inline_whitespace())
-                    .then(
-                        any()
-                            .and_is(newline().not())
-                            .repeated()
-                            .slice()
-                            .then_ignore(newline()),
-                    )
+                    .then(choice((
+                        unconditional_value.map(PropertyValue::Unconditional),
+                        newline()
+                            .ignore_then(conditional_rule.repeated().collect())
+                            .then(conditional_fallback)
+                            .map(|(conditions, fallback)| PropertyValue::Conditional {
+                                conditions,
+                                fallback,
+                            }),
+                    )))
             };
             let items = choice((
                 section_name(1)
@@ -222,7 +275,10 @@ pub(crate) mod wpt {
                     .into_result(),
                 Ok(TestExp {
                     name: "stuff and things",
-                    properties: IndexMap::from_iter([("expected", "PASS"),]),
+                    properties: IndexMap::from_iter([(
+                        "expected",
+                        PropertyValue::Unconditional("PASS")
+                    ),]),
                     subtests: IndexMap::new(),
                     span: SimpleSpan::new(0, 36),
                 })
