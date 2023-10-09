@@ -144,10 +144,8 @@ pub(crate) mod wpt {
                 Newline,
                 Comment,
             }
-            let property = |indentation: u8| {
-                just(' ')
-                    .repeated()
-                    .exactly(usize::from(indentation) * 2)
+            let property = |indentation| {
+                indent(indentation)
                     .ignore_then(ident())
                     .then_ignore(just(':'))
                     .then_ignore(inline_whitespace())
@@ -231,6 +229,10 @@ pub(crate) mod wpt {
             );
         }
 
+        fn indent<'a>(level: u8) -> impl Parser<'a, &'a str, (), ParseError<'a>> {
+            just(' ').repeated().exactly(usize::from(level) * 2)
+        }
+
         fn section_name<'a>(indentation: u8) -> impl Parser<'a, &'a str, &'a str, ParseError<'a>> {
             let name = custom::<_, &str, _, _>(|input| {
                 let start_offset = input.offset();
@@ -258,10 +260,7 @@ pub(crate) mod wpt {
                 }
                 slice
             });
-            just(' ')
-                .repeated()
-                .exactly(usize::from(indentation) * 2)
-                .ignore_then(name.delimited_by(just('['), just(']')))
+            indent(indentation).ignore_then(name.delimited_by(just('['), just(']')))
         }
 
         #[test]
