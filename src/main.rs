@@ -5,6 +5,7 @@ use std::{
     collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
+    process::ExitCode,
 };
 
 use chumsky::Parser as _;
@@ -29,12 +30,12 @@ enum Subcommand {
     ReadTestVariants,
 }
 
-fn main() {
+fn main() -> ExitCode {
     env_logger::init();
     run(Cli::parse())
 }
 
-fn run(cli: Cli) {
+fn run(cli: Cli) -> ExitCode {
     let Cli {
         gecko_checkout,
         subcommand,
@@ -93,6 +94,7 @@ fn run(cli: Cli) {
                 })
                 .collect::<BTreeMap<_, _>>();
             dbg!(test_exps_by_name);
+            ExitCode::SUCCESS
         }
         Subcommand::ReadTestVariants => {
             let tests_by_path = (1..=51)
@@ -138,6 +140,7 @@ fn run(cli: Cli) {
                 })
                 .collect::<BTreeMap<_, _>>();
             dbg!(variants);
+            ExitCode::SUCCESS
         }
     }
 }
