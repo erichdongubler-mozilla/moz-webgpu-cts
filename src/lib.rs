@@ -413,6 +413,130 @@ pub mod metadata {
             .labelled("indentation at the proper level")
     }
 
+    #[test]
+    fn test_indent() {
+        assert_debug_snapshot!(indent(0).parse(""), @r###"
+            ParseResult {
+                output: Some(
+                    (),
+                ),
+                errs: [],
+            }
+            "###);
+        assert_debug_snapshot!(indent(0).parse(" "), @r###"
+            ParseResult {
+                output: None,
+                errs: [
+                    found '' '' at 0..1 expected "indentation at the proper level",
+                ],
+            }
+            "###);
+        assert_debug_snapshot!(indent(0).parse("  "), @r###"
+            ParseResult {
+                output: None,
+                errs: [
+                    found '' '' at 0..1 expected "indentation at the proper level",
+                ],
+            }
+            "###);
+        assert_debug_snapshot!(indent(1).parse(""), @r###"
+            ParseResult {
+                output: None,
+                errs: [
+                    found end of input at 0..0 expected '' '',
+                ],
+            }
+            "###);
+        assert_debug_snapshot!(indent(1).parse(" "), @r###"
+            ParseResult {
+                output: None,
+                errs: [
+                    found end of input at 1..1 expected "indentation at the proper level",
+                ],
+            }
+            "###);
+        assert_debug_snapshot!(indent(1).parse("  "), @r###"
+            ParseResult {
+                output: Some(
+                    (),
+                ),
+                errs: [],
+            }
+            "###);
+        assert_debug_snapshot!(indent(1).parse("   "), @r###"
+            ParseResult {
+                output: None,
+                errs: [
+                    found '' '' at 2..3 expected something else,
+                ],
+            }
+            "###);
+        assert_debug_snapshot!(indent(1).parse("    "), @r###"
+            ParseResult {
+                output: None,
+                errs: [
+                    found '' '' at 2..3 expected something else,
+                ],
+            }
+            "###);
+        assert_debug_snapshot!(indent(2).parse(""), @r###"
+            ParseResult {
+                output: None,
+                errs: [
+                    found end of input at 0..0 expected '' '',
+                ],
+            }
+            "###);
+        assert_debug_snapshot!(indent(2).parse(" "), @r###"
+            ParseResult {
+                output: None,
+                errs: [
+                    found end of input at 1..1 expected "indentation at the proper level",
+                ],
+            }
+            "###);
+        assert_debug_snapshot!(indent(2).parse("  "), @r###"
+            ParseResult {
+                output: None,
+                errs: [
+                    found end of input at 2..2 expected '' '',
+                ],
+            }
+            "###);
+        assert_debug_snapshot!(indent(2).parse("   "), @r###"
+            ParseResult {
+                output: None,
+                errs: [
+                    found end of input at 3..3 expected '' '',
+                ],
+            }
+            "###);
+        assert_debug_snapshot!(indent(2).parse("    "), @r###"
+            ParseResult {
+                output: Some(
+                    (),
+                ),
+                errs: [],
+            }
+            "###);
+        assert_debug_snapshot!(indent(2).parse("     "), @r###"
+            ParseResult {
+                output: None,
+                errs: [
+                    found '' '' at 4..5 expected something else,
+                ],
+            }
+            "###);
+        assert_debug_snapshot!(indent(2).parse("      "), @r###"
+            ParseResult {
+                output: None,
+                errs: [
+                    found '' '' at 4..5 expected something else,
+                ],
+            }
+            "###);
+    }
+
     fn section_name<'a>(indentation: u8) -> impl Parser<'a, &'a str, String, ParseError<'a>> {
         let name = custom::<_, &str, _, _>(|input| {
             let mut escaped_name = String::new();
