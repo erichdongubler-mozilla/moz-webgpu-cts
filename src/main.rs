@@ -8,9 +8,10 @@ use std::{
     process::ExitCode,
 };
 
-use chumsky::Parser as _;
+use chumsky::{prelude::Rich, Parser as _};
 use clap::Parser;
 use indexmap::IndexMap;
+use miette::{Diagnostic, NamedSource, SourceSpan};
 use path_dsl::path;
 
 use lib::wpt::{self, expectations::TestExp};
@@ -109,9 +110,34 @@ fn run(cli: Cli) -> ExitCode {
                                 }))
                             }
                             Err(errors) => {
+                                #[derive(Debug, Diagnostic, thiserror::Error)]
+                                #[error("{inner}")]
+                                struct ParseError {
+                                    #[label]
+                                    span: SourceSpan,
+                                    #[source_code]
+                                    source_code: NamedSource,
+                                    inner: Rich<'static, char>,
+                                }
                                 found_parse_err = true;
-                                log::error!("failed to parse {}: {errors:#?}", path.display());
-                                return None;
+                                let source_code = file_contents.clone();
+                                for error in errors {
+                                    let span = error.span();
+                                    let error = ParseError {
+                                        source_code: NamedSource::new(
+                                            path.to_str().unwrap(),
+                                            source_code.clone(),
+                                        ),
+                                        inner: error.clone().into_owned(),
+                                        span: SourceSpan::new(
+                                            span.start.into(),
+                                            (span.end - span.start).into(),
+                                        ),
+                                    };
+                                    let error = miette::Report::new(error);
+                                    log::error!("{error:?}");
+                                }
+                                None
                             }
                         }
                     })
