@@ -140,7 +140,7 @@ pub(crate) mod wpt {
             "###);
         }
 
-        #[derive(Debug, Eq, PartialEq)]
+        #[derive(Clone, Debug, Eq, PartialEq)]
         pub struct TestExp<'a> {
             pub name: &'a str,
             pub properties: IndexMap<&'a str, PropertyValue<'a>>,
