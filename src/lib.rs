@@ -1,5 +1,5 @@
 pub(crate) mod wpt {
-    pub(crate) mod expectations {
+    pub(crate) mod metadata {
         #[cfg(test)]
         use insta::assert_debug_snapshot;
 
@@ -15,12 +15,20 @@ pub(crate) mod wpt {
 
         pub type ParseError<'a> = Full<Rich<'a, char>, (), ()>;
 
-        pub fn test_exps<'a>() -> impl Parser<'a, &'a str, Vec<TestExp<'a>>, ParseError<'a>> {
-            filler()
-                .ignore_then(test_exp())
-                .then_ignore(filler())
-                .repeated()
-                .collect()
+        #[derive(Clone, Debug)]
+        pub struct File<'a> {
+            pub tests: Vec<Test<'a>>,
+        }
+
+        impl<'a> File<'a> {
+            pub fn parser() -> impl Parser<'a, &'a str, File<'a>, ParseError<'a>> {
+                filler()
+                    .ignore_then(test())
+                    .then_ignore(filler())
+                    .repeated()
+                    .collect()
+                    .map(|tests| File { tests })
+            }
         }
 
         fn filler<'a>() -> impl Parser<'a, &'a str, (), ParseError<'a>> {
@@ -30,17 +38,19 @@ pub(crate) mod wpt {
         #[test]
         fn smoke_parser() {
             assert_debug_snapshot!(
-                test_exps().parse(""),
+                File::parser().parse(""),
                 @r###"
             ParseResult {
                 output: Some(
-                    [],
+                    File {
+                        tests: [],
+                    },
                 ),
                 errs: [],
             }
             "###
             );
-            assert_debug_snapshot!(test_exps().parse("[hoot]"), @r###"
+            assert_debug_snapshot!(File::parser().parse("[hoot]"), @r###"
             ParseResult {
                 output: None,
                 errs: [
@@ -48,22 +58,24 @@ pub(crate) mod wpt {
                 ],
             }
             "###);
-            assert_debug_snapshot!(test_exps().parse("[blarg]\n"), @r###"
+            assert_debug_snapshot!(File::parser().parse("[blarg]\n"), @r###"
             ParseResult {
                 output: Some(
-                    [
-                        TestExp {
-                            name: "blarg",
-                            properties: {},
-                            subtests: {},
-                            span: 0..8,
-                        },
-                    ],
+                    File {
+                        tests: [
+                            Test {
+                                name: "blarg",
+                                properties: {},
+                                subtests: {},
+                                span: 0..8,
+                            },
+                        ],
+                    },
                 ),
                 errs: [],
             }
             "###);
-            assert_debug_snapshot!(test_exps().parse("[blarg]\n[stuff]"), @r###"
+            assert_debug_snapshot!(File::parser().parse("[blarg]\n[stuff]"), @r###"
             ParseResult {
                 output: None,
                 errs: [
@@ -71,69 +83,75 @@ pub(crate) mod wpt {
                 ],
             }
             "###);
-            assert_debug_snapshot!(test_exps().parse("\n[blarg]\n[stuff]\n"), @r###"
+            assert_debug_snapshot!(File::parser().parse("\n[blarg]\n[stuff]\n"), @r###"
             ParseResult {
                 output: Some(
-                    [
-                        TestExp {
-                            name: "blarg",
-                            properties: {},
-                            subtests: {},
-                            span: 1..9,
-                        },
-                        TestExp {
-                            name: "stuff",
-                            properties: {},
-                            subtests: {},
-                            span: 9..17,
-                        },
-                    ],
-                ),
-                errs: [],
-            }
-            "###);
-            assert_debug_snapshot!(test_exps().parse("\n[blarg]\n\n[stuff]\n"), @r###"
-            ParseResult {
-                output: Some(
-                    [
-                        TestExp {
-                            name: "blarg",
-                            properties: {},
-                            subtests: {},
-                            span: 1..10,
-                        },
-                        TestExp {
-                            name: "stuff",
-                            properties: {},
-                            subtests: {},
-                            span: 10..18,
-                        },
-                    ],
-                ),
-                errs: [],
-            }
-            "###);
-            assert_debug_snapshot!(test_exps().parse("\n[blarg]\n  expected: PASS\n[stuff]\n"), @r###"
-            ParseResult {
-                output: Some(
-                    [
-                        TestExp {
-                            name: "blarg",
-                            properties: {
-                                "expected": Unconditional(
-                                    "PASS",
-                                ),
+                    File {
+                        tests: [
+                            Test {
+                                name: "blarg",
+                                properties: {},
+                                subtests: {},
+                                span: 1..9,
                             },
-                            subtests: {},
-                            span: 1..26,
-                        },
-                        TestExp {
-                            name: "stuff",
-                            properties: {},
-                            subtests: {},
-                            span: 26..34,
-                        },
-                    ],
+                            Test {
+                                name: "stuff",
+                                properties: {},
+                                subtests: {},
+                                span: 9..17,
+                            },
+                        ],
+                    },
+                ),
+                errs: [],
+            }
+            "###);
+            assert_debug_snapshot!(File::parser().parse("\n[blarg]\n\n[stuff]\n"), @r###"
+            ParseResult {
+                output: Some(
+                    File {
+                        tests: [
+                            Test {
+                                name: "blarg",
+                                properties: {},
+                                subtests: {},
+                                span: 1..10,
+                            },
+                            Test {
+                                name: "stuff",
+                                properties: {},
+                                subtests: {},
+                                span: 10..18,
+                            },
+                        ],
+                    },
+                ),
+                errs: [],
+            }
+            "###);
+            assert_debug_snapshot!(File::parser().parse("\n[blarg]\n  expected: PASS\n[stuff]\n"), @r###"
+            ParseResult {
+                output: Some(
+                    File {
+                        tests: [
+                            Test {
+                                name: "blarg",
+                                properties: {
+                                    "expected": Unconditional(
+                                        "PASS",
+                                    ),
+                                },
+                                subtests: {},
+                                span: 1..26,
+                            },
+                            Test {
+                                name: "stuff",
+                                properties: {},
+                                subtests: {},
+                                span: 26..34,
+                            },
+                        ],
+                    },
                 ),
                 errs: [],
             }
@@ -141,7 +159,7 @@ pub(crate) mod wpt {
         }
 
         #[derive(Clone, Debug, Eq, PartialEq)]
-        pub struct TestExp<'a> {
+        pub struct Test<'a> {
             pub name: &'a str,
             pub properties: IndexMap<&'a str, PropertyValue<'a>>,
             pub subtests: IndexMap<&'a str, IndexMap<&'a str, PropertyValue<'a>>>, // TODO: use strongly typed subtest name key?
@@ -173,7 +191,7 @@ pub(crate) mod wpt {
             ParseResult {
                 output: None,
                 errs: [
-                    found ''a'' at 0..1 expected "comment",
+                    found ''a'' at 0..1 expected ''#'',
                 ],
             }
             "###);
@@ -216,13 +234,13 @@ pub(crate) mod wpt {
             ParseResult {
                 output: None,
                 errs: [
-                    found '' '' at 0..1 expected "comment",
+                    found '' '' at 0..1 expected ''#'',
                 ],
             }
             "###);
         }
 
-        fn test_exp<'a>() -> impl Parser<'a, &'a str, TestExp<'a>, ParseError<'a>> {
+        fn test<'a>() -> impl Parser<'a, &'a str, Test<'a>, ParseError<'a>> {
             #[derive(Clone, Debug)]
             enum Item<'a> {
                 Subtest {
@@ -327,7 +345,7 @@ pub(crate) mod wpt {
             section_name(0)
                 .then_ignore(newline())
                 .then(items)
-                .map_with_span(|(name, (properties, subtests)), span| TestExp {
+                .map_with_span(|(name, (properties, subtests)), span| Test {
                     name,
                     span,
                     properties,
@@ -336,13 +354,13 @@ pub(crate) mod wpt {
         }
 
         #[test]
-        fn smoke_test_exp() {
+        fn smoke_test() {
             assert_debug_snapshot!(
-                test_exp().parse("[stuff and things]\n"),
+                test().parse("[stuff and things]\n"),
                 @r###"
             ParseResult {
                 output: Some(
-                    TestExp {
+                    Test {
                         name: "stuff and things",
                         properties: {},
                         subtests: {},
@@ -354,12 +372,12 @@ pub(crate) mod wpt {
             "###
             );
             assert_debug_snapshot!(
-                test_exp()
+                test()
                     .parse("[stuff and things]\n  expected: PASS\n"),
                 @r###"
             ParseResult {
                 output: Some(
-                    TestExp {
+                    Test {
                         name: "stuff and things",
                         properties: {
                             "expected": Unconditional(
