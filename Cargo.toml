@@ -11,3 +11,6 @@ indexmap = "2.0.0"
 log = "0.4.20"
 path-dsl = "0.6.1"
 regex = "1.9.5"
+
+[dev-dependencies]
+insta = "1.33.0"

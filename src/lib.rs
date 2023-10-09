@@ -1,5 +1,8 @@
 pub(crate) mod wpt {
     pub(crate) mod expectations {
+        #[cfg(test)]
+        use insta::assert_debug_snapshot;
+
         use chumsky::{
             extra::Full,
             prelude::Rich,
@@ -26,83 +29,115 @@ pub(crate) mod wpt {
 
         #[test]
         fn smoke_parser() {
-            assert_eq!(test_exps().parse("").into_result(), Ok(vec![]));
-            assert!(test_exps().parse("[hoot]").into_result().is_err()); // missing newline
-            assert_eq!(
-                test_exps().parse("[blarg]\n").into_result(),
-                Ok(vec![TestExp {
-                    name: "blarg",
-                    properties: IndexMap::new(),
-                    subtests: IndexMap::new(),
-                    span: SimpleSpan::new(0, 8),
-                }])
+            assert_debug_snapshot!(
+                test_exps().parse(""),
+                @r###"
+            ParseResult {
+                output: Some(
+                    [],
+                ),
+                errs: [],
+            }
+            "###
             );
-            assert_eq!(
-                test_exps().parse("[blarg]\n").into_result(),
-                Ok(vec![TestExp {
-                    name: "blarg",
-                    properties: IndexMap::new(),
-                    subtests: IndexMap::new(),
-                    span: SimpleSpan::new(0, 8),
-                }])
-            );
-            assert!(test_exps().parse("[blarg]\n[stuff]").into_result().is_err()); // missing newline
-            assert_eq!(
-                test_exps().parse("\n[blarg]\n[stuff]\n").into_result(),
-                Ok(vec![
-                    TestExp {
-                        name: "blarg",
-                        properties: IndexMap::new(),
-                        subtests: IndexMap::new(),
-                        span: SimpleSpan::new(1, 9),
-                    },
-                    TestExp {
-                        name: "stuff",
-                        properties: IndexMap::new(),
-                        subtests: IndexMap::new(),
-                        span: SimpleSpan::new(9, 17),
-                    }
-                ])
-            );
-            assert_eq!(
-                test_exps().parse("\n[blarg]\n\n[stuff]\n").into_result(),
-                Ok(vec![
-                    TestExp {
-                        name: "blarg",
-                        properties: IndexMap::new(),
-                        subtests: IndexMap::new(),
-                        span: SimpleSpan::new(1, 10),
-                    },
-                    TestExp {
-                        name: "stuff",
-                        properties: IndexMap::new(),
-                        subtests: IndexMap::new(),
-                        span: SimpleSpan::new(10, 18),
-                    },
-                ])
-            );
-            assert_eq!(
-                test_exps()
-                    .parse("\n[blarg]\n  expected: PASS\n[stuff]\n")
-                    .into_result(),
-                Ok(vec![
-                    TestExp {
-                        name: "blarg",
-                        properties: IndexMap::from_iter([(
-                            "expected",
-                            PropertyValue::Unconditional("PASS")
-                        ),]),
-                        subtests: IndexMap::new(),
-                        span: SimpleSpan::new(1, 26),
-                    },
-                    TestExp {
-                        name: "stuff",
-                        properties: IndexMap::new(),
-                        subtests: IndexMap::new(),
-                        span: SimpleSpan::new(26, 34),
-                    }
-                ])
-            );
+            assert_debug_snapshot!(test_exps().parse("[hoot]"), @r###"
+            ParseResult {
+                output: None,
+                errs: [
+                    found end of input at 6..6 expected ''\r'', or ''\n'',
+                ],
+            }
+            "###);
+            assert_debug_snapshot!(test_exps().parse("[blarg]\n"), @r###"
+            ParseResult {
+                output: Some(
+                    [
+                        TestExp {
+                            name: "blarg",
+                            properties: {},
+                            subtests: {},
+                            span: 0..8,
+                        },
+                    ],
+                ),
+                errs: [],
+            }
+            "###);
+            assert_debug_snapshot!(test_exps().parse("[blarg]\n[stuff]"), @r###"
+            ParseResult {
+                output: None,
+                errs: [
+                    found end of input at 15..15 expected ''\r'', or ''\n'',
+                ],
+            }
+            "###);
+            assert_debug_snapshot!(test_exps().parse("\n[blarg]\n[stuff]\n"), @r###"
+            ParseResult {
+                output: Some(
+                    [
+                        TestExp {
+                            name: "blarg",
+                            properties: {},
+                            subtests: {},
+                            span: 1..9,
+                        },
+                        TestExp {
+                            name: "stuff",
+                            properties: {},
+                            subtests: {},
+                            span: 9..17,
+                        },
+                    ],
+                ),
+                errs: [],
+            }
+            "###);
+            assert_debug_snapshot!(test_exps().parse("\n[blarg]\n\n[stuff]\n"), @r###"
+            ParseResult {
+                output: Some(
+                    [
+                        TestExp {
+                            name: "blarg",
+                            properties: {},
+                            subtests: {},
+                            span: 1..10,
+                        },
+                        TestExp {
+                            name: "stuff",
+                            properties: {},
+                            subtests: {},
+                            span: 10..18,
+                        },
+                    ],
+                ),
+                errs: [],
+            }
+            "###);
+            assert_debug_snapshot!(test_exps().parse("\n[blarg]\n  expected: PASS\n[stuff]\n"), @r###"
+            ParseResult {
+                output: Some(
+                    [
+                        TestExp {
+                            name: "blarg",
+                            properties: {
+                                "expected": Unconditional(
+                                    "PASS",
+                                ),
+                            },
+                            subtests: {},
+                            span: 1..26,
+                        },
+                        TestExp {
+                            name: "stuff",
+                            properties: {},
+                            subtests: {},
+                            span: 26..34,
+                        },
+                    ],
+                ),
+                errs: [],
+            }
+            "###);
         }
 
         #[derive(Debug, Eq, PartialEq)]
@@ -134,15 +169,57 @@ pub(crate) mod wpt {
 
         #[test]
         fn smoke_comment() {
-            assert!(comment().parse("asdf").into_result().is_err());
-            assert_eq!(comment().parse("# asdf").into_result(), Ok("asdf"));
-            assert_eq!(comment().parse("# ").into_result(), Ok(""));
-            assert_eq!(comment().parse("#").into_result(), Ok(""));
-            assert_eq!(
-                comment().parse("# asdf # blarg").into_result(),
-                Ok("asdf # blarg")
+            assert_debug_snapshot!(comment().parse("asdf"), @r###"
+            ParseResult {
+                output: None,
+                errs: [
+                    found ''a'' at 0..1 expected "comment",
+                ],
+            }
+            "###);
+            assert_debug_snapshot!(comment().parse("# asdf"), @r###"
+            ParseResult {
+                output: Some(
+                    "asdf",
+                ),
+                errs: [],
+            }
+            "###);
+            assert_debug_snapshot!(comment().parse("# "), @r###"
+            ParseResult {
+                output: Some(
+                    "",
+                ),
+                errs: [],
+            }
+            "###);
+            assert_debug_snapshot!(comment().parse("#"), @r###"
+            ParseResult {
+                output: Some(
+                    "",
+                ),
+                errs: [],
+            }
+            "###);
+            assert_debug_snapshot!(
+                comment().parse("# asdf # blarg"),
+                @r###"
+            ParseResult {
+                output: Some(
+                    "asdf # blarg",
+                ),
+                errs: [],
+            }
+            "###
             );
-            assert!(comment().parse(" # asdf # blarg").into_result().is_err());
+            assert_debug_snapshot!(comment().parse(" # asdf # blarg"), @r###"
+            ParseResult {
+                output: None,
+                errs: [
+                    found '' '' at 0..1 expected "comment",
+                ],
+            }
+            "###);
         }
 
         fn test_exp<'a>() -> impl Parser<'a, &'a str, TestExp<'a>, ParseError<'a>> {
@@ -260,28 +337,42 @@ pub(crate) mod wpt {
 
         #[test]
         fn smoke_test_exp() {
-            assert_eq!(
-                test_exp().parse("[stuff and things]\n").into_result(),
-                Ok(TestExp {
-                    name: "stuff and things",
-                    properties: IndexMap::new(),
-                    subtests: IndexMap::new(),
-                    span: SimpleSpan::new(0, 19),
-                })
+            assert_debug_snapshot!(
+                test_exp().parse("[stuff and things]\n"),
+                @r###"
+            ParseResult {
+                output: Some(
+                    TestExp {
+                        name: "stuff and things",
+                        properties: {},
+                        subtests: {},
+                        span: 0..19,
+                    },
+                ),
+                errs: [],
+            }
+            "###
             );
-            assert_eq!(
+            assert_debug_snapshot!(
                 test_exp()
-                    .parse("[stuff and things]\n  expected: PASS\n")
-                    .into_result(),
-                Ok(TestExp {
-                    name: "stuff and things",
-                    properties: IndexMap::from_iter([(
-                        "expected",
-                        PropertyValue::Unconditional("PASS")
-                    ),]),
-                    subtests: IndexMap::new(),
-                    span: SimpleSpan::new(0, 36),
-                })
+                    .parse("[stuff and things]\n  expected: PASS\n"),
+                @r###"
+            ParseResult {
+                output: Some(
+                    TestExp {
+                        name: "stuff and things",
+                        properties: {
+                            "expected": Unconditional(
+                                "PASS",
+                            ),
+                        },
+                        subtests: {},
+                        span: 0..36,
+                    },
+                ),
+                errs: [],
+            }
+            "###
             );
         }
 
@@ -321,13 +412,38 @@ pub(crate) mod wpt {
 
         #[test]
         fn smoke_section_name() {
-            assert!(section_name(0).parse("hoot").into_result().is_err());
-            assert_eq!(section_name(0).parse("[hoot]").into_result(), Ok("hoot"));
-            assert_eq!(
-                section_name(0).parse("[asdf\\]blarg]").into_result(),
-                Ok("asdf\\]blarg")
-            );
-            assert!(section_name(0).parse("[asdf]blarg]").into_result().is_err());
+            assert_debug_snapshot!(section_name(0).parse("hoot"), @r###"
+            ParseResult {
+                output: None,
+                errs: [
+                    found ''h'' at 0..1 expected ''['',
+                ],
+            }
+            "###);
+            assert_debug_snapshot!(section_name(0).parse("[hoot]"), @r###"
+            ParseResult {
+                output: Some(
+                    "hoot",
+                ),
+                errs: [],
+            }
+            "###);
+            assert_debug_snapshot!(section_name(0).parse("[asdf\\]blarg]"), @r###"
+            ParseResult {
+                output: Some(
+                    "asdf\\]blarg",
+                ),
+                errs: [],
+            }
+            "###            );
+            assert_debug_snapshot!(section_name(0).parse("[asdf]blarg]"), @r###"
+            ParseResult {
+                output: None,
+                errs: [
+                    found ''b'' at 6..7 expected something else,
+                ],
+            }
+            "###);
         }
     }
 }
