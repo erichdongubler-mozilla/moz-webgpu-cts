@@ -130,7 +130,7 @@ fn run(cli: Cli) -> ExitCode {
                                     let error = miette::Report::new(error);
                                     log::error!("{error:?}");
                                 }
-                                return None;
+                                None
                             }
                         }
                     })
