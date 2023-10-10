@@ -838,7 +838,7 @@ pub mod metadata {
                 ),
                 errs: [],
             }
-            "###            );
+            "###);
         assert_debug_snapshot!(section_name(0).parse("[asdf]blarg]"), @r###"
             ParseResult {
                 output: None,
