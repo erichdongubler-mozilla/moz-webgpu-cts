@@ -185,7 +185,7 @@ fn smoke_parser() {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Test<'a> {
     pub name: String,
-    pub properties: IndexMap<&'a str, PropertyValue<'a>>,
+    pub properties: IndexMap<&'a str, PropertyValue<&'a str, &'a str>>,
     pub subtests: IndexMap<String, Subtest<'a>>,
     span: SimpleSpan,
 }
@@ -195,7 +195,7 @@ pub struct Test<'a> {
 /// See [`File`] for more details for the human-readable format this corresponds to.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Subtest<'a> {
-    pub properties: IndexMap<&'a str, PropertyValue<'a>>,
+    pub properties: IndexMap<&'a str, PropertyValue<&'a str, &'a str>>,
 }
 
 /// A property value in a [`File`], [`Test`], or [`Subtest`]. Can be "unconditional"  or
@@ -203,23 +203,23 @@ pub struct Subtest<'a> {
 ///
 /// See [`File`] for more details for the human-readable format this corresponds to.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum PropertyValue<'a> {
+pub enum PropertyValue<C, V> {
     /// A property value that is only ever a specific value.
-    Unconditional(&'a str),
+    Unconditional(V),
     /// A property value that must be computed from variables provided by an evaluator. Usually,
     /// these variables do not vary between test runs on the same machine.
     ///
     /// Upstream documentation: [`Conditional Values`](https://web-platform-tests.org/tools/wptrunner/docs/expectation.html#conditional-values)
     Conditional {
-        conditions: Vec<(Condition<'a>, &'a str)>,
-        fallback: Option<&'a str>,
+        conditions: Vec<(Condition<C>, V)>,
+        fallback: Option<V>,
     },
 }
 
 /// A (yet-to-be) strongly typed correspondent to conditions that can be used in
 /// [`PropertyValue::Conditional`].
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Condition<'a>(&'a str);
+pub struct Condition<T>(T);
 
 fn comment<'a>(indentation: u8) -> impl Parser<'a, &'a str, &'a str, ParseError<'a>> {
     group((indent(indentation), just('#'), just(' ').or_not()))
@@ -376,11 +376,11 @@ fn test<'a>() -> impl Parser<'a, &'a str, Test<'a>, ParseError<'a>> {
     enum Item<'a> {
         Subtest {
             name: String,
-            properties: IndexMap<&'a str, PropertyValue<'a>>,
+            properties: IndexMap<&'a str, PropertyValue<&'a str, &'a str>>,
         },
         Property {
             key: &'a str,
-            value: PropertyValue<'a>,
+            value: PropertyValue<&'a str, &'a str>,
         },
         Newline,
         Comment,
@@ -493,7 +493,7 @@ fn smoke_test() {
 
 fn property<'a>(
     indentation: u8,
-) -> impl Parser<'a, &'a str, (&'a str, PropertyValue<'a>), ParseError<'a>> {
+) -> impl Parser<'a, &'a str, (&'a str, PropertyValue<&'a str, &'a str>), ParseError<'a>> {
     let conditional_indent_level = indentation
         .checked_add(1)
         .expect("unexpectedly high indentation level");
@@ -534,7 +534,7 @@ fn unconditional_value<'a>() -> impl Parser<'a, &'a str, &'a str, ParseError<'a>
 
 fn conditional_rule<'a>(
     indentation: u8,
-) -> impl Parser<'a, &'a str, (Condition<'a>, &'a str), ParseError<'a>> {
+) -> impl Parser<'a, &'a str, (Condition<&'a str>, &'a str), ParseError<'a>> {
     group((indent(indentation), keyword("if"), just(' ')))
         .ignore_then(
             any()
@@ -660,7 +660,8 @@ fn test_conditional_fallback() {
 
 fn conditional_value<'a>(
     indentation: u8,
-) -> impl Parser<'a, &'a str, (Vec<(Condition<'a>, &'a str)>, Option<&'a str>), ParseError<'a>> {
+) -> impl Parser<'a, &'a str, (Vec<(Condition<&'a str>, &'a str)>, Option<&'a str>), ParseError<'a>>
+{
     newline()
         .ignore_then(conditional_rule(indentation).repeated().collect::<Vec<_>>())
         .then(conditional_fallback(indentation).or_not())
