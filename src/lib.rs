@@ -1,4 +1,14 @@
 pub mod metadata {
+    //! Contains data structures and logic for constructing them by parsing from . The main entry
+    //! point for this module is the [`File`] API.
+    //!
+    //! Documentation for types in this module refer liberally to the [WPT metadata format],
+    //! particularly the [`Web-Platform-Tests Metadata` section]. It is recommended that you
+    //! familiarize yourself with this document, if you plan to use this API.
+    //!
+    //! [WPT metadata format]: https://web-platform-tests.org/tools/wptrunner/docs/expectation.html#metadata-format
+    //! [`Web-Platform-Tests Metadata` section]: https://web-platform-tests.org/tools/wptrunner/docs/expectation.html#web-platform-tests-metadata
+
     #[cfg(test)]
     use insta::assert_debug_snapshot;
 
@@ -12,14 +22,27 @@ pub mod metadata {
     };
     use indexmap::IndexMap;
 
+    /// An error emitted by [`File::parser`] and [other WPT metadata parsing logic][self].
     pub type ParseError<'a> = Full<Rich<'a, char>, (), ()>;
 
+    /// Represents the contents of a single file written in the [WPT metadata format][self]. It can
+    /// be constructed from this format using [`Self::parser`].
+    ///
+    /// N.B. that you should not only use the data represented in this structure to compute test
+    /// metadata. It is _not_ complete by itself, because of the existence of layering in WPT
+    /// metadata (i.e., [`__dir__.ini`] files).
+    ///
+    /// [`__dir__.ini`]: https://web-platform-tests.org/tools/wptrunner/docs/expectation.html#directory-metadata
     #[derive(Clone, Debug)]
     pub struct File<'a> {
         pub tests: Vec<Test<'a>>,
     }
 
     impl<'a> File<'a> {
+        /// Returns a parser for a single file written in the [WPT metadata format][self].
+        ///
+        /// No attempt is made to reconcile the provided string with additional layers of
+        /// configuration. See [`Self`] for more details.
         pub fn parser() -> impl Parser<'a, &'a str, File<'a>, ParseError<'a>> {
             filler()
                 .ignore_then(test())
@@ -157,6 +180,9 @@ pub mod metadata {
         "###);
     }
 
+    /// A single first-level section in a [`File`].
+    ///
+    /// See [`File`] for more details for the human-readable format this corresponds to.
     #[derive(Clone, Debug, Eq, PartialEq)]
     pub struct Test<'a> {
         pub name: String,
@@ -165,15 +191,26 @@ pub mod metadata {
         span: SimpleSpan,
     }
 
+    /// A property value in a [`File`], [`Test`], or [`Subtest`]. Can be "unconditional"  or
+    /// "conditional" (runtime-evaluated).
+    ///
+    /// See [`File`] for more details for the human-readable format this corresponds to.
     #[derive(Clone, Debug, Eq, PartialEq)]
     pub enum PropertyValue<'a> {
+        /// A property value that is only ever a specific value.
         Unconditional(&'a str),
+        /// A property value that must be computed from variables provided by an evaluator.
+        /// Usually, these variables do not vary between test runs on the same machine.
+        ///
+        /// Upstream documentation: [`Conditional Values`](https://web-platform-tests.org/tools/wptrunner/docs/expectation.html#conditional-values)
         Conditional {
             conditions: Vec<(Condition<'a>, &'a str)>,
             fallback: Option<&'a str>,
         },
     }
 
+    /// A (yet-to-be) strongly typed correspondent to conditions that can be used in
+    /// [`PropertyValue::Conditional`].
     #[derive(Clone, Debug, Eq, PartialEq)]
     pub struct Condition<'a>(&'a str);
 
