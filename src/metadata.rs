@@ -223,7 +223,7 @@ pub struct Condition<'a>(&'a str);
 
 fn comment<'a>(indentation: u8) -> impl Parser<'a, &'a str, &'a str, ParseError<'a>> {
     group((indent(indentation), just('#'), just(' ').or_not()))
-        .ignore_then(any().and_is(newline().not()).repeated().slice())
+        .ignore_then(any().and_is(newline().not()).repeated().to_slice())
         .then_ignore(choice((newline(), end())))
         .labelled("comment")
 }
@@ -413,20 +413,20 @@ fn test<'a>() -> impl Parser<'a, &'a str, Test<'a>, ParseError<'a>> {
     ))
     .repeated()
     .collect::<Vec<_>>()
-    .validate(|items, _span, emitter| {
+    .validate(|items, e, emitter| {
         let mut properties = IndexMap::new();
         let mut subtests = IndexMap::new();
         for item in items {
             match item {
                 Item::Property { key, value } => {
                     if let Some(_old) = properties.insert(key, value) {
-                        emitter.emit(Rich::custom(_span, format!("duplicate {key} property")))
+                        emitter.emit(Rich::custom(e.span(), format!("duplicate {key} property")))
                     }
                 }
                 Item::Subtest { name, properties } => {
                     if subtests.contains_key(&name) {
                         // TODO: use old and new item span, better msg.
-                        emitter.emit(Rich::custom(_span, format!("duplicate {name} subtest")))
+                        emitter.emit(Rich::custom(e.span(), format!("duplicate {name} subtest")))
                     }
                     subtests.insert(name, Subtest { properties });
                 }
@@ -442,9 +442,9 @@ fn test<'a>() -> impl Parser<'a, &'a str, Test<'a>, ParseError<'a>> {
 
     test_header
         .then(items)
-        .map_with_span(|(name, (properties, subtests)), span| Test {
+        .map_with(|(name, (properties, subtests)), e| Test {
             name,
-            span,
+            span: e.span(),
             properties,
             subtests,
         })
@@ -527,7 +527,7 @@ fn unconditional_value<'a>() -> impl Parser<'a, &'a str, &'a str, ParseError<'a>
         .and_is(newline().not())
         .repeated()
         .at_least(1)
-        .slice()
+        .to_slice()
         .then_ignore(newline())
         .labelled("unconditional value")
 }
@@ -540,14 +540,14 @@ fn conditional_rule<'a>(
             any()
                 .and_is(choice((newline(), just(":").to(()))).not())
                 .repeated()
-                .slice()
+                .to_slice()
                 .map(Condition)
                 .then_ignore(group((just(':'), inline_whitespace())))
                 .then(
                     any()
                         .and_is(choice((newline(), just(':').to(()))).not())
                         .repeated()
-                        .slice(),
+                        .to_slice(),
                 ),
         )
         .then_ignore(newline().or(end()))
@@ -560,7 +560,7 @@ fn conditional_fallback<'a>(indentation: u8) -> impl Parser<'a, &'a str, &'a str
             keyword("if")
                 .not()
                 .ignore_then(any().and_is(newline().not()).repeated())
-                .slice(),
+                .to_slice(),
         )
         .then_ignore(newline().or(end()))
         .labelled("conditional value fallback")
@@ -664,10 +664,10 @@ fn conditional_value<'a>(
     newline()
         .ignore_then(conditional_rule(indentation).repeated().collect::<Vec<_>>())
         .then(conditional_fallback(indentation).or_not())
-        .validate(|(conditions, fallback), span, emitter| {
+        .validate(|(conditions, fallback), e, emitter| {
             if conditions.is_empty() && fallback.is_none() {
                 emitter.emit(Rich::custom(
-                    span,
+                    e.span(),
                     concat!(
                         "this conditional property value has no conditional ",
                         "rules or fallback specified",
@@ -839,10 +839,10 @@ fn section_name<'a>(indentation: u8) -> impl Parser<'a, &'a str, String, ParseEr
         }
         Ok(escaped_name)
     })
-    .validate(|escaped_name, span, emitter| {
+    .validate(|escaped_name, e, emitter| {
         for (idx, c) in escaped_name.char_indices() {
             if c.is_control() {
-                let span_idx = span.start.checked_add(idx).unwrap();
+                let span_idx = e.span().start.checked_add(idx).unwrap();
                 emitter.emit(Rich::custom(
                     SimpleSpan::new(span_idx, span_idx),
                     "found illegal character in section header",
