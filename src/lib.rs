@@ -39,122 +39,122 @@ pub mod metadata {
         assert_debug_snapshot!(
             File::parser().parse(""),
             @r###"
-            ParseResult {
-                output: Some(
-                    File {
-                        tests: [],
-                    },
-                ),
-                errs: [],
-            }
-            "###
+        ParseResult {
+            output: Some(
+                File {
+                    tests: [],
+                },
+            ),
+            errs: [],
+        }
+        "###
         );
         assert_debug_snapshot!(File::parser().parse("[hoot]"), @r###"
-            ParseResult {
-                output: None,
-                errs: [
-                    found end of input at 6..6 expected ''\r'', or ''\n'',
-                ],
-            }
-            "###);
+        ParseResult {
+            output: None,
+            errs: [
+                found end of input at 6..6 expected ''\r'', or ''\n'',
+            ],
+        }
+        "###);
         assert_debug_snapshot!(File::parser().parse("[blarg]\n"), @r###"
-            ParseResult {
-                output: Some(
-                    File {
-                        tests: [
-                            Test {
-                                name: "blarg",
-                                properties: {},
-                                subtests: {},
-                                span: 0..8,
-                            },
-                        ],
-                    },
-                ),
-                errs: [],
-            }
-            "###);
+        ParseResult {
+            output: Some(
+                File {
+                    tests: [
+                        Test {
+                            name: "blarg",
+                            properties: {},
+                            subtests: {},
+                            span: 0..8,
+                        },
+                    ],
+                },
+            ),
+            errs: [],
+        }
+        "###);
         assert_debug_snapshot!(File::parser().parse("[blarg]\n[stuff]"), @r###"
-            ParseResult {
-                output: None,
-                errs: [
-                    found end of input at 15..15 expected ''\r'', or ''\n'',
-                ],
-            }
-            "###);
+        ParseResult {
+            output: None,
+            errs: [
+                found end of input at 15..15 expected ''\r'', or ''\n'',
+            ],
+        }
+        "###);
         assert_debug_snapshot!(File::parser().parse("\n[blarg]\n[stuff]\n"), @r###"
-            ParseResult {
-                output: Some(
-                    File {
-                        tests: [
-                            Test {
-                                name: "blarg",
-                                properties: {},
-                                subtests: {},
-                                span: 1..9,
-                            },
-                            Test {
-                                name: "stuff",
-                                properties: {},
-                                subtests: {},
-                                span: 9..17,
-                            },
-                        ],
-                    },
-                ),
-                errs: [],
-            }
-            "###);
+        ParseResult {
+            output: Some(
+                File {
+                    tests: [
+                        Test {
+                            name: "blarg",
+                            properties: {},
+                            subtests: {},
+                            span: 1..9,
+                        },
+                        Test {
+                            name: "stuff",
+                            properties: {},
+                            subtests: {},
+                            span: 9..17,
+                        },
+                    ],
+                },
+            ),
+            errs: [],
+        }
+        "###);
         assert_debug_snapshot!(File::parser().parse("\n[blarg]\n\n[stuff]\n"), @r###"
-            ParseResult {
-                output: Some(
-                    File {
-                        tests: [
-                            Test {
-                                name: "blarg",
-                                properties: {},
-                                subtests: {},
-                                span: 1..10,
-                            },
-                            Test {
-                                name: "stuff",
-                                properties: {},
-                                subtests: {},
-                                span: 10..18,
-                            },
-                        ],
-                    },
-                ),
-                errs: [],
-            }
-            "###);
+        ParseResult {
+            output: Some(
+                File {
+                    tests: [
+                        Test {
+                            name: "blarg",
+                            properties: {},
+                            subtests: {},
+                            span: 1..10,
+                        },
+                        Test {
+                            name: "stuff",
+                            properties: {},
+                            subtests: {},
+                            span: 10..18,
+                        },
+                    ],
+                },
+            ),
+            errs: [],
+        }
+        "###);
         assert_debug_snapshot!(File::parser().parse("\n[blarg]\n  expected: PASS\n[stuff]\n"), @r###"
-            ParseResult {
-                output: Some(
-                    File {
-                        tests: [
-                            Test {
-                                name: "blarg",
-                                properties: {
-                                    "expected": Unconditional(
-                                        "PASS",
-                                    ),
-                                },
-                                subtests: {},
-                                span: 1..26,
+        ParseResult {
+            output: Some(
+                File {
+                    tests: [
+                        Test {
+                            name: "blarg",
+                            properties: {
+                                "expected": Unconditional(
+                                    "PASS",
+                                ),
                             },
-                            Test {
-                                name: "stuff",
-                                properties: {},
-                                subtests: {},
-                                span: 26..34,
-                            },
-                        ],
-                    },
-                ),
-                errs: [],
-            }
-            "###);
+                            subtests: {},
+                            span: 1..26,
+                        },
+                        Test {
+                            name: "stuff",
+                            properties: {},
+                            subtests: {},
+                            span: 26..34,
+                        },
+                    ],
+                },
+            ),
+            errs: [],
+        }
+        "###);
     }
 
     #[derive(Clone, Debug, Eq, PartialEq)]
@@ -195,136 +195,136 @@ pub mod metadata {
         }
         "###);
         assert_debug_snapshot!(comment(0).parse("# asdf"), @r###"
-            ParseResult {
-                output: Some(
-                    "asdf",
-                ),
-                errs: [],
-            }
-            "###);
+        ParseResult {
+            output: Some(
+                "asdf",
+            ),
+            errs: [],
+        }
+        "###);
         assert_debug_snapshot!(comment(0).parse("# "), @r###"
-            ParseResult {
-                output: Some(
-                    "",
-                ),
-                errs: [],
-            }
-            "###);
+        ParseResult {
+            output: Some(
+                "",
+            ),
+            errs: [],
+        }
+        "###);
         assert_debug_snapshot!(comment(0).parse("#"), @r###"
-            ParseResult {
-                output: Some(
-                    "",
-                ),
-                errs: [],
-            }
-            "###);
+        ParseResult {
+            output: Some(
+                "",
+            ),
+            errs: [],
+        }
+        "###);
         assert_debug_snapshot!(
             comment(0).parse("# asdf # blarg"),
             @r###"
-            ParseResult {
-                output: Some(
-                    "asdf # blarg",
-                ),
-                errs: [],
-            }
-            "###
+        ParseResult {
+            output: Some(
+                "asdf # blarg",
+            ),
+            errs: [],
+        }
+        "###
         );
         assert_debug_snapshot!(comment(0).parse(" # asdf # blarg"), @r###"
-            ParseResult {
-                output: None,
-                errs: [
-                    found '' '' at 0..1 expected "comment",
-                ],
-            }
-            "###);
+        ParseResult {
+            output: None,
+            errs: [
+                found '' '' at 0..1 expected "comment",
+            ],
+        }
+        "###);
         assert_debug_snapshot!(comment(0).parse("  # asdf # blarg"), @r###"
-            ParseResult {
-                output: None,
-                errs: [
-                    found '' '' at 0..1 expected "comment",
-                ],
-            }
-            "###);
+        ParseResult {
+            output: None,
+            errs: [
+                found '' '' at 0..1 expected "comment",
+            ],
+        }
+        "###);
         assert_debug_snapshot!(comment(1).parse("    # asdf # blarg"), @r###"
-            ParseResult {
-                output: None,
-                errs: [
-                    found '' '' at 2..3 expected something else,
-                ],
-            }
-            "###);
+        ParseResult {
+            output: None,
+            errs: [
+                found '' '' at 2..3 expected something else,
+            ],
+        }
+        "###);
         assert_debug_snapshot!(comment(1).parse("   # asdf # blarg"), @r###"
-            ParseResult {
-                output: None,
-                errs: [
-                    found '' '' at 2..3 expected something else,
-                ],
-            }
-            "###);
+        ParseResult {
+            output: None,
+            errs: [
+                found '' '' at 2..3 expected something else,
+            ],
+        }
+        "###);
         assert_debug_snapshot!(comment(1).parse(" # asdf # blarg"), @r###"
-            ParseResult {
-                output: None,
-                errs: [
-                    found ''#'' at 1..2 expected '' '',
-                ],
-            }
-                "###);
+        ParseResult {
+            output: None,
+            errs: [
+                found ''#'' at 1..2 expected '' '',
+            ],
+        }
+        "###);
         assert_debug_snapshot!(comment(1).parse("# asdf # blarg"), @r###"
-            ParseResult {
-                output: None,
-                errs: [
-                    found ''#'' at 0..1 expected "comment",
-                ],
-            }
-            "###);
+        ParseResult {
+            output: None,
+            errs: [
+                found ''#'' at 0..1 expected "comment",
+            ],
+        }
+        "###);
         assert_debug_snapshot!(comment(2).parse("      # asdf # blarg"), @r###"
-            ParseResult {
-                output: None,
-                errs: [
-                        found '' '' at 4..5 expected something else,
-                    ],
-            }
-            "###);
+        ParseResult {
+            output: None,
+            errs: [
+                found '' '' at 4..5 expected something else,
+            ],
+        }
+        "###);
         assert_debug_snapshot!(comment(2).parse("     # asdf # blarg"), @r###"
-            ParseResult {
-                output: None,
-                errs: [
-                    found '' '' at 4..5 expected something else,
-                ],
-            }
-            "###);
+        ParseResult {
+            output: None,
+            errs: [
+                found '' '' at 4..5 expected something else,
+            ],
+        }
+        "###);
         assert_debug_snapshot!(comment(2).parse("    # asdf # blarg"), @r###"
-            ParseResult {
-                output: Some(
-                    "asdf # blarg",
-                ),
-                errs: [],
-            }
-            "###);
+        ParseResult {
+            output: Some(
+                "asdf # blarg",
+            ),
+            errs: [],
+        }
+        "###);
         assert_debug_snapshot!(comment(2).parse("   # asdf # blarg"), @r###"
-            ParseResult {
-                output: None,
-                errs: [
-                    found ''#'' at 3..4 expected '' '',
-                ],
-            }
-            "###);
+        ParseResult {
+            output: None,
+            errs: [
+                found ''#'' at 3..4 expected '' '',
+            ],
+        }
+        "###);
         assert_debug_snapshot!(comment(2).parse(" # asdf # blarg"), @r###"
-            ParseResult {
-                output: None,
-                errs: [
-                    found ''#'' at 1..2 expected '' '',
-                ],
-            }
-            "###);
+        ParseResult {
+            output: None,
+            errs: [
+                found ''#'' at 1..2 expected '' '',
+            ],
+        }
+        "###);
         assert_debug_snapshot!(comment(2).parse("# asdf # blarg"), @r###"
-            ParseResult {
-                output: None,
-                errs: [
-                    found ''#'' at 0..1 expected "comment",
-                ],
-            }
-            "###);
+        ParseResult {
+            output: None,
+            errs: [
+                found ''#'' at 0..1 expected "comment",
+            ],
+        }
+        "###);
     }
 
     fn test<'a>() -> impl Parser<'a, &'a str, Test<'a>, ParseError<'a>> {
@@ -411,39 +411,39 @@ pub mod metadata {
         assert_debug_snapshot!(
             test().parse("[stuff and things]\n"),
             @r###"
-            ParseResult {
-                output: Some(
-                    Test {
-                        name: "stuff and things",
-                        properties: {},
-                        subtests: {},
-                        span: 0..19,
-                    },
-                ),
-                errs: [],
-            }
-            "###
+        ParseResult {
+            output: Some(
+                Test {
+                    name: "stuff and things",
+                    properties: {},
+                    subtests: {},
+                    span: 0..19,
+                },
+            ),
+            errs: [],
+        }
+        "###
         );
         assert_debug_snapshot!(
             test()
                 .parse("[stuff and things]\n  expected: PASS\n"),
             @r###"
-            ParseResult {
-                output: Some(
-                    Test {
-                        name: "stuff and things",
-                        properties: {
-                            "expected": Unconditional(
-                                "PASS",
-                            ),
-                        },
-                        subtests: {},
-                        span: 0..36,
+        ParseResult {
+            output: Some(
+                Test {
+                    name: "stuff and things",
+                    properties: {
+                        "expected": Unconditional(
+                            "PASS",
+                        ),
                     },
-                ),
-                errs: [],
-            }
-            "###
+                    subtests: {},
+                    span: 0..36,
+                },
+            ),
+            errs: [],
+        }
+        "###
         );
     }
 
@@ -527,93 +527,93 @@ pub mod metadata {
     #[test]
     fn test_conditional_fallback() {
         assert_debug_snapshot!(conditional_fallback(0).parse("[PASS, FAIL]"), @r###"
-            ParseResult {
-                output: Some(
-                    "[PASS, FAIL]",
-                ),
-                errs: [],
-            }
-            "###);
+        ParseResult {
+            output: Some(
+                "[PASS, FAIL]",
+            ),
+            errs: [],
+        }
+        "###);
         assert_debug_snapshot!(conditional_fallback(0).parse(r#""okgo""#), @r###"
-            ParseResult {
-                output: Some(
-                    "\"okgo\"",
-                ),
-                errs: [],
-            }
-            "###);
+        ParseResult {
+            output: Some(
+                "\"okgo\"",
+            ),
+            errs: [],
+        }
+        "###);
         assert_debug_snapshot!(conditional_fallback(0).parse(""), @r###"
-            ParseResult {
-                output: Some(
-                    "",
-                ),
-                errs: [],
-            }
-            "###);
+        ParseResult {
+            output: Some(
+                "",
+            ),
+            errs: [],
+        }
+        "###);
         assert_debug_snapshot!(conditional_fallback(1).parse(""), @r###"
-            ParseResult {
-                output: None,
-                errs: [
-                    found end of input at 0..0 expected '' '',
-                ],
-            }
-            "###);
+        ParseResult {
+            output: None,
+            errs: [
+                found end of input at 0..0 expected '' '',
+            ],
+        }
+        "###);
         assert_debug_snapshot!(conditional_fallback(1).parse("  "), @r###"
-            ParseResult {
-                output: Some(
-                    "",
-                ),
-                errs: [],
-            }
-            "###);
+        ParseResult {
+            output: Some(
+                "",
+            ),
+            errs: [],
+        }
+        "###);
         assert_debug_snapshot!(conditional_fallback(1).parse("  @False"), @r###"
-            ParseResult {
-                output: Some(
-                    "@False",
-                ),
-                errs: [],
-            }
-            "###);
+        ParseResult {
+            output: Some(
+                "@False",
+            ),
+            errs: [],
+        }
+        "###);
         assert_debug_snapshot!(conditional_fallback(1).parse("    @False"), @r###"
-            ParseResult {
-                output: None,
-                errs: [
-                    found '' '' at 2..3 expected something else,
-                ],
-            }
-            "###);
+        ParseResult {
+            output: None,
+            errs: [
+                found '' '' at 2..3 expected something else,
+            ],
+        }
+        "###);
         assert_debug_snapshot!(conditional_fallback(3).parse(""), @r###"
-            ParseResult {
-                output: None,
-                errs: [
-                    found end of input at 0..0 expected '' '',
-                ],
-            }
-            "###);
+        ParseResult {
+            output: None,
+            errs: [
+                found end of input at 0..0 expected '' '',
+            ],
+        }
+        "###);
         assert_debug_snapshot!(conditional_fallback(3).parse("      "), @r###"
-            ParseResult {
-                output: Some(
-                    "",
-                ),
-                errs: [],
-            }
-            "###);
+        ParseResult {
+            output: Some(
+                "",
+            ),
+            errs: [],
+        }
+        "###);
         assert_debug_snapshot!(conditional_fallback(3).parse("      @True"), @r###"
-            ParseResult {
-                output: Some(
-                    "@True",
-                ),
-                errs: [],
-            }
-            "###);
+        ParseResult {
+            output: Some(
+                "@True",
+            ),
+            errs: [],
+        }
+        "###);
         assert_debug_snapshot!(conditional_fallback(3).parse("        @True"), @r###"
-            ParseResult {
-                output: None,
-                errs: [
-                    found '' '' at 6..7 expected something else,
-                ],
-            }
-            "###);
+        ParseResult {
+            output: None,
+            errs: [
+                found '' '' at 6..7 expected something else,
+            ],
+        }
+        "###);
     }
 
     fn conditional_value<'a>(
@@ -650,125 +650,125 @@ pub mod metadata {
     #[test]
     fn test_indent() {
         assert_debug_snapshot!(indent(0).parse(""), @r###"
-            ParseResult {
-                output: Some(
-                    (),
-                ),
-                errs: [],
-            }
-            "###);
+        ParseResult {
+            output: Some(
+                (),
+            ),
+            errs: [],
+        }
+        "###);
         assert_debug_snapshot!(indent(0).parse(" "), @r###"
-            ParseResult {
-                output: None,
-                errs: [
-                    found '' '' at 0..1 expected "indentation at the proper level",
-                ],
-            }
-            "###);
+        ParseResult {
+            output: None,
+            errs: [
+                found '' '' at 0..1 expected "indentation at the proper level",
+            ],
+        }
+        "###);
         assert_debug_snapshot!(indent(0).parse("  "), @r###"
-            ParseResult {
-                output: None,
-                errs: [
-                    found '' '' at 0..1 expected "indentation at the proper level",
-                ],
-            }
-            "###);
+        ParseResult {
+            output: None,
+            errs: [
+                found '' '' at 0..1 expected "indentation at the proper level",
+            ],
+        }
+        "###);
         assert_debug_snapshot!(indent(1).parse(""), @r###"
-            ParseResult {
-                output: None,
-                errs: [
-                    found end of input at 0..0 expected '' '',
-                ],
-            }
-            "###);
+        ParseResult {
+            output: None,
+            errs: [
+                found end of input at 0..0 expected '' '',
+            ],
+        }
+        "###);
         assert_debug_snapshot!(indent(1).parse(" "), @r###"
-            ParseResult {
-                output: None,
-                errs: [
-                    found end of input at 1..1 expected "indentation at the proper level",
-                ],
-            }
-            "###);
+        ParseResult {
+            output: None,
+            errs: [
+                found end of input at 1..1 expected "indentation at the proper level",
+            ],
+        }
+        "###);
         assert_debug_snapshot!(indent(1).parse("  "), @r###"
-            ParseResult {
-                output: Some(
-                    (),
-                ),
-                errs: [],
-            }
-            "###);
+        ParseResult {
+            output: Some(
+                (),
+            ),
+            errs: [],
+        }
+        "###);
         assert_debug_snapshot!(indent(1).parse("   "), @r###"
-            ParseResult {
-                output: None,
-                errs: [
-                    found '' '' at 2..3 expected something else,
-                ],
-            }
-            "###);
+        ParseResult {
+            output: None,
+            errs: [
+                found '' '' at 2..3 expected something else,
+            ],
+        }
+        "###);
         assert_debug_snapshot!(indent(1).parse("    "), @r###"
-            ParseResult {
-                output: None,
-                errs: [
-                    found '' '' at 2..3 expected something else,
-                ],
-            }
-            "###);
+        ParseResult {
+            output: None,
+            errs: [
+                found '' '' at 2..3 expected something else,
+            ],
+        }
+        "###);
         assert_debug_snapshot!(indent(2).parse(""), @r###"
-            ParseResult {
-                output: None,
-                errs: [
-                    found end of input at 0..0 expected '' '',
-                ],
-            }
-            "###);
+        ParseResult {
+            output: None,
+            errs: [
+                found end of input at 0..0 expected '' '',
+            ],
+        }
+        "###);
         assert_debug_snapshot!(indent(2).parse(" "), @r###"
-            ParseResult {
-                output: None,
-                errs: [
-                    found end of input at 1..1 expected "indentation at the proper level",
-                ],
-            }
-            "###);
+        ParseResult {
+            output: None,
+            errs: [
+                found end of input at 1..1 expected "indentation at the proper level",
+            ],
+        }
+        "###);
         assert_debug_snapshot!(indent(2).parse("  "), @r###"
-            ParseResult {
-                output: None,
-                errs: [
-                    found end of input at 2..2 expected '' '',
-                ],
-            }
-            "###);
+        ParseResult {
+            output: None,
+            errs: [
+                found end of input at 2..2 expected '' '',
+            ],
+        }
+        "###);
         assert_debug_snapshot!(indent(2).parse("   "), @r###"
-            ParseResult {
-                output: None,
-                errs: [
-                    found end of input at 3..3 expected '' '',
-                ],
-            }
-            "###);
+        ParseResult {
+            output: None,
+            errs: [
+                found end of input at 3..3 expected '' '',
+            ],
+        }
+        "###);
         assert_debug_snapshot!(indent(2).parse("    "), @r###"
-            ParseResult {
-                output: Some(
-                    (),
-                ),
-                errs: [],
-            }
-            "###);
+        ParseResult {
+            output: Some(
+                (),
+            ),
+            errs: [],
+        }
+        "###);
         assert_debug_snapshot!(indent(2).parse("     "), @r###"
-            ParseResult {
-                output: None,
-                errs: [
-                    found '' '' at 4..5 expected something else,
-                ],
-            }
-            "###);
+        ParseResult {
+            output: None,
+            errs: [
+                found '' '' at 4..5 expected something else,
+            ],
+        }
+        "###);
         assert_debug_snapshot!(indent(2).parse("      "), @r###"
-            ParseResult {
-                output: None,
-                errs: [
-                    found '' '' at 4..5 expected something else,
-                ],
-            }
-            "###);
+        ParseResult {
+            output: None,
+            errs: [
+                found '' '' at 4..5 expected something else,
+            ],
+        }
+        "###);
     }
 
     fn section_name<'a>(indentation: u8) -> impl Parser<'a, &'a str, String, ParseError<'a>> {
@@ -816,36 +816,36 @@ pub mod metadata {
     #[test]
     fn smoke_section_name() {
         assert_debug_snapshot!(section_name(0).parse("hoot"), @r###"
-            ParseResult {
-                output: None,
-                errs: [
-                    found ''h'' at 0..1 expected ''['',
-                ],
-            }
-            "###);
+        ParseResult {
+            output: None,
+            errs: [
+                found ''h'' at 0..1 expected ''['',
+            ],
+        }
+        "###);
         assert_debug_snapshot!(section_name(0).parse("[hoot]"), @r###"
-            ParseResult {
-                output: Some(
-                    "hoot",
-                ),
-                errs: [],
-            }
-            "###);
+        ParseResult {
+            output: Some(
+                "hoot",
+            ),
+            errs: [],
+        }
+        "###);
         assert_debug_snapshot!(section_name(0).parse("[asdf\\]blarg]"), @r###"
-            ParseResult {
-                output: Some(
-                    "asdf]blarg",
-                ),
-                errs: [],
-            }
-            "###);
+        ParseResult {
+            output: Some(
+                "asdf]blarg",
+            ),
+            errs: [],
+        }
+        "###);
         assert_debug_snapshot!(section_name(0).parse("[asdf]blarg]"), @r###"
-            ParseResult {
-                output: None,
-                errs: [
-                    found ''b'' at 6..7 expected something else,
-                ],
-            }
-            "###);
+        ParseResult {
+            output: None,
+            errs: [
+                found ''b'' at 6..7 expected something else,
+            ],
+        }
+        "###);
     }
 }
