@@ -187,8 +187,16 @@ pub mod metadata {
     pub struct Test<'a> {
         pub name: String,
         pub properties: IndexMap<&'a str, PropertyValue<'a>>,
-        pub subtests: IndexMap<String, IndexMap<&'a str, PropertyValue<'a>>>,
+        pub subtests: IndexMap<String, Subtest<'a>>,
         span: SimpleSpan,
+    }
+
+    /// A single second-level section in a [`File`] underneath a [`Test`].
+    ///
+    /// See [`File`] for more details for the human-readable format this corresponds to.
+    #[derive(Clone, Debug, Eq, PartialEq)]
+    pub struct Subtest<'a> {
+        pub properties: IndexMap<&'a str, PropertyValue<'a>>,
     }
 
     /// A property value in a [`File`], [`Test`], or [`Subtest`]. Can be "unconditional"  or
@@ -421,7 +429,7 @@ pub mod metadata {
                             // TODO: use old and new item span, better msg.
                             emitter.emit(Rich::custom(_span, format!("duplicate {name} subtest")))
                         }
-                        subtests.insert(name, properties);
+                        subtests.insert(name, Subtest { properties });
                     }
                     Item::Newline | Item::Comment => (),
                 }
