@@ -1,5 +1,6 @@
 use std::{
     collections::BTreeMap,
+    fmt::Display,
     fs,
     path::{Path, PathBuf},
     process::ExitCode,
@@ -41,51 +42,30 @@ fn run(cli: Cli) -> ExitCode {
     } = cli;
     match subcommand {
         Subcommand::DumpTestExps => {
-            let raw_test_files_by_path = {
-                let mut found_read_err = false;
-                let data = (1..=51)
-                    .filter_map(|chunk| {
-                        let wpt_expectation_file_path = {
-                            let chunk = chunk.to_string();
-                            path!(
-                                &gecko_checkout
-                                    | "testing"
-                                    | "web-platform"
-                                    | "mozilla"
-                                    | "meta"
-                                    | "webgpu"
-                                    | "chunked"
-                                    | &chunk
-                                    | "cts.https.html.ini"
-                            )
-                        };
-                        log::debug!("reading from {}…", wpt_expectation_file_path.display());
-                        match fs::read_to_string(&wpt_expectation_file_path) {
-                            Err(e) => {
-                                log::error!("failed to read {wpt_expectation_file_path:?}: {e}");
-                                found_read_err = true;
-                                None
-                            }
-                            Ok(contents) => Some((
-                                wpt_expectation_file_path
-                                    .strip_prefix(&gecko_checkout)
-                                    .unwrap()
-                                    .to_owned(),
-                                Arc::new(contents),
-                            )),
-                        }
-                    })
-                    .collect::<IndexMap<_, _>>();
-                if found_read_err {
-                    return ExitCode::FAILURE;
-                }
-                data
+            let webgpu_cts_meta_parent_dir = {
+                path!(
+                    &gecko_checkout
+                        | "testing"
+                        | "web-platform"
+                        | "mozilla"
+                        | "meta"
+                        | "webgpu"
+                        | "chunked"
+                )
             };
+
             #[derive(Debug)]
             struct Test<'a> {
                 orig_path: &'a Path,
                 inner: metadata::Test<'a>,
             }
+
+            let raw_test_files_by_path =
+                match read_gecko_files_at(&gecko_checkout, &webgpu_cts_meta_parent_dir, "**/*.ini")
+                {
+                    Ok(paths) => paths,
+                    Err(()) => return ExitCode::FAILURE,
+                };
             let tests_by_name = {
                 let mut found_parse_err = false;
                 let extracted = raw_test_files_by_path
@@ -148,33 +128,26 @@ fn run(cli: Cli) -> ExitCode {
             ExitCode::SUCCESS
         }
         Subcommand::ReadTestVariants => {
-            let tests_by_path = (1..=51)
-                .map(|chunk| {
-                    let wpt_file_path = {
-                        let chunk = chunk.to_string();
-                        path!(
-                            &gecko_checkout
-                                | "testing"
-                                | "web-platform"
-                                | "mozilla"
-                                | "tests"
-                                | "webgpu"
-                                | "chunked"
-                                | &chunk
-                                | "cts.https.html"
-                        )
-                    };
-                    eprintln!("{}", wpt_file_path.display());
-                    let contents = fs::read_to_string(&wpt_file_path).unwrap();
-                    (
-                        wpt_file_path
-                            .strip_prefix(&gecko_checkout)
-                            .unwrap()
-                            .to_owned(),
-                        contents,
-                    )
-                })
-                .collect::<IndexMap<_, _>>();
+            let webgpu_cts_test_parent_dir = {
+                path!(
+                    &gecko_checkout
+                        | "testing"
+                        | "web-platform"
+                        | "mozilla"
+                        | "tests"
+                        | "webgpu"
+                        | "chunked"
+                )
+            };
+
+            let tests_by_path = match read_gecko_files_at(
+                &gecko_checkout,
+                &webgpu_cts_test_parent_dir,
+                "**/cts.https.html",
+            ) {
+                Ok(paths) => paths,
+                Err(()) => return ExitCode::FAILURE,
+            };
 
             let meta_variant_re =
                 Regex::new(r"^<meta name=variant content='\?q=(?P<variant_path>.*?)'>$").unwrap();
@@ -193,4 +166,77 @@ fn run(cli: Cli) -> ExitCode {
             ExitCode::SUCCESS
         }
     }
+}
+
+/// Returns a "naturally" sorted list of files found by searching for `glob_pattern` in `base`.
+/// `gecko_checkout` is stripped as a prefix from the absolute paths recorded into `log` entries
+/// emitted by this function.
+///
+/// # Panics
+///
+/// This function will panick if `gecko_checkout` cannot be stripped as a prefix of `base`.
+fn read_gecko_files_at(
+    gecko_checkout: &Path,
+    base: &Path,
+    glob_pattern: &str,
+) -> Result<IndexMap<PathBuf, Arc<String>>, ()> {
+    let mut found_read_err = false;
+    let mut paths = wax::Glob::new(glob_pattern)
+        .unwrap()
+        .walk(&base)
+        .filter_map(|entry| match entry {
+            Ok(entry) => Some(entry.path().to_owned()),
+            Err(e) => {
+                let path_disp = e
+                    .path()
+                    .map(|p| format!(" in {}", p.strip_prefix(&gecko_checkout).unwrap().display()));
+                let path_disp: &dyn Display = match path_disp.as_ref() {
+                    Some(disp) => disp,
+                    None => &"",
+                };
+                log::error!(
+                    "failed to enumerate `cts.https.html` files{}\n  caused by: {e}",
+                    path_disp
+                );
+                found_read_err = true;
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+
+    paths.sort_by(|a, b| natord::compare(a.to_str().unwrap(), b.to_str().unwrap()));
+    let paths = paths;
+
+    log::info!(
+        "working with these files: {:#?}",
+        paths
+            .iter()
+            .map(|f| f.strip_prefix(&gecko_checkout).unwrap())
+            .collect::<std::collections::BTreeSet<_>>()
+    );
+
+    if found_read_err {
+        return Err(());
+    }
+
+    let files = paths
+        .into_iter()
+        .filter_map(|file| {
+            log::debug!("reading from {}…", file.display());
+            match fs::read_to_string(&file) {
+                Err(e) => {
+                    log::error!("failed to read {file:?}: {e}");
+                    found_read_err = true;
+                    None
+                }
+                Ok(contents) => Some((file, Arc::new(contents))),
+            }
+        })
+        .collect::<IndexMap<_, _>>();
+
+    if found_read_err {
+        return Err(());
+    }
+
+    Ok(files)
 }
