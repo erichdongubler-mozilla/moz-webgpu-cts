@@ -44,7 +44,6 @@ fn run(cli: Cli) -> ExitCode {
             let raw_test_files_by_path = {
                 let mut found_read_err = false;
                 let data = (1..=51)
-                    .into_iter()
                     .filter_map(|chunk| {
                         let wpt_expectation_file_path = {
                             let chunk = chunk.to_string();
@@ -150,7 +149,6 @@ fn run(cli: Cli) -> ExitCode {
         }
         Subcommand::ReadTestVariants => {
             let tests_by_path = (1..=51)
-                .into_iter()
                 .map(|chunk| {
                     let wpt_file_path = {
                         let chunk = chunk.to_string();
