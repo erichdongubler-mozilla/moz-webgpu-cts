@@ -168,9 +168,9 @@ fn run(cli: Cli) -> ExitCode {
     }
 }
 
-/// Returns a "list of files found by searching for `glob_pattern` in `base`. `gecko_checkout` is
-/// stripped as a prefix from the absolute paths recorded into `log` entries emitted by this
-/// function.
+/// Returns a "naturally" sorted list of files found by searching for `glob_pattern` in `base`.
+/// `gecko_checkout` is stripped as a prefix from the absolute paths recorded into `log` entries
+/// emitted by this function.
 ///
 /// # Panics
 ///
@@ -181,7 +181,7 @@ fn read_gecko_files_at(
     glob_pattern: &str,
 ) -> Result<IndexMap<PathBuf, Arc<String>>, ()> {
     let mut found_read_err = false;
-    let paths = wax::Glob::new(glob_pattern)
+    let mut paths = wax::Glob::new(glob_pattern)
         .unwrap()
         .walk(&base)
         .filter_map(|entry| match entry {
@@ -203,6 +203,9 @@ fn read_gecko_files_at(
             }
         })
         .collect::<Vec<_>>();
+
+    paths.sort_by(|a, b| natord::compare(a.to_str().unwrap(), b.to_str().unwrap()));
+    let paths = paths;
 
     log::info!(
         "working with these files: {:#?}",
