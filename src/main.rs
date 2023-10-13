@@ -131,6 +131,12 @@ fn run(cli: Cli) -> ExitCode {
                 }
                 extracted
             };
+
+            log::info!(concat!(
+                "finished parsing of interesting properties ",
+                "from metadata files, analyzing results…"
+            ));
+
             println!("{tests_by_name:#?}");
             ExitCode::SUCCESS
         }
