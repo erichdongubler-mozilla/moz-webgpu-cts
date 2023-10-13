@@ -181,8 +181,8 @@ fn run(cli: Cli) -> ExitCode {
             let meta_variant_re = &meta_variant_re;
             let variants = tests_by_path
                 .iter()
-                .flat_map(|(test_path, file_path)| {
-                    file_path.lines().filter_map(move |line| {
+                .flat_map(|(test_path, contents)| {
+                    contents.lines().filter_map(move |line| {
                         meta_variant_re.captures(line).map(move |captures| {
                             (captures.name("variant_path").unwrap().as_str(), test_path)
                         })
