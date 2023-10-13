@@ -183,13 +183,13 @@ fn read_gecko_files_at(
     let mut found_read_err = false;
     let mut paths = wax::Glob::new(glob_pattern)
         .unwrap()
-        .walk(&base)
+        .walk(base)
         .filter_map(|entry| match entry {
             Ok(entry) => Some(entry.path().to_owned()),
             Err(e) => {
                 let path_disp = e
                     .path()
-                    .map(|p| format!(" in {}", p.strip_prefix(&gecko_checkout).unwrap().display()));
+                    .map(|p| format!(" in {}", p.strip_prefix(gecko_checkout).unwrap().display()));
                 let path_disp: &dyn Display = match path_disp.as_ref() {
                     Some(disp) => disp,
                     None => &"",
@@ -211,7 +211,7 @@ fn read_gecko_files_at(
         "working with these files: {:#?}",
         paths
             .iter()
-            .map(|f| f.strip_prefix(&gecko_checkout).unwrap())
+            .map(|f| f.strip_prefix(gecko_checkout).unwrap())
             .collect::<std::collections::BTreeSet<_>>()
     );
 
