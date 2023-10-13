@@ -13,6 +13,7 @@ miette = { version = "5.10.0", features = ["fancy"] }
 path-dsl = "0.6.1"
 regex = "1.9.5"
 thiserror = "1.0.49"
+wax = "0.6.0"
 
 [dev-dependencies]
 insta = "1.33.0"
