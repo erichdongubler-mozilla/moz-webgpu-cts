@@ -189,7 +189,7 @@ fn run(cli: Cli) -> ExitCode {
                     })
                 })
                 .collect::<BTreeMap<_, _>>();
-            dbg!(variants);
+            println!("{variants:#?}");
             ExitCode::SUCCESS
         }
     }
