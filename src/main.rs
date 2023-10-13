@@ -179,7 +179,7 @@ fn run(cli: Cli) -> ExitCode {
                 .collect::<IndexMap<_, _>>();
 
             let meta_variant_re =
-                Regex::new(r#"^<meta name=variant content='\?q=(?P<variant_path>.*?)'>$"#).unwrap();
+                Regex::new(r"^<meta name=variant content='\?q=(?P<variant_path>.*?)'>$").unwrap();
             let meta_variant_re = &meta_variant_re;
             let variants = tests_by_path
                 .iter()
