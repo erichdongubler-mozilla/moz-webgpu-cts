@@ -123,6 +123,10 @@ fn run(cli: Cli) -> ExitCode {
                     .flatten()
                     .collect::<BTreeMap<_, _>>();
                 if found_parse_err {
+                    log::error!(concat!(
+                        "found one or more failures while parsing metadata, ",
+                        "see above for more details"
+                    ));
                     return ExitCode::FAILURE;
                 }
                 extracted
