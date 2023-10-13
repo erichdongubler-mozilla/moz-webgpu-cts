@@ -3,6 +3,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
     process::ExitCode,
+    sync::Arc,
 };
 
 use chumsky::{prelude::Rich, Parser as _};
@@ -71,7 +72,7 @@ fn run(cli: Cli) -> ExitCode {
                                     .strip_prefix(&gecko_checkout)
                                     .unwrap()
                                     .to_owned(),
-                                contents,
+                                Arc::new(contents),
                             )),
                         }
                     })
