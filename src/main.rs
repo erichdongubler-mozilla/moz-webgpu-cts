@@ -179,7 +179,8 @@ fn read_gecko_files_at(
     gecko_checkout: &Path,
     base: &Path,
     glob_pattern: &str,
-) -> Result<IndexMap<PathBuf, Arc<String>>, ()> {
+) -> Result<IndexMap<Arc<PathBuf>, Arc<String>>, ()> {
+    log::info!("reading {glob_pattern:?} files at {}", base.display());
     let mut found_read_err = false;
     let mut paths = wax::Glob::new(glob_pattern)
         .unwrap()
@@ -207,7 +208,7 @@ fn read_gecko_files_at(
     paths.sort_by(|a, b| natord::compare(a.to_str().unwrap(), b.to_str().unwrap()));
     let paths = paths;
 
-    log::info!(
+    log::debug!(
         "working with these files: {:#?}",
         paths
             .iter()
@@ -229,7 +230,7 @@ fn read_gecko_files_at(
                     found_read_err = true;
                     None
                 }
-                Ok(contents) => Some((file, Arc::new(contents))),
+                Ok(contents) => Some((Arc::new(file), Arc::new(contents))),
             }
         })
         .collect::<IndexMap<_, _>>();

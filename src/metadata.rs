@@ -234,7 +234,7 @@ fn smoke_comment() {
     ParseResult {
         output: None,
         errs: [
-            found ''a'' at 0..1 expected "comment",
+            found ''a'' at 0..1 expected ''#'',
         ],
     }
     "###);
@@ -309,7 +309,7 @@ fn smoke_comment() {
     ParseResult {
         output: None,
         errs: [
-            found ''#'' at 1..2 expected '' '',
+            found ''#'' at 1..2 expected "comment",
         ],
     }
     "###);
@@ -317,7 +317,7 @@ fn smoke_comment() {
     ParseResult {
         output: None,
         errs: [
-            found ''#'' at 0..1 expected "comment",
+            found ''#'' at 0..1 expected '' '',
         ],
     }
     "###);
@@ -357,7 +357,7 @@ fn smoke_comment() {
     ParseResult {
         output: None,
         errs: [
-            found ''#'' at 1..2 expected '' '',
+            found ''#'' at 1..2 expected "comment",
         ],
     }
     "###);
@@ -365,7 +365,7 @@ fn smoke_comment() {
     ParseResult {
         output: None,
         errs: [
-            found ''#'' at 0..1 expected "comment",
+            found ''#'' at 0..1 expected '' '',
         ],
     }
     "###);
@@ -885,7 +885,7 @@ fn smoke_section_name() {
     ParseResult {
         output: None,
         errs: [
-            found ''b'' at 6..7 expected something else,
+            found ''b'' at 6..7 expected end of input,
         ],
     }
     "###);
