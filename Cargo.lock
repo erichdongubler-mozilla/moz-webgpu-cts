@@ -369,6 +369,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e2abad23fbc42b3700f2f279844dc832adb2b2eb069b2df918f455c4e18cc646"
 
 [[package]]
+name = "lets_find_up"
+version = "0.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b91a14fb0b4300e025486cc8bc096c7173c2c615ce8f9c6da7829a4af3f5afbd"
+
+[[package]]
 name = "libc"
 version = "0.2.147"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -791,6 +797,7 @@ dependencies = [
  "env_logger",
  "indexmap",
  "insta",
+ "lets_find_up",
  "log",
  "miette",
  "natord",
