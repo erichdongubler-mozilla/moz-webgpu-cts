@@ -399,17 +399,14 @@ fn test<'a>() -> impl Parser<'a, &'a str, Test<'a>, ParseError<'a>> {
                 property(2)
                     .labelled("subtest property")
                     .repeated()
-                    .collect::<Vec<_>>(),
+                    .collect::<Vec<_>>()
+                    .map(|properties| properties.into_iter().collect()),
             )
-            .map(|(subtest_name, properties)| Item::Subtest {
-                name: subtest_name,
-                properties: properties.into_iter().collect(),
-            })
             .labelled("subtest")
     };
 
     let items = choice((
-        subtest(),
+        subtest().map(|(name, properties)| Item::Subtest { name, properties }),
         property(1)
             .labelled("test property")
             .map(|(key, value)| Item::Property { key, value }),
