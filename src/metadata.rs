@@ -21,6 +21,8 @@ use chumsky::{
 };
 use indexmap::IndexMap;
 
+use crate::metadata::properties::conditional;
+
 use self::properties::{property, PropertyValue};
 
 pub mod properties;
@@ -205,6 +207,219 @@ fn smoke_parser() {
         errs: [],
     }
     "###);
+
+    assert_debug_snapshot!(
+        File::parser().parse(r#"
+[blarg]
+  expected: PASS
+[stuff]
+"#),
+        @r###"
+    ParseResult {
+        output: Some(
+            File {
+                tests: [
+                    Test {
+                        name: "blarg",
+                        properties: {
+                            "expected": Unconditional(
+                                "PASS",
+                            ),
+                        },
+                        subtests: {},
+                        span: 1..26,
+                    },
+                    Test {
+                        name: "stuff",
+                        properties: {},
+                        subtests: {},
+                        span: 26..34,
+                    },
+                ],
+            },
+        ),
+        errs: [],
+    }
+    "###);
+
+    assert_debug_snapshot!(
+        File::parser().parse(r#"
+[blarg]
+  expected: PASS
+  # Below is wrong: indentation is off!
+    [stuff]
+      expected: TIMEOUT
+"#),
+        @r###"
+    ParseResult {
+        output: None,
+        errs: [
+            found '' '' at 66..67 expected "test section header",
+        ],
+    }
+    "###);
+
+    assert_debug_snapshot!(
+        File::parser().parse(r#"
+[blarg]
+  expected: PASS
+  [stuff]
+    expected: TIMEOUT
+"#),
+        @r###"
+    ParseResult {
+        output: Some(
+            File {
+                tests: [
+                    Test {
+                        name: "blarg",
+                        properties: {
+                            "expected": Unconditional(
+                                "PASS",
+                            ),
+                        },
+                        subtests: {
+                            "stuff": Subtest {
+                                properties: {
+                                    "expected": Unconditional(
+                                        "TIMEOUT",
+                                    ),
+                                },
+                            },
+                        },
+                        span: 1..58,
+                    },
+                ],
+            },
+        ),
+        errs: [],
+    }
+    "###);
+
+    assert_debug_snapshot!(
+        File::parser().parse(
+r#"
+[asdf]
+  [blarg]
+    expected:
+      if os == "linux": FAIL
+"#
+        ),
+        @r###"
+    ParseResult {
+        output: Some(
+            File {
+                tests: [
+                    Test {
+                        name: "asdf",
+                        properties: {},
+                        subtests: {
+                            "blarg": Subtest {
+                                properties: {
+                                    "expected": Conditional {
+                                        conditions: [
+                                            (
+                                                Eq(
+                                                    Value(
+                                                        Variable(
+                                                            "os",
+                                                        ),
+                                                    ),
+                                                    Value(
+                                                        Literal(
+                                                            String(
+                                                                "linux",
+                                                            ),
+                                                        ),
+                                                    ),
+                                                ),
+                                                " FAIL",
+                                            ),
+                                        ],
+                                        fallback: None,
+                                    },
+                                },
+                            },
+                        },
+                        span: 1..61,
+                    },
+                ],
+            },
+        ),
+        errs: [],
+    }
+    "###
+    );
+
+    assert_debug_snapshot!(
+    File::parser().parse(
+r#"
+[asdf]
+  expected: PASS
+  [blarg]
+    expected: PASS
+"#
+    ),
+    @r###"
+    ParseResult {
+        output: Some(
+            File {
+                tests: [
+                    Test {
+                        name: "asdf",
+                        properties: {
+                            "expected": Unconditional(
+                                "PASS",
+                            ),
+                        },
+                        subtests: {
+                            "blarg": Subtest {
+                                properties: {
+                                    "expected": Unconditional(
+                                        "PASS",
+                                    ),
+                                },
+                            },
+                        },
+                        span: 1..54,
+                    },
+                ],
+            },
+        ),
+        errs: [],
+    }
+    "###
+    );
+
+    let parser = newline().ignore_then(File::parser());
+
+    assert_debug_snapshot!(
+        parser.parse(r#"
+[asdf]
+  expected: PASS
+"#),
+    @r###"
+    ParseResult {
+        output: Some(
+            File {
+                tests: [
+                    Test {
+                        name: "asdf",
+                        properties: {
+                            "expected": Unconditional(
+                                "PASS",
+                            ),
+                        },
+                        subtests: {},
+                        span: 1..25,
+                    },
+                ],
+            },
+        ),
+        errs: [],
+    }
+    "###
+    );
 }
 
 /// A single first-level section in a [`File`].
@@ -213,7 +428,8 @@ fn smoke_parser() {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Test<'a> {
     pub name: String,
-    pub properties: IndexMap<&'a str, PropertyValue<&'a str, &'a str>>,
+    pub properties:
+        IndexMap<&'a str, PropertyValue<conditional::Expr<conditional::Value<'a>>, &'a str>>,
     pub subtests: IndexMap<String, Subtest<'a>>,
     span: SimpleSpan,
 }
@@ -223,7 +439,8 @@ pub struct Test<'a> {
 /// See [`File`] for more details for the human-readable format this corresponds to.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Subtest<'a> {
-    pub properties: IndexMap<&'a str, PropertyValue<&'a str, &'a str>>,
+    pub properties:
+        IndexMap<&'a str, PropertyValue<conditional::Expr<conditional::Value<'a>>, &'a str>>,
 }
 
 fn comment<'a>(indentation: u8) -> impl Parser<'a, &'a str, &'a str, ParseError<'a>> {
@@ -381,11 +598,14 @@ fn test<'a>() -> impl Parser<'a, &'a str, Test<'a>, ParseError<'a>> {
     enum Item<'a> {
         Subtest {
             name: String,
-            properties: IndexMap<&'a str, PropertyValue<&'a str, &'a str>>,
+            properties: IndexMap<
+                &'a str,
+                PropertyValue<conditional::Expr<conditional::Value<'a>>, &'a str>,
+            >,
         },
         Property {
             key: &'a str,
-            value: PropertyValue<&'a str, &'a str>,
+            value: PropertyValue<conditional::Expr<conditional::Value<'a>>, &'a str>,
         },
         Newline,
         Comment,
@@ -485,6 +705,121 @@ fn smoke_test() {
                 },
                 subtests: {},
                 span: 0..36,
+            },
+        ),
+        errs: [],
+    }
+    "###
+    );
+
+    let test = || newline().ignore_then(test());
+
+    assert_debug_snapshot!(
+        test().parse(r#"
+[stuff and things]
+  expected: PASS
+"#),
+        @r###"
+    ParseResult {
+        output: Some(
+            Test {
+                name: "stuff and things",
+                properties: {
+                    "expected": Unconditional(
+                        "PASS",
+                    ),
+                },
+                subtests: {},
+                span: 1..37,
+            },
+        ),
+        errs: [],
+    }
+    "###
+    );
+
+    assert_debug_snapshot!(
+        test().parse(r#"
+[stuff and things]
+  expected:
+    if thing: boo
+    yay
+"#),
+        @r###"
+    ParseResult {
+        output: Some(
+            Test {
+                name: "stuff and things",
+                properties: {
+                    "expected": Conditional {
+                        conditions: [
+                            (
+                                Value(
+                                    Variable(
+                                        "thing",
+                                    ),
+                                ),
+                                " boo",
+                            ),
+                        ],
+                        fallback: Some(
+                            "yay",
+                        ),
+                    },
+                },
+                subtests: {},
+                span: 1..58,
+            },
+        ),
+        errs: [],
+    }
+    "###
+    );
+
+    assert_debug_snapshot!(
+        test().parse(r#"
+[cts.https.html?q=webgpu:api,operation,adapter,requestAdapter:requestAdapter_no_parameters:*]
+  [:]
+    expected:
+      if os == "mac": FAIL
+
+
+"#),
+    @r###"
+    ParseResult {
+        output: Some(
+            Test {
+                name: "cts.https.html?q=webgpu:api,operation,adapter,requestAdapter:requestAdapter_no_parameters:*",
+                properties: {},
+                subtests: {
+                    ":": Subtest {
+                        properties: {
+                            "expected": Conditional {
+                                conditions: [
+                                    (
+                                        Eq(
+                                            Value(
+                                                Variable(
+                                                    "os",
+                                                ),
+                                            ),
+                                            Value(
+                                                Literal(
+                                                    String(
+                                                        "mac",
+                                                    ),
+                                                ),
+                                            ),
+                                        ),
+                                        " FAIL",
+                                    ),
+                                ],
+                                fallback: None,
+                            },
+                        },
+                    },
+                },
+                span: 1..144,
             },
         ),
         errs: [],
