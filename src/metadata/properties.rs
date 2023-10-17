@@ -10,10 +10,10 @@ use chumsky::{
 
 use crate::metadata::{indent, ParseError};
 
-/// A property value in a [`File`], [`Test`], or [`Subtest`]. Can be "unconditional"  or
-/// "conditional" (runtime-evaluated).
-///
-/// See [`File`] for more details for the human-readable format this corresponds to.
+/// A right-hand-side property value in a [`File`], [`Test`], or [`Subtest`]. Can be
+/// "unconditional"  or "conditional" (viz., runtime-evaluated). The `C` type parameter represents
+/// conditional clauses. The `V` type parameter represents right-hand values that this property can
+/// evaluate to.
 ///
 /// [`File`]: crate::metadata::File
 /// [`Test`]: crate::metadata::Test
@@ -25,7 +25,8 @@ pub enum PropertyValue<C, V> {
     /// A property value that must be computed from variables provided by an evaluator. Usually,
     /// these variables do not vary between test runs on the same machine.
     ///
-    /// Upstream documentation: [`Conditional Values`](https://web-platform-tests.org/tools/wptrunner/docs/expectation.html#conditional-values)
+    /// Upstream documentation: [`Conditional
+    /// Values`](https://web-platform-tests.org/tools/wptrunner/docs/expectation.html#conditional-values)
     Conditional {
         conditions: Vec<(C, V)>,
         fallback: Option<V>,
