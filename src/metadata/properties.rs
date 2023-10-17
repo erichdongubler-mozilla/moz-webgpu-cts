@@ -1,5 +1,7 @@
 pub(crate) mod conditional;
 
+use std::marker::PhantomData;
+
 use self::conditional::{conditional_value, Expr, Value};
 
 use chumsky::{
@@ -33,35 +35,48 @@ pub enum PropertyValue<C, V> {
     },
 }
 
-pub(super) fn property<'a>(
+pub struct PropertiesParseHelper<'a> {
     indentation: u8,
-) -> impl Parser<'a, &'a str, (&'a str, PropertyValue<Expr<Value<'a>>, &'a str>), ParseError<'a>> {
-    let conditional_indent_level = indentation
-        .checked_add(1)
-        .expect("unexpectedly high indentation level");
-
-    let property_value = || {
-        choice((
-            unconditional_value().map(PropertyValue::Unconditional),
-            newline()
-                .ignore_then(conditional_value(conditional_indent_level))
-                .map(|(conditions, fallback)| PropertyValue::Conditional {
-                    conditions,
-                    fallback,
-                }),
-        ))
-        .labelled("property value")
-    };
-
-    property_key(indentation)
-        .then_ignore(group((just(':'), inline_whitespace())))
-        .then(property_value())
+    _disable_ctor: PhantomData<&'a mut ()>,
 }
 
-fn property_key<'a>(indentation: u8) -> impl Parser<'a, &'a str, &'a str, ParseError<'a>> {
-    indent(indentation)
-        .ignore_then(ident())
-        .labelled("property key")
+impl<'a> PropertiesParseHelper<'a> {
+    pub(super) fn new(indentation: u8) -> Self {
+        Self {
+            indentation,
+            _disable_ctor: PhantomData,
+        }
+    }
+
+    pub fn parser(
+        &mut self,
+    ) -> impl Parser<'a, &'a str, (&'a str, PropertyValue<Expr<Value<'a>>, &'a str>), ParseError<'a>>
+    {
+        let indentation = self.indentation;
+
+        let conditional_indent_level = indentation
+            .checked_add(1)
+            .expect("unexpectedly high indentation level");
+
+        let property_value = || {
+            choice((
+                unconditional_value().map(PropertyValue::Unconditional),
+                newline()
+                    .ignore_then(conditional_value(conditional_indent_level))
+                    .map(|(conditions, fallback)| PropertyValue::Conditional {
+                        conditions,
+                        fallback,
+                    }),
+            ))
+            .labelled("property value")
+        };
+
+        indent(indentation)
+            .ignore_then(ident())
+            .labelled("property key")
+            .then_ignore(group((just(':'), inline_whitespace())))
+            .then(property_value())
+    }
 }
 
 fn unconditional_value<'a>() -> impl Parser<'a, &'a str, &'a str, ParseError<'a>> {

@@ -23,7 +23,7 @@ use indexmap::IndexMap;
 
 use crate::metadata::properties::conditional;
 
-use self::properties::{property, PropertyValue};
+use self::properties::{PropertiesParseHelper, PropertyValue};
 
 pub mod properties;
 
@@ -613,7 +613,8 @@ fn test<'a>() -> impl Parser<'a, &'a str, Test<'a>, ParseError<'a>> {
 
     let items = choice((
         subtest().map(|(name, properties)| Item::Subtest { name, properties }),
-        property(1)
+        PropertiesParseHelper::new(1)
+            .parser()
             .labelled("test property")
             .map(|(key, value)| Item::Property { key, value }),
         newline().labelled("empty line").to(Item::Newline),
@@ -827,7 +828,8 @@ fn subtest<'a>() -> impl Parser<
         .then_ignore(newline().or(end()))
         .labelled("subtest section header")
         .then(
-            property(2)
+            PropertiesParseHelper::new(2)
+                .parser()
                 .labelled("subtest property")
                 .repeated()
                 .collect::<Vec<_>>()
