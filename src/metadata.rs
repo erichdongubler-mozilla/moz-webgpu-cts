@@ -31,9 +31,9 @@ pub type ParseError<'a> = Full<Rich<'a, char>, (), ()>;
 /// Represents the contents of a single file written in the [WPT metadata format][self]. It can be
 /// constructed from this format using [`Self::parser`].
 ///
-/// N.B. that you should not only use the data represented in this structure to compute test
-/// metadata. It is _not_ complete by itself, because of the existence of layering in WPT metadata
-/// (i.e., [`__dir__.ini`] files).
+/// N.B. that you should not rely only on data represented in this structure to compute test
+/// metadata. It is _not_ complete by itself, because WPT metadata properties can be layered across
+/// multiple sources (i.e., [`__dir__.ini`] files exist).
 ///
 /// [`__dir__.ini`]: https://web-platform-tests.org/tools/wptrunner/docs/expectation.html#directory-metadata
 #[derive(Clone, Debug)]
