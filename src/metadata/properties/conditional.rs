@@ -262,3 +262,307 @@ pub(crate) fn unstructured_value<'a>() -> impl Clone + Parser<'a, &'a str, &'a s
         .at_least(1)
         .to_slice()
 }
+
+#[test]
+fn test_conditional_value() {
+    assert_debug_snapshot!(
+        // Should fail, no conditional rules.
+        conditional_value(0).parse("TIMEOUT"),
+        @r###"
+    ParseResult {
+        output: None,
+        errs: [
+            found end of input at 0..7 expected something else,
+        ],
+    }
+    "###
+    );
+
+    assert_debug_snapshot!(
+        conditional_value(0).parse("if os == \"awesome\": great"),
+        @r###"
+    ParseResult {
+        output: Some(
+            (
+                [
+                    (
+                        Eq(
+                            Value(
+                                Variable(
+                                    "os",
+                                ),
+                            ),
+                            Value(
+                                Literal(
+                                    String(
+                                        "awesome",
+                                    ),
+                                ),
+                            ),
+                        ),
+                        " great",
+                    ),
+                ],
+                None,
+            ),
+        ),
+        errs: [],
+    }
+    "###
+    );
+
+    let conditional_value = |indent| newline().ignore_then(conditional_value(indent));
+
+    assert_debug_snapshot!(
+        conditional_value(0).parse(r#"
+if os == "mac": PASS
+if os == "linux": FAIL
+TIMEOUT
+"#),
+        @r###"
+    ParseResult {
+        output: Some(
+            (
+                [
+                    (
+                        Eq(
+                            Value(
+                                Variable(
+                                    "os",
+                                ),
+                            ),
+                            Value(
+                                Literal(
+                                    String(
+                                        "mac",
+                                    ),
+                                ),
+                            ),
+                        ),
+                        " PASS",
+                    ),
+                    (
+                        Eq(
+                            Value(
+                                Variable(
+                                    "os",
+                                ),
+                            ),
+                            Value(
+                                Literal(
+                                    String(
+                                        "linux",
+                                    ),
+                                ),
+                            ),
+                        ),
+                        " FAIL",
+                    ),
+                ],
+                Some(
+                    "TIMEOUT",
+                ),
+            ),
+        ),
+        errs: [],
+    }
+    "###
+    );
+
+    assert_debug_snapshot!(
+        conditional_value(0).parse(r#"
+if os == "mac": PASS
+"#),
+        @r###"
+    ParseResult {
+        output: Some(
+            (
+                [
+                    (
+                        Eq(
+                            Value(
+                                Variable(
+                                    "os",
+                                ),
+                            ),
+                            Value(
+                                Literal(
+                                    String(
+                                        "mac",
+                                    ),
+                                ),
+                            ),
+                        ),
+                        " PASS",
+                    ),
+                ],
+                None,
+            ),
+        ),
+        errs: [],
+    }
+    "###
+    );
+
+    assert_debug_snapshot!(
+        conditional_value(0).parse(r#"
+if os == "mac": PASS
+if os == "linux": FAIL
+"#),
+        @r###"
+    ParseResult {
+        output: Some(
+            (
+                [
+                    (
+                        Eq(
+                            Value(
+                                Variable(
+                                    "os",
+                                ),
+                            ),
+                            Value(
+                                Literal(
+                                    String(
+                                        "mac",
+                                    ),
+                                ),
+                            ),
+                        ),
+                        " PASS",
+                    ),
+                    (
+                        Eq(
+                            Value(
+                                Variable(
+                                    "os",
+                                ),
+                            ),
+                            Value(
+                                Literal(
+                                    String(
+                                        "linux",
+                                    ),
+                                ),
+                            ),
+                        ),
+                        " FAIL",
+                    ),
+                ],
+                None,
+            ),
+        ),
+        errs: [],
+    }
+    "###
+    );
+
+    assert_debug_snapshot!(
+        conditional_value(1).parse(r#"
+  if os == "mac": PASS
+  if os == "linux": FAIL
+"#),
+        @r###"
+    ParseResult {
+        output: Some(
+            (
+                [
+                    (
+                        Eq(
+                            Value(
+                                Variable(
+                                    "os",
+                                ),
+                            ),
+                            Value(
+                                Literal(
+                                    String(
+                                        "mac",
+                                    ),
+                                ),
+                            ),
+                        ),
+                        " PASS",
+                    ),
+                    (
+                        Eq(
+                            Value(
+                                Variable(
+                                    "os",
+                                ),
+                            ),
+                            Value(
+                                Literal(
+                                    String(
+                                        "linux",
+                                    ),
+                                ),
+                            ),
+                        ),
+                        " FAIL",
+                    ),
+                ],
+                None,
+            ),
+        ),
+        errs: [],
+    }
+    "###
+    );
+
+    assert_debug_snapshot!(
+        conditional_value(1).parse(r#"
+  if os == "mac": PASS
+  if os == "linux": FAIL
+  TIMEOUT
+"#),
+        @r###"
+    ParseResult {
+        output: Some(
+            (
+                [
+                    (
+                        Eq(
+                            Value(
+                                Variable(
+                                    "os",
+                                ),
+                            ),
+                            Value(
+                                Literal(
+                                    String(
+                                        "mac",
+                                    ),
+                                ),
+                            ),
+                        ),
+                        " PASS",
+                    ),
+                    (
+                        Eq(
+                            Value(
+                                Variable(
+                                    "os",
+                                ),
+                            ),
+                            Value(
+                                Literal(
+                                    String(
+                                        "linux",
+                                    ),
+                                ),
+                            ),
+                        ),
+                        " FAIL",
+                    ),
+                ],
+                Some(
+                    "TIMEOUT",
+                ),
+            ),
+        ),
+        errs: [],
+    }
+    "###
+    );
+}
