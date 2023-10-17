@@ -73,10 +73,19 @@ fn smoke_parser() {
     );
     assert_debug_snapshot!(File::parser().parse("[hoot]"), @r###"
     ParseResult {
-        output: None,
-        errs: [
-            found end of input at 6..6 expected ''\r'', or ''\n'',
-        ],
+        output: Some(
+            File {
+                tests: [
+                    Test {
+                        name: "hoot",
+                        properties: {},
+                        subtests: {},
+                        span: 0..6,
+                    },
+                ],
+            },
+        ),
+        errs: [],
     }
     "###);
     assert_debug_snapshot!(File::parser().parse("[blarg]\n"), @r###"
@@ -98,10 +107,25 @@ fn smoke_parser() {
     "###);
     assert_debug_snapshot!(File::parser().parse("[blarg]\n[stuff]"), @r###"
     ParseResult {
-        output: None,
-        errs: [
-            found end of input at 15..15 expected ''\r'', or ''\n'',
-        ],
+        output: Some(
+            File {
+                tests: [
+                    Test {
+                        name: "blarg",
+                        properties: {},
+                        subtests: {},
+                        span: 0..8,
+                    },
+                    Test {
+                        name: "stuff",
+                        properties: {},
+                        subtests: {},
+                        span: 8..15,
+                    },
+                ],
+            },
+        ),
+        errs: [],
     }
     "###);
     assert_debug_snapshot!(File::parser().parse("\n[blarg]\n[stuff]\n"), @r###"
@@ -437,7 +461,7 @@ fn test<'a>() -> impl Parser<'a, &'a str, Test<'a>, ParseError<'a>> {
     });
 
     let test_header = section_name(0)
-        .then_ignore(newline())
+        .then_ignore(newline().or(end()))
         .labelled("test section header");
 
     test_header
