@@ -80,6 +80,33 @@ fn run(cli: Cli) -> ExitCode {
         read_gecko_files_at(&gecko_checkout, &webgpu_cts_meta_parent_dir, "**/*.ini")
     };
 
+    fn render_parse_errors<'a>(
+        path: &Arc<PathBuf>,
+        file_contents: &Arc<String>,
+        errors: impl IntoIterator<Item = Rich<'a, char>>,
+    ) {
+        #[derive(Debug, Diagnostic, thiserror::Error)]
+        #[error("{inner}")]
+        struct ParseError {
+            #[label]
+            span: SourceSpan,
+            #[source_code]
+            source_code: NamedSource,
+            inner: Rich<'static, char>,
+        }
+        let source_code = file_contents.clone();
+        for error in errors {
+            let span = error.span();
+            let error = ParseError {
+                source_code: NamedSource::new(path.to_str().unwrap(), source_code.clone()),
+                inner: error.clone().into_owned(),
+                span: SourceSpan::new(span.start.into(), (span.end - span.start).into()),
+            };
+            let error = miette::Report::new(error);
+            eprintln!("{error:?}");
+        }
+    }
+
     match subcommand {
         Subcommand::Triage => {
             #[derive(Debug)]
@@ -113,33 +140,8 @@ fn run(cli: Cli) -> ExitCode {
                                 )
                             })),
                             Err(errors) => {
-                                #[derive(Debug, Diagnostic, thiserror::Error)]
-                                #[error("{inner}")]
-                                struct ParseError {
-                                    #[label]
-                                    span: SourceSpan,
-                                    #[source_code]
-                                    source_code: NamedSource,
-                                    inner: Rich<'static, char>,
-                                }
                                 found_parse_err = true;
-                                let source_code = file_contents.clone();
-                                for error in errors {
-                                    let span = error.span();
-                                    let error = ParseError {
-                                        source_code: NamedSource::new(
-                                            path.to_str().unwrap(),
-                                            source_code.clone(),
-                                        ),
-                                        inner: error.clone().into_owned(),
-                                        span: SourceSpan::new(
-                                            span.start.into(),
-                                            (span.end - span.start).into(),
-                                        ),
-                                    };
-                                    let error = miette::Report::new(error);
-                                    eprintln!("{error:?}");
-                                }
+                                render_parse_errors(path, file_contents, errors);
                                 None
                             }
                         }
