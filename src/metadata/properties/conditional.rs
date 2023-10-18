@@ -231,27 +231,41 @@ fn test_conditional_fallback() {
     "###);
 }
 
-pub(super) fn conditional_value<'a>(
-    indentation: u8,
-) -> impl Parser<'a, &'a str, (Vec<(Expr<Value<'a>>, &'a str)>, Option<&'a str>), ParseError<'a>> {
-    conditional_rule(indentation)
-        .repeated()
-        .at_least(1)
-        .collect::<Vec<_>>()
-        .then(conditional_fallback(indentation).or_not())
-        .validate(|(conditions, fallback), e, emitter| {
-            if conditions.is_empty() && fallback.is_none() {
-                emitter.emit(Rich::custom(
-                    e.span(),
-                    concat!(
-                        "this conditional property value has no conditional ",
-                        "rules or fallback specified",
-                    ),
-                ));
-            }
-            (conditions, fallback)
-        })
-        .labelled("conditional value")
+/// Values placed into a [`super::PropertyValue::Conditional`].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ConditionalValue<C, V> {
+    /// Conditional clauses and their resulting values if evaluated to true.
+    pub conditions: Vec<(C, V)>,
+    /// The value applied if no `conditions` apply.
+    pub fallback: Option<V>,
+}
+
+impl<'a> ConditionalValue<Expr<Value<'a>>, &'a str> {
+    pub(super) fn parser(
+        indentation: u8,
+    ) -> impl Parser<'a, &'a str, ConditionalValue<Expr<Value<'a>>, &'a str>, ParseError<'a>> {
+        conditional_rule(indentation)
+            .repeated()
+            .at_least(1)
+            .collect::<Vec<_>>()
+            .then(conditional_fallback(indentation).or_not())
+            .validate(|(conditions, fallback), e, emitter| {
+                if conditions.is_empty() && fallback.is_none() {
+                    emitter.emit(Rich::custom(
+                        e.span(),
+                        concat!(
+                            "this conditional property value has no conditional ",
+                            "rules or fallback specified",
+                        ),
+                    ));
+                }
+                ConditionalValue {
+                    conditions,
+                    fallback,
+                }
+            })
+            .labelled("conditional value")
+    }
 }
 
 pub(crate) fn unstructured_value<'a>() -> impl Clone + Parser<'a, &'a str, &'a str, ParseError<'a>>
@@ -265,6 +279,8 @@ pub(crate) fn unstructured_value<'a>() -> impl Clone + Parser<'a, &'a str, &'a s
 
 #[test]
 fn test_conditional_value() {
+    let conditional_value = |indent| ConditionalValue::parser(indent);
+
     assert_debug_snapshot!(
         // Should fail, no conditional rules.
         conditional_value(0).parse("TIMEOUT"),
@@ -283,8 +299,8 @@ fn test_conditional_value() {
         @r###"
     ParseResult {
         output: Some(
-            (
-                [
+            ConditionalValue {
+                conditions: [
                     (
                         Eq(
                             Value(
@@ -303,8 +319,8 @@ fn test_conditional_value() {
                         " great",
                     ),
                 ],
-                None,
-            ),
+                fallback: None,
+            },
         ),
         errs: [],
     }
@@ -322,8 +338,8 @@ TIMEOUT
         @r###"
     ParseResult {
         output: Some(
-            (
-                [
+            ConditionalValue {
+                conditions: [
                     (
                         Eq(
                             Value(
@@ -359,10 +375,10 @@ TIMEOUT
                         " FAIL",
                     ),
                 ],
-                Some(
+                fallback: Some(
                     "TIMEOUT",
                 ),
-            ),
+            },
         ),
         errs: [],
     }
@@ -376,8 +392,8 @@ if os == "mac": PASS
         @r###"
     ParseResult {
         output: Some(
-            (
-                [
+            ConditionalValue {
+                conditions: [
                     (
                         Eq(
                             Value(
@@ -396,8 +412,8 @@ if os == "mac": PASS
                         " PASS",
                     ),
                 ],
-                None,
-            ),
+                fallback: None,
+            },
         ),
         errs: [],
     }
@@ -412,8 +428,8 @@ if os == "linux": FAIL
         @r###"
     ParseResult {
         output: Some(
-            (
-                [
+            ConditionalValue {
+                conditions: [
                     (
                         Eq(
                             Value(
@@ -449,8 +465,8 @@ if os == "linux": FAIL
                         " FAIL",
                     ),
                 ],
-                None,
-            ),
+                fallback: None,
+            },
         ),
         errs: [],
     }
@@ -465,8 +481,8 @@ if os == "linux": FAIL
         @r###"
     ParseResult {
         output: Some(
-            (
-                [
+            ConditionalValue {
+                conditions: [
                     (
                         Eq(
                             Value(
@@ -502,8 +518,8 @@ if os == "linux": FAIL
                         " FAIL",
                     ),
                 ],
-                None,
-            ),
+                fallback: None,
+            },
         ),
         errs: [],
     }
@@ -519,8 +535,8 @@ if os == "linux": FAIL
         @r###"
     ParseResult {
         output: Some(
-            (
-                [
+            ConditionalValue {
+                conditions: [
                     (
                         Eq(
                             Value(
@@ -556,10 +572,10 @@ if os == "linux": FAIL
                         " FAIL",
                     ),
                 ],
-                Some(
+                fallback: Some(
                     "TIMEOUT",
                 ),
-            ),
+            },
         ),
         errs: [],
     }

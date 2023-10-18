@@ -2,7 +2,7 @@ pub(crate) mod conditional;
 
 use std::marker::PhantomData;
 
-use self::conditional::{conditional_value, Expr, Value};
+pub use self::conditional::{ConditionalValue, Expr, Literal, Value};
 
 use chumsky::{
     primitive::{any, choice, group, just},
@@ -29,10 +29,7 @@ pub enum PropertyValue<C, V> {
     ///
     /// Upstream documentation: [`Conditional
     /// Values`](https://web-platform-tests.org/tools/wptrunner/docs/expectation.html#conditional-values)
-    Conditional {
-        conditions: Vec<(C, V)>,
-        fallback: Option<V>,
-    },
+    Conditional(ConditionalValue<C, V>),
 }
 
 pub struct PropertiesParseHelper<'a> {
@@ -61,12 +58,10 @@ impl<'a> PropertiesParseHelper<'a> {
         let property_value = || {
             choice((
                 unconditional_value().map(PropertyValue::Unconditional),
-                newline()
-                    .ignore_then(conditional_value(conditional_indent_level))
-                    .map(|(conditions, fallback)| PropertyValue::Conditional {
-                        conditions,
-                        fallback,
-                    }),
+                newline().ignore_then(
+                    ConditionalValue::parser(conditional_indent_level)
+                        .map(PropertyValue::Conditional),
+                ),
             ))
             .labelled("property value")
         };

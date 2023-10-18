@@ -49,6 +49,7 @@ impl<'a> Value<'a> {
 }
 
 /// Conditional expressions supported by [WPT metadata properties](crate::metadata::properties).
+/// Usually contained by a [`ConditionalValue`](super::ConditionalValue).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Expr<V> {
     Value(V),

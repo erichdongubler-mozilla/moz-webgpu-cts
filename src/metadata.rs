@@ -316,28 +316,30 @@ r#"
                         subtests: {
                             "blarg": Subtest {
                                 properties: {
-                                    "expected": Conditional {
-                                        conditions: [
-                                            (
-                                                Eq(
-                                                    Value(
-                                                        Variable(
-                                                            "os",
+                                    "expected": Conditional(
+                                        ConditionalValue {
+                                            conditions: [
+                                                (
+                                                    Eq(
+                                                        Value(
+                                                            Variable(
+                                                                "os",
+                                                            ),
                                                         ),
-                                                    ),
-                                                    Value(
-                                                        Literal(
-                                                            String(
-                                                                "linux",
+                                                        Value(
+                                                            Literal(
+                                                                String(
+                                                                    "linux",
+                                                                ),
                                                             ),
                                                         ),
                                                     ),
+                                                    " FAIL",
                                                 ),
-                                                " FAIL",
-                                            ),
-                                        ],
-                                        fallback: None,
-                                    },
+                                            ],
+                                            fallback: None,
+                                        },
+                                    ),
                                 },
                             },
                         },
@@ -738,21 +740,23 @@ fn smoke_test() {
             Test {
                 name: "stuff and things",
                 properties: {
-                    "expected": Conditional {
-                        conditions: [
-                            (
-                                Value(
-                                    Variable(
-                                        "thing",
+                    "expected": Conditional(
+                        ConditionalValue {
+                            conditions: [
+                                (
+                                    Value(
+                                        Variable(
+                                            "thing",
+                                        ),
                                     ),
+                                    " boo",
                                 ),
-                                " boo",
+                            ],
+                            fallback: Some(
+                                "yay",
                             ),
-                        ],
-                        fallback: Some(
-                            "yay",
-                        ),
-                    },
+                        },
+                    ),
                 },
                 subtests: {},
                 span: 1..58,
@@ -781,28 +785,30 @@ fn smoke_test() {
                 subtests: {
                     ":": Subtest {
                         properties: {
-                            "expected": Conditional {
-                                conditions: [
-                                    (
-                                        Eq(
-                                            Value(
-                                                Variable(
-                                                    "os",
+                            "expected": Conditional(
+                                ConditionalValue {
+                                    conditions: [
+                                        (
+                                            Eq(
+                                                Value(
+                                                    Variable(
+                                                        "os",
+                                                    ),
                                                 ),
-                                            ),
-                                            Value(
-                                                Literal(
-                                                    String(
-                                                        "mac",
+                                                Value(
+                                                    Literal(
+                                                        String(
+                                                            "mac",
+                                                        ),
                                                     ),
                                                 ),
                                             ),
+                                            " FAIL",
                                         ),
-                                        " FAIL",
-                                    ),
-                                ],
-                                fallback: None,
-                            },
+                                    ],
+                                    fallback: None,
+                                },
+                            ),
                         },
                     },
                 },
@@ -894,21 +900,23 @@ fn smoke_subtest() {
             (
                 "stuff and things",
                 {
-                    "expected": Conditional {
-                        conditions: [
-                            (
-                                Value(
-                                    Variable(
-                                        "thing",
+                    "expected": Conditional(
+                        ConditionalValue {
+                            conditions: [
+                                (
+                                    Value(
+                                        Variable(
+                                            "thing",
+                                        ),
                                     ),
+                                    " boo",
                                 ),
-                                " boo",
+                            ],
+                            fallback: Some(
+                                "yay",
                             ),
-                        ],
-                        fallback: Some(
-                            "yay",
-                        ),
-                    },
+                        },
+                    ),
                 },
             ),
         ),
