@@ -22,7 +22,7 @@ use regex::Regex;
 use whippit::{
     metadata::{
         properties::{ConditionalValue, PropertyValue},
-        Subtest,
+        SectionHeader, Subtest,
     },
     reexport::chumsky::prelude::Rich,
 };
@@ -126,12 +126,11 @@ fn run(cli: Cli) -> ExitCode {
                             .into_result()
                         {
                             Ok(metadata::File { tests }) => Some(tests.into_iter().map(|inner| {
+                                let SectionHeader(name) = &inner.name;
                                 (
-                                    inner
-                                        .name
-                                        .strip_prefix("cts.https.html?q=")
-                                        .unwrap()
-                                        .to_owned(),
+                                    SectionHeader(
+                                        name.strip_prefix("cts.https.html?q=").unwrap().to_owned(),
+                                    ),
                                     TaggedTest {
                                         inner,
                                         orig_path: path.clone(),
@@ -164,11 +163,13 @@ fn run(cli: Cli) -> ExitCode {
 
             #[derive(Clone, Debug, Default)]
             struct PerPlatformAnalysis {
-                tests_with_runner_errors: BTreeSet<Arc<String>>,
-                tests_with_disabled: BTreeSet<Arc<String>>,
-                tests_with_crashes: BTreeSet<Arc<String>>,
-                subtests_with_failures_by_test: BTreeMap<Arc<String>, IndexSet<Arc<String>>>,
-                subtests_with_timeouts_by_test: BTreeMap<Arc<String>, IndexSet<Arc<String>>>,
+                tests_with_runner_errors: BTreeSet<Arc<SectionHeader>>,
+                tests_with_disabled: BTreeSet<Arc<SectionHeader>>,
+                tests_with_crashes: BTreeSet<Arc<SectionHeader>>,
+                subtests_with_failures_by_test:
+                    BTreeMap<Arc<SectionHeader>, IndexSet<Arc<SectionHeader>>>,
+                subtests_with_timeouts_by_test:
+                    BTreeMap<Arc<SectionHeader>, IndexSet<Arc<SectionHeader>>>,
             }
 
             #[derive(Clone, Debug, Default)]
@@ -231,7 +232,7 @@ fn run(cli: Cli) -> ExitCode {
                 } = test;
 
                 let Test {
-                    name: test_name,
+                    name: SectionHeader(test_name),
                     properties,
                     subtests,
                     ..
@@ -246,7 +247,7 @@ fn run(cli: Cli) -> ExitCode {
                     .strip_prefix("cts.https.html?q=")
                     .map(|n| n.to_owned())
                     .unwrap_or(test_name);
-                let test_name = Arc::new(test_name);
+                let test_name = Arc::new(SectionHeader(test_name));
 
                 if is_disabled {
                     analysis.for_each_platform_mut(|analysis| {
@@ -265,7 +266,7 @@ fn run(cli: Cli) -> ExitCode {
                 }
                 if let Some(expectations) = expectations {
                     fn analyze_test_outcome<F>(
-                        test_name: &Arc<String>,
+                        test_name: &Arc<SectionHeader>,
                         outcome: TestOutcome,
                         mut receiver: F,
                     ) where
@@ -344,8 +345,8 @@ fn run(cli: Cli) -> ExitCode {
 
                     if let Some(expectations) = expectations {
                         fn analyze_subtest_outcome<Fo>(
-                            test_name: &Arc<String>,
-                            subtest_name: &Arc<String>,
+                            test_name: &Arc<SectionHeader>,
+                            subtest_name: &Arc<SectionHeader>,
                             outcome: SubtestOutcome,
                             mut receiver: Fo,
                         ) where

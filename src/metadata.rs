@@ -11,6 +11,8 @@
 #[cfg(test)]
 use {crate::metadata::properties::UnstructuredProperties, insta::assert_debug_snapshot};
 
+use std::fmt::{self, Debug, Display};
+
 use chumsky::{
     extra::Full,
     prelude::Rich,
@@ -438,9 +440,9 @@ r#"
 /// See [`File`] for more details for the human-readable format this corresponds to.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Test<Tp, Sp> {
-    pub name: String,
+    pub name: SectionHeader,
     pub properties: Tp,
-    pub subtests: IndexMap<String, Subtest<Sp>>,
+    pub subtests: IndexMap<SectionHeader, Subtest<Sp>>,
     span: SimpleSpan,
 }
 
@@ -452,7 +454,7 @@ impl<Tp, Sp> Test<Tp, Sp> {
     {
         #[derive(Clone, Debug)]
         enum Item<Tp, Sp> {
-            Subtest { name: String, properties: Sp },
+            Subtest { name: SectionHeader, properties: Sp },
             Property(Tp),
             Newline,
             Comment,
@@ -476,8 +478,10 @@ impl<Tp, Sp> Test<Tp, Sp> {
                     Item::Property(prop) => properties.insert(prop, emitter),
                     Item::Subtest { name, properties } => {
                         if subtests.contains_key(&name) {
-                            emitter
-                                .emit(Rich::custom(e.span(), format!("duplicate {name} subtest")))
+                            emitter.emit(Rich::custom(
+                                e.span(),
+                                format!("duplicate {} subtest", name.unescaped()),
+                            ))
                         }
                         subtests.insert(name, Subtest { properties });
                     }
@@ -487,7 +491,7 @@ impl<Tp, Sp> Test<Tp, Sp> {
             (properties, subtests)
         });
 
-        let test_header = section_name(0)
+        let test_header = SectionHeader::parser(0)
             .then_ignore(newline().or(end()))
             .labelled("test section header");
 
@@ -822,11 +826,11 @@ fn smoke_test() {
     );
 }
 
-fn subtest<'a, Sp>() -> impl Parser<'a, &'a str, (String, Sp), ParseError<'a>>
+fn subtest<'a, Sp>() -> impl Parser<'a, &'a str, (SectionHeader, Sp), ParseError<'a>>
 where
     Sp: Properties<'a>,
 {
-    section_name(1)
+    SectionHeader::parser(1)
         .then_ignore(newline().or(end()))
         .labelled("subtest section header")
         .then(
@@ -1060,50 +1064,71 @@ fn test_indent() {
     "###);
 }
 
-fn section_name<'a>(indentation: u8) -> impl Parser<'a, &'a str, String, ParseError<'a>> {
-    let name = custom::<_, &str, _, _>(|input| {
-        let mut escaped_name = String::new();
-        loop {
-            match input.peek() {
-                None => {
-                    let start = input.offset();
-                    input.skip();
-                    let span = input.span_since(start);
-                    return Err(Rich::custom(
-                        span,
-                        "reached end of input before ending section header",
+#[derive(Clone, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct SectionHeader(pub String);
+
+impl Debug for SectionHeader {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self(inner) = self;
+        Debug::fmt(inner, f)
+    }
+}
+
+impl SectionHeader {
+    fn parser<'a>(indentation: u8) -> impl Parser<'a, &'a str, Self, ParseError<'a>> {
+        let name = custom::<_, &str, _, _>(|input| {
+            let mut escaped_name = String::new();
+            loop {
+                match input.peek() {
+                    None => {
+                        let start = input.offset();
+                        input.skip();
+                        let span = input.span_since(start);
+                        return Err(Rich::custom(
+                            span,
+                            "reached end of input before ending section header",
+                        ));
+                    }
+                    Some(']') => break,
+                    Some('\\') => {
+                        let c = input.parse(choice((just("\\]").to(']'), just("\\\"").to('"'))))?;
+                        escaped_name.push(c);
+                    }
+                    Some(other) => {
+                        escaped_name.push(other);
+                        input.skip();
+                    }
+                }
+            }
+            Ok(escaped_name)
+        })
+        .validate(|escaped_name, e, emitter| {
+            for (idx, c) in escaped_name.char_indices() {
+                if c.is_control() {
+                    let span_idx = e.span().start.checked_add(idx).unwrap();
+                    emitter.emit(Rich::custom(
+                        SimpleSpan::new(span_idx, span_idx),
+                        "found illegal character in section header",
                     ));
                 }
-                Some(']') => break,
-                Some('\\') => {
-                    let c = input.parse(choice((just("\\]").to(']'), just("\\\"").to('"'))))?;
-                    escaped_name.push(c);
-                }
-                Some(other) => {
-                    escaped_name.push(other);
-                    input.skip();
-                }
             }
-        }
-        Ok(escaped_name)
-    })
-    .validate(|escaped_name, e, emitter| {
-        for (idx, c) in escaped_name.char_indices() {
-            if c.is_control() {
-                let span_idx = e.span().start.checked_add(idx).unwrap();
-                emitter.emit(Rich::custom(
-                    SimpleSpan::new(span_idx, span_idx),
-                    "found illegal character in section header",
-                ));
-            }
-        }
-        escaped_name
-    });
-    indent(indentation).ignore_then(name.delimited_by(just('['), just(']')))
+            escaped_name
+        });
+        indent(indentation)
+            .ignore_then(name.delimited_by(just('['), just(']')))
+            .map(Self)
+    }
+
+    pub fn unescaped(&self) -> impl Display + '_ {
+        let Self(inner) = self;
+        inner
+    }
 }
 
 #[test]
 fn smoke_section_name() {
+    let section_name = SectionHeader::parser;
+
     assert_debug_snapshot!(section_name(0).parse("hoot"), @r###"
     ParseResult {
         output: None,
