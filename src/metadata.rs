@@ -1091,7 +1091,7 @@ impl SectionHeader {
                     }
                     Some(']') => break,
                     Some('\\') => {
-                        let c = input.parse(choice((just("\\]").to(']'), just("\\\"").to('"'))))?;
+                        let c = input.parse(just("\\]").to(']'))?;
                         escaped_name.push(c);
                     }
                     Some(other) => {
