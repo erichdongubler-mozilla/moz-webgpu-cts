@@ -1,7 +1,11 @@
 [package]
 name = "whippit"
+description = "Tools and a library to work with Web Platform Tests data"
 version = "0.1.0"
 edition = "2021"
+repository = "https://github.com/ErichDonGubler/whippit"
+license = "MIT or Apache-2.0"
+publish = false
 
 [features]
 default = ["unstructured-properties"]
