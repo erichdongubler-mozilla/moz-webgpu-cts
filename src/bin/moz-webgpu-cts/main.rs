@@ -63,34 +63,36 @@ fn run(cli: Cli) -> ExitCode {
         Ok(ckt_path) => ckt_path,
         Err(()) => return ExitCode::FAILURE,
     };
+
+    let read_metadata = || {
+        let webgpu_cts_meta_parent_dir = {
+            path!(
+                &gecko_checkout
+                    | "testing"
+                    | "web-platform"
+                    | "mozilla"
+                    | "meta"
+                    | "webgpu"
+                    | "chunked"
+            )
+        };
+
+        read_gecko_files_at(&gecko_checkout, &webgpu_cts_meta_parent_dir, "**/*.ini")
+    };
+
     match subcommand {
         Subcommand::Triage => {
-            let webgpu_cts_meta_parent_dir = {
-                path!(
-                    &gecko_checkout
-                        | "testing"
-                        | "web-platform"
-                        | "mozilla"
-                        | "meta"
-                        | "webgpu"
-                        | "chunked"
-                )
-            };
-
             #[derive(Debug)]
             struct TaggedTest {
                 orig_path: Arc<PathBuf>,
                 inner: triage::Test,
             }
-
-            let raw_test_files_by_path =
-                match read_gecko_files_at(&gecko_checkout, &webgpu_cts_meta_parent_dir, "**/*.ini")
-                {
+            let tests_by_name = {
+                let mut found_parse_err = false;
+                let raw_test_files_by_path = match read_metadata() {
                     Ok(paths) => paths,
                     Err(()) => return ExitCode::FAILURE,
                 };
-            let tests_by_name = {
-                let mut found_parse_err = false;
                 let extracted = raw_test_files_by_path
                     .iter()
                     .filter_map(|(path, file_contents)| {
