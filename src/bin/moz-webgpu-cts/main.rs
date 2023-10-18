@@ -8,6 +8,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     fmt::Display,
     fs,
+    io::{self, BufWriter},
     path::{Path, PathBuf},
     process::ExitCode,
     sync::Arc,
@@ -37,6 +38,8 @@ struct Cli {
 
 #[derive(Debug, Parser)]
 enum Subcommand {
+    #[clap(name = "fmt")]
+    Format,
     Triage,
     ReadTestVariants,
 }
@@ -107,6 +110,59 @@ fn run(cli: Cli) -> ExitCode {
     }
 
     match subcommand {
+        Subcommand::Format => {
+            let raw_test_files_by_path = match read_metadata() {
+                Ok(paths) => paths,
+                Err(()) => return ExitCode::FAILURE,
+            };
+            log::info!("formatting metadata in-place…");
+            let mut fmt_err_found = false;
+            for (path, file_contents) in raw_test_files_by_path {
+                match chumsky::Parser::parse(&metadata::File::parser(), &*file_contents)
+                    .into_result()
+                {
+                    Err(errors) => {
+                        fmt_err_found = true;
+                        render_parse_errors(&path, &file_contents, errors);
+                    }
+                    Ok(file) => {
+                        let mut out =
+                            match fs::File::create(&*path).map_err(Report::msg).wrap_err_with(
+                                || format!("error while reading file `{}`", path.display()),
+                            ) {
+                                Ok(f) => BufWriter::new(f),
+                                Err(e) => {
+                                    fmt_err_found = true;
+                                    log::error!("{e}");
+                                    continue;
+                                }
+                            };
+                        use io::Write;
+                        match write!(&mut out, "{}", metadata::format_file(&file))
+                            .map_err(Report::msg)
+                            .wrap_err_with(|| {
+                                format!("error while writing to `{}`", path.display())
+                            }) {
+                            Ok(()) => (),
+                            Err(e) => {
+                                log::error!("{e}");
+                                continue;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if fmt_err_found {
+                log::error!(concat!(
+                    "found one or more failures while formatting metadata, ",
+                    "see above for more details"
+                ));
+                ExitCode::FAILURE
+            } else {
+                ExitCode::SUCCESS
+            }
+        }
         Subcommand::Triage => {
             #[derive(Debug)]
             struct TaggedTest {

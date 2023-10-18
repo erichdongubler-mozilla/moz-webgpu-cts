@@ -1,4 +1,7 @@
-use std::hash::Hash;
+use std::{
+    fmt::{self, Display},
+    hash::Hash,
+};
 
 use chumsky::{
     input::Emitter,
@@ -7,10 +10,14 @@ use chumsky::{
     text::{inline_whitespace, keyword},
     Boxed, IterParser, Parser,
 };
+use format::lazy_format;
 use indexmap::IndexSet;
+use joinery::JoinableIterator;
 use whippit::metadata::{
     self,
-    properties::{Expr, Literal, Properties, PropertiesParseHelper, PropertyValue, Value},
+    properties::{
+        ConditionalValue, Expr, Literal, Properties, PropertiesParseHelper, PropertyValue, Value,
+    },
     ParseError,
 };
 
@@ -20,6 +27,141 @@ use {chumsky::text::newline, insta::assert_debug_snapshot};
 pub type File = metadata::File<AnalyzeableProps<TestOutcome>, AnalyzeableProps<SubtestOutcome>>;
 
 pub type Test = metadata::Test<AnalyzeableProps<TestOutcome>, AnalyzeableProps<SubtestOutcome>>;
+
+pub type Subtest = metadata::Subtest<AnalyzeableProps<SubtestOutcome>>;
+
+pub fn format_file<'a>(
+    file: &'a metadata::File<AnalyzeableProps<TestOutcome>, AnalyzeableProps<SubtestOutcome>>,
+) -> impl Display + 'a {
+    lazy_format!(|f| {
+        let metadata::File { tests } = file;
+        write!(f, "{}", tests.iter().map(format_test).join_with("\n\n"))
+    })
+}
+
+fn format_test<'a>(test: &'a Test) -> impl Display + 'a {
+    lazy_format!(|f| {
+        let Test {
+            name,
+            subtests,
+            properties,
+            ..
+        } = test;
+        write!(
+            f,
+            "[{}]\n{}{}",
+            name.escaped(),
+            format_properties(1, properties),
+            subtests
+                .iter()
+                .map(|(name, subtest)| {
+                    let Subtest { properties } = subtest;
+                    lazy_format!(move |f| write!(
+                        f,
+                        "  [{}]\n{}",
+                        name.escaped(),
+                        format_properties(2, properties)
+                    ))
+                })
+                .join_with('\n')
+        )
+    })
+}
+
+fn format_properties<'a, Out>(
+    indentation: u8,
+    property: &'a AnalyzeableProps<Out>,
+) -> impl Display + 'a
+where
+    Out: Display,
+{
+    lazy_format!(move |f| {
+        let indent = lazy_format!(move |f| write!(
+            f,
+            "{}",
+            vec![""; usize::from(indentation) + 1]
+                .into_iter()
+                .join_with("  ")
+        ));
+        let AnalyzeableProps {
+            is_disabled,
+            expectations,
+        } = property;
+        if *is_disabled {
+            writeln!(f, "{indent}disabled: true")?;
+        }
+        if let Some(expectations) = expectations {
+            write!(f, "{indent}expected:")?;
+
+            match expectations {
+                PropertyValue::Unconditional(exp) => writeln!(f, " {}", format_exp(exp))?,
+                PropertyValue::Conditional(ConditionalValue {
+                    conditions,
+                    fallback,
+                }) => {
+                    writeln!(f)?;
+                    if !conditions.is_empty() {
+                        for (applicability, expectation) in conditions {
+                            let Applicability {
+                                platform,
+                                build_profile,
+                            } = applicability;
+                            let platform = platform.map(|p| {
+                                let platform_str = match p {
+                                    Platform::Windows => "win",
+                                    Platform::Linux => "linux",
+                                    Platform::MacOs => "mac",
+                                };
+                                lazy_format!(move |f| write!(f, "os == {platform_str:?}"))
+                            });
+                            let build_profile = build_profile.as_ref().map(|p| -> &'static str {
+                                match p {
+                                    BuildProfile::Debug => "debug",
+                                    BuildProfile::Optimized => "not debug",
+                                }
+                            });
+                            writeln!(
+                                f,
+                                "{indent}  if {}: {}",
+                                platform
+                                    .as_ref()
+                                    .map(|p| -> &dyn Display { &*p })
+                                    .into_iter()
+                                    .chain(
+                                        build_profile
+                                            .as_ref()
+                                            .into_iter()
+                                            .map(|s| -> &dyn Display { s })
+                                    )
+                                    .join_with(" and "),
+                                format_exp(expectation)
+                            )?;
+                        }
+                    }
+                    if let Some(fallback) = fallback {
+                        writeln!(f, "{indent}  {}", format_exp(fallback))?;
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    })
+}
+
+fn format_exp<'a, Exp>(exp: &'a Expectation<Exp>) -> impl Display + 'a
+where
+    Exp: Display,
+{
+    lazy_format!(move |f| {
+        match exp {
+            Expectation::Permanent(outcome) => write!(f, "{outcome}"),
+            Expectation::Intermittent(outcomes) => {
+                write!(f, "[{}]", outcomes.iter().join_with(", "))
+            }
+        }
+    })
+}
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Platform {
@@ -284,6 +426,21 @@ impl Default for TestOutcome {
     }
 }
 
+impl Display for TestOutcome {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Self::Ok => "OK",
+                Self::Timeout => "TIMEOUT",
+                Self::Crash => "CRASH",
+                Self::Error => "ERROR",
+            }
+        )
+    }
+}
+
 impl<'a> Properties<'a> for AnalyzeableProps<TestOutcome> {
     type ParsedProperty = AnalyzeableProp<TestOutcome>;
     fn property_parser(
@@ -322,6 +479,22 @@ pub enum SubtestOutcome {
 impl Default for SubtestOutcome {
     fn default() -> Self {
         Self::Pass
+    }
+}
+
+impl Display for SubtestOutcome {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Self::Pass => "PASS",
+                Self::Fail => "FAIL",
+                Self::Timeout => "TIMEOUT",
+                Self::Crash => "CRASH",
+                Self::NotRun => "NOTRUN",
+            }
+        )
     }
 }
 
