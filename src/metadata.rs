@@ -21,6 +21,7 @@ use chumsky::{
     text::newline,
     IterParser, Parser,
 };
+use format::lazy_format;
 use indexmap::IndexMap;
 
 use self::properties::{Properties, PropertiesParseHelper};
@@ -1091,6 +1092,7 @@ impl SectionHeader {
                     }
                     Some(']') => break,
                     Some('\\') => {
+                        // NOTE: keep in sync. with the escaping in `Self::escaped`!
                         let c = input.parse(just("\\]").to(']'))?;
                         escaped_name.push(c);
                     }
@@ -1122,6 +1124,23 @@ impl SectionHeader {
     pub fn unescaped(&self) -> impl Display + '_ {
         let Self(inner) = self;
         inner
+    }
+
+    pub fn escaped(&self) -> impl Display + '_ {
+        let Self(inner) = self;
+
+        lazy_format!(|f| {
+            let mut escaped_start = 0;
+            for (idx, c) in inner.char_indices() {
+                // NOTE: keep in sync. with the escaping in `Self::parser`!
+                if let ']' = c {
+                    write!(f, "{}\\", &inner[escaped_start..idx])?;
+                    escaped_start = idx;
+                }
+            }
+            write!(f, "{}", &inner[escaped_start..])?;
+            Ok(())
+        })
     }
 }
 

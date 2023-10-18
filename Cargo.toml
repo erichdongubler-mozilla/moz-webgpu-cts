@@ -15,6 +15,7 @@ unstructured-properties = []
 chumsky = { version = "1.0.0-alpha.6", features = ["label", "pratt"] }
 clap = { version = "4.4.2", features = ["derive"] }
 env_logger = "0.10.0"
+format = "0.2.4"
 indexmap = "2.0.0"
 lets_find_up = "0.0.3"
 log = "0.4.20"
