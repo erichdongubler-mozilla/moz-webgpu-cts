@@ -17,6 +17,8 @@ use whippit::metadata::{
 #[cfg(test)]
 use {chumsky::text::newline, insta::assert_debug_snapshot};
 
+pub type File = metadata::File<AnalyzeableProps<TestOutcome>, AnalyzeableProps<SubtestOutcome>>;
+
 pub type Test = metadata::Test<AnalyzeableProps<TestOutcome>, AnalyzeableProps<SubtestOutcome>>;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]

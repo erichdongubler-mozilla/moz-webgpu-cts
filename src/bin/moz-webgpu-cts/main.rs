@@ -1,6 +1,6 @@
-mod triage;
+mod metadata;
 
-use self::triage::{
+use self::metadata::{
     AnalyzeableProps, Applicability, Expectation, Platform, SubtestOutcome, Test, TestOutcome,
 };
 
@@ -21,7 +21,6 @@ use path_dsl::path;
 use regex::Regex;
 use whippit::{
     metadata::{
-        self,
         properties::{ConditionalValue, PropertyValue},
         Subtest,
     },
@@ -112,7 +111,7 @@ fn run(cli: Cli) -> ExitCode {
             #[derive(Debug)]
             struct TaggedTest {
                 orig_path: Arc<PathBuf>,
-                inner: triage::Test,
+                inner: metadata::Test,
             }
             let tests_by_name = {
                 let mut found_parse_err = false;
