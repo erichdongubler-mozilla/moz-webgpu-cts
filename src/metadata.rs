@@ -412,7 +412,7 @@ fn test<'a>() -> impl Parser<'a, &'a str, Test<'a>, ParseError<'a>> {
 
     let subtest = || {
         section_name(1)
-            .then_ignore(newline())
+            .then_ignore(newline().or(end()))
             .labelled("subtest section header")
             .then(
                 property(2)
