@@ -59,7 +59,7 @@ impl<Tp, Sp> File<Tp, Sp> {
         Sp: Properties<'a>,
     {
         filler()
-            .ignore_then(test())
+            .ignore_then(Test::<Tp, Sp>::parser())
             .then_ignore(filler())
             .repeated()
             .collect()
@@ -444,6 +444,64 @@ pub struct Test<Tp, Sp> {
     span: SimpleSpan,
 }
 
+impl<Tp, Sp> Test<Tp, Sp> {
+    pub fn parser<'a>() -> impl Parser<'a, &'a str, Test<Tp, Sp>, ParseError<'a>>
+    where
+        Tp: Properties<'a>,
+        Sp: Properties<'a>,
+    {
+        #[derive(Clone, Debug)]
+        enum Item<Tp, Sp> {
+            Subtest { name: String, properties: Sp },
+            Property(Tp),
+            Newline,
+            Comment,
+        }
+
+        let items = choice((
+            subtest().map(|(name, properties)| Item::Subtest { name, properties }),
+            Tp::property_parser(&mut PropertiesParseHelper::new(1))
+                .labelled("test property")
+                .map(Item::Property),
+            newline().labelled("empty line").to(Item::Newline),
+            comment(1).to(Item::Comment),
+        ))
+        .repeated()
+        .collect::<Vec<_>>()
+        .validate(|items, e, emitter| {
+            let mut properties = <Tp as Default>::default();
+            let mut subtests = IndexMap::new();
+            for item in items {
+                match item {
+                    Item::Property(prop) => properties.insert(prop, emitter),
+                    Item::Subtest { name, properties } => {
+                        if subtests.contains_key(&name) {
+                            emitter
+                                .emit(Rich::custom(e.span(), format!("duplicate {name} subtest")))
+                        }
+                        subtests.insert(name, Subtest { properties });
+                    }
+                    Item::Newline | Item::Comment => (),
+                }
+            }
+            (properties, subtests)
+        });
+
+        let test_header = section_name(0)
+            .then_ignore(newline().or(end()))
+            .labelled("test section header");
+
+        test_header
+            .then(items)
+            .map_with(|(name, (properties, subtests)), e| Test {
+                name,
+                span: e.span(),
+                properties,
+                subtests,
+            })
+    }
+}
+
 /// A single second-level section in a [`File`] underneath a [`Test`].
 ///
 /// See [`File`] for more details for the human-readable format this corresponds to.
@@ -602,65 +660,9 @@ fn smoke_comment() {
     "###);
 }
 
-fn test<'a, Tp, Sp>() -> impl Parser<'a, &'a str, Test<Tp, Sp>, ParseError<'a>>
-where
-    Tp: Properties<'a>,
-    Sp: Properties<'a>,
-{
-    #[derive(Clone, Debug)]
-    enum Item<Tp, Sp> {
-        Subtest { name: String, properties: Sp },
-        Property(Tp),
-        Newline,
-        Comment,
-    }
-
-    let items = choice((
-        subtest().map(|(name, properties)| Item::Subtest { name, properties }),
-        Tp::property_parser(&mut PropertiesParseHelper::new(1))
-            .labelled("test property")
-            .map(Item::Property),
-        newline().labelled("empty line").to(Item::Newline),
-        comment(1).to(Item::Comment),
-    ))
-    .repeated()
-    .collect::<Vec<_>>()
-    .validate(|items, e, emitter| {
-        let mut properties = <Tp as Default>::default();
-        let mut subtests = IndexMap::new();
-        for item in items {
-            match item {
-                Item::Property(prop) => properties.insert(prop, emitter),
-                Item::Subtest { name, properties } => {
-                    if subtests.contains_key(&name) {
-                        // TODO: use old and new item span, better msg.
-                        emitter.emit(Rich::custom(e.span(), format!("duplicate {name} subtest")))
-                    }
-                    subtests.insert(name, Subtest { properties });
-                }
-                Item::Newline | Item::Comment => (),
-            }
-        }
-        (properties, subtests)
-    });
-
-    let test_header = section_name(0)
-        .then_ignore(newline().or(end()))
-        .labelled("test section header");
-
-    test_header
-        .then(items)
-        .map_with(|(name, (properties, subtests)), e| Test {
-            name,
-            span: e.span(),
-            properties,
-            subtests,
-        })
-}
-
 #[test]
 fn smoke_test() {
-    let test = || test::<UnstructuredProperties<'_>, UnstructuredProperties<'_>>();
+    let test = || Test::<UnstructuredProperties<'_>, UnstructuredProperties<'_>>::parser();
 
     assert_debug_snapshot!(
         test().parse("[stuff and things]\n"),
