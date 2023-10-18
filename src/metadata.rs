@@ -9,7 +9,7 @@
 //! [`Web-Platform-Tests Metadata` section]: https://web-platform-tests.org/tools/wptrunner/docs/expectation.html#web-platform-tests-metadata
 
 #[cfg(test)]
-use insta::assert_debug_snapshot;
+use {crate::metadata::properties::UnstructuredProperties, insta::assert_debug_snapshot};
 
 use chumsky::{
     extra::Full,
@@ -21,9 +21,7 @@ use chumsky::{
 };
 use indexmap::IndexMap;
 
-use crate::metadata::properties::conditional;
-
-use self::properties::{PropertiesParseHelper, PropertyValue};
+use self::properties::{Properties, PropertiesParseHelper};
 
 pub mod properties;
 
@@ -33,22 +31,33 @@ pub type ParseError<'a> = Full<Rich<'a, char>, (), ()>;
 /// Represents the contents of a single file written in the [WPT metadata format][self]. It can be
 /// constructed from this format using [`Self::parser`].
 ///
+/// Properties for tests and subtests are abstracted out. If you don't have any opinions on how to
+/// parse these yet, you can use the [`properties::unstructured`] API, or
+/// [`File::parser_with_unstructured_props`] for convenience (both of which are gated behind the
+/// `unstructured-properties` feature) to just get output with minimally structured property data.
+/// If you'd like to more performance or stronger types with your properties, you will need to
+/// provide types that implement the [`Properties`] trait for `Tp` and `Sp`.
+///
 /// N.B. that you should not rely only on data represented in this structure to compute test
 /// metadata. It is _not_ complete by itself, because WPT metadata properties can be layered across
 /// multiple sources (i.e., [`__dir__.ini`] files exist).
 ///
 /// [`__dir__.ini`]: https://web-platform-tests.org/tools/wptrunner/docs/expectation.html#directory-metadata
 #[derive(Clone, Debug)]
-pub struct File<'a> {
-    pub tests: Vec<Test<'a>>,
+pub struct File<Tp, Sp> {
+    pub tests: Vec<Test<Tp, Sp>>,
 }
 
-impl<'a> File<'a> {
+impl<Tp, Sp> File<Tp, Sp> {
     /// Returns a parser for a single file written in the [WPT metadata format][self].
     ///
     /// No attempt is made to reconcile the provided string with additional layers of
     /// configuration. See [`Self`] for more details.
-    pub fn parser() -> impl Parser<'a, &'a str, File<'a>, ParseError<'a>> {
+    pub fn parser<'a>() -> impl Parser<'a, &'a str, File<Tp, Sp>, ParseError<'a>>
+    where
+        Tp: Properties<'a>,
+        Sp: Properties<'a>,
+    {
         filler()
             .ignore_then(test())
             .then_ignore(filler())
@@ -65,7 +74,7 @@ fn filler<'a>() -> impl Parser<'a, &'a str, (), ParseError<'a>> {
 #[test]
 fn smoke_parser() {
     assert_debug_snapshot!(
-        File::parser().parse(""),
+        File::parser_with_unstructured_props().parse(""),
         @r###"
     ParseResult {
         output: Some(
@@ -77,7 +86,7 @@ fn smoke_parser() {
     }
     "###
     );
-    assert_debug_snapshot!(File::parser().parse("[hoot]"), @r###"
+    assert_debug_snapshot!(File::parser_with_unstructured_props().parse("[hoot]"), @r###"
     ParseResult {
         output: Some(
             File {
@@ -94,7 +103,7 @@ fn smoke_parser() {
         errs: [],
     }
     "###);
-    assert_debug_snapshot!(File::parser().parse("[blarg]\n"), @r###"
+    assert_debug_snapshot!(File::parser_with_unstructured_props().parse("[blarg]\n"), @r###"
     ParseResult {
         output: Some(
             File {
@@ -111,7 +120,7 @@ fn smoke_parser() {
         errs: [],
     }
     "###);
-    assert_debug_snapshot!(File::parser().parse("[blarg]\n[stuff]"), @r###"
+    assert_debug_snapshot!(File::parser_with_unstructured_props().parse("[blarg]\n[stuff]"), @r###"
     ParseResult {
         output: Some(
             File {
@@ -134,7 +143,7 @@ fn smoke_parser() {
         errs: [],
     }
     "###);
-    assert_debug_snapshot!(File::parser().parse("\n[blarg]\n[stuff]\n"), @r###"
+    assert_debug_snapshot!(File::parser_with_unstructured_props().parse("\n[blarg]\n[stuff]\n"), @r###"
     ParseResult {
         output: Some(
             File {
@@ -157,7 +166,7 @@ fn smoke_parser() {
         errs: [],
     }
     "###);
-    assert_debug_snapshot!(File::parser().parse("\n[blarg]\n\n[stuff]\n"), @r###"
+    assert_debug_snapshot!(File::parser_with_unstructured_props().parse("\n[blarg]\n\n[stuff]\n"), @r###"
     ParseResult {
         output: Some(
             File {
@@ -180,7 +189,7 @@ fn smoke_parser() {
         errs: [],
     }
     "###);
-    assert_debug_snapshot!(File::parser().parse("\n[blarg]\n  expected: PASS\n[stuff]\n"), @r###"
+    assert_debug_snapshot!(File::parser_with_unstructured_props().parse("\n[blarg]\n  expected: PASS\n[stuff]\n"), @r###"
     ParseResult {
         output: Some(
             File {
@@ -209,7 +218,7 @@ fn smoke_parser() {
     "###);
 
     assert_debug_snapshot!(
-        File::parser().parse(r#"
+        File::parser_with_unstructured_props().parse(r#"
 [blarg]
   expected: PASS
 [stuff]
@@ -243,7 +252,7 @@ fn smoke_parser() {
     "###);
 
     assert_debug_snapshot!(
-        File::parser().parse(r#"
+        File::parser_with_unstructured_props().parse(r#"
 [blarg]
   expected: PASS
   # Below is wrong: indentation is off!
@@ -260,7 +269,7 @@ fn smoke_parser() {
     "###);
 
     assert_debug_snapshot!(
-        File::parser().parse(r#"
+        File::parser_with_unstructured_props().parse(r#"
 [blarg]
   expected: PASS
   [stuff]
@@ -297,7 +306,7 @@ fn smoke_parser() {
     "###);
 
     assert_debug_snapshot!(
-        File::parser().parse(
+        File::parser_with_unstructured_props().parse(
 r#"
 [asdf]
   [blarg]
@@ -354,7 +363,7 @@ r#"
     );
 
     assert_debug_snapshot!(
-    File::parser().parse(
+    File::parser_with_unstructured_props().parse(
 r#"
 [asdf]
   expected: PASS
@@ -393,7 +402,7 @@ r#"
     "###
     );
 
-    let parser = newline().ignore_then(File::parser());
+    let parser = newline().ignore_then(File::parser_with_unstructured_props());
 
     assert_debug_snapshot!(
         parser.parse(r#"
@@ -428,11 +437,10 @@ r#"
 ///
 /// See [`File`] for more details for the human-readable format this corresponds to.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Test<'a> {
+pub struct Test<Tp, Sp> {
     pub name: String,
-    pub properties:
-        IndexMap<&'a str, PropertyValue<conditional::Expr<conditional::Value<'a>>, &'a str>>,
-    pub subtests: IndexMap<String, Subtest<'a>>,
+    pub properties: Tp,
+    pub subtests: IndexMap<String, Subtest<Sp>>,
     span: SimpleSpan,
 }
 
@@ -440,9 +448,8 @@ pub struct Test<'a> {
 ///
 /// See [`File`] for more details for the human-readable format this corresponds to.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Subtest<'a> {
-    pub properties:
-        IndexMap<&'a str, PropertyValue<conditional::Expr<conditional::Value<'a>>, &'a str>>,
+pub struct Subtest<P> {
+    pub properties: P,
 }
 
 fn comment<'a>(indentation: u8) -> impl Parser<'a, &'a str, &'a str, ParseError<'a>> {
@@ -595,45 +602,35 @@ fn smoke_comment() {
     "###);
 }
 
-fn test<'a>() -> impl Parser<'a, &'a str, Test<'a>, ParseError<'a>> {
+fn test<'a, Tp, Sp>() -> impl Parser<'a, &'a str, Test<Tp, Sp>, ParseError<'a>>
+where
+    Tp: Properties<'a>,
+    Sp: Properties<'a>,
+{
     #[derive(Clone, Debug)]
-    enum Item<'a> {
-        Subtest {
-            name: String,
-            properties: IndexMap<
-                &'a str,
-                PropertyValue<conditional::Expr<conditional::Value<'a>>, &'a str>,
-            >,
-        },
-        Property {
-            key: &'a str,
-            value: PropertyValue<conditional::Expr<conditional::Value<'a>>, &'a str>,
-        },
+    enum Item<Tp, Sp> {
+        Subtest { name: String, properties: Sp },
+        Property(Tp),
         Newline,
         Comment,
     }
 
     let items = choice((
         subtest().map(|(name, properties)| Item::Subtest { name, properties }),
-        PropertiesParseHelper::new(1)
-            .parser()
+        Tp::property_parser(&mut PropertiesParseHelper::new(1))
             .labelled("test property")
-            .map(|(key, value)| Item::Property { key, value }),
+            .map(Item::Property),
         newline().labelled("empty line").to(Item::Newline),
         comment(1).to(Item::Comment),
     ))
     .repeated()
     .collect::<Vec<_>>()
     .validate(|items, e, emitter| {
-        let mut properties = IndexMap::new();
+        let mut properties = <Tp as Default>::default();
         let mut subtests = IndexMap::new();
         for item in items {
             match item {
-                Item::Property { key, value } => {
-                    if let Some(_old) = properties.insert(key, value) {
-                        emitter.emit(Rich::custom(e.span(), format!("duplicate {key} property")))
-                    }
-                }
+                Item::Property(prop) => properties.insert(prop, emitter),
                 Item::Subtest { name, properties } => {
                     if subtests.contains_key(&name) {
                         // TODO: use old and new item span, better msg.
@@ -663,6 +660,8 @@ fn test<'a>() -> impl Parser<'a, &'a str, Test<'a>, ParseError<'a>> {
 
 #[test]
 fn smoke_test() {
+    let test = || test::<UnstructuredProperties<'_>, UnstructuredProperties<'_>>();
+
     assert_debug_snapshot!(
         test().parse("[stuff and things]\n"),
         @r###"
@@ -821,32 +820,32 @@ fn smoke_test() {
     );
 }
 
-fn subtest<'a>() -> impl Parser<
-    'a,
-    &'a str,
-    (
-        String,
-        IndexMap<&'a str, PropertyValue<conditional::Expr<conditional::Value<'a>>, &'a str>>,
-    ),
-    ParseError<'a>,
-> {
+fn subtest<'a, Sp>() -> impl Parser<'a, &'a str, (String, Sp), ParseError<'a>>
+where
+    Sp: Properties<'a>,
+{
     section_name(1)
         .then_ignore(newline().or(end()))
         .labelled("subtest section header")
         .then(
-            PropertiesParseHelper::new(2)
-                .parser()
+            Sp::property_parser(&mut PropertiesParseHelper::new(2))
                 .labelled("subtest property")
                 .repeated()
                 .collect::<Vec<_>>()
-                .map(|properties| properties.into_iter().collect()),
+                .validate(|props, _e, emitter| {
+                    let mut properties = Sp::default();
+                    for prop in props {
+                        properties.insert(prop, emitter);
+                    }
+                    properties
+                }),
         )
         .labelled("subtest")
 }
 
 #[test]
 fn smoke_subtest() {
-    let subtest = || newline().ignore_then(subtest());
+    let subtest = || newline().ignore_then(subtest::<UnstructuredProperties<'_>>());
 
     assert_debug_snapshot!(
         subtest().parse(r#"

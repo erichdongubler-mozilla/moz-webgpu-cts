@@ -7,14 +7,14 @@ use std::{
     sync::Arc,
 };
 
-use chumsky::{prelude::Rich, Parser as _};
+use chumsky::prelude::Rich;
 use clap::Parser;
 use indexmap::IndexMap;
 use miette::{Diagnostic, NamedSource, SourceSpan};
 use path_dsl::path;
 
 use regex::Regex;
-use whippit::metadata;
+use whippit::metadata::{self, properties::UnstructuredProperties};
 
 #[derive(Debug, Parser)]
 struct Cli {
@@ -60,7 +60,7 @@ fn run(cli: Cli) -> ExitCode {
             #[derive(Debug)]
             struct Test<'a> {
                 orig_path: &'a Path,
-                inner: metadata::Test<'a>,
+                inner: metadata::Test<UnstructuredProperties<'a>, UnstructuredProperties<'a>>,
             }
 
             let raw_test_files_by_path =
@@ -74,7 +74,9 @@ fn run(cli: Cli) -> ExitCode {
                 let extracted = raw_test_files_by_path
                     .iter()
                     .filter_map(|(path, file_contents)| {
-                        match metadata::File::parser().parse(file_contents).into_result() {
+                        match chumsky::Parser::parse(&metadata::File::parser(), file_contents)
+                            .into_result()
+                        {
                             Ok(metadata::File { tests }) => Some(tests.into_iter().map(|inner| {
                                 (
                                     inner

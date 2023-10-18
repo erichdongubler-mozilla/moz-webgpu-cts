@@ -3,7 +3,10 @@
 pub(crate) mod expr;
 
 #[cfg(test)]
-use insta::assert_debug_snapshot;
+use {
+    crate::metadata::properties::unstructured::unstructured_conditional_term,
+    insta::assert_debug_snapshot,
+};
 
 use chumsky::{
     prelude::Rich,
@@ -16,20 +19,34 @@ use crate::metadata::{indent, ParseError};
 
 pub use self::expr::{Expr, Literal, Value};
 
-fn conditional_rule<'a>(
+fn conditional_rule<'a, C, V, Pc, Pv>(
     indentation: u8,
-) -> impl Parser<'a, &'a str, (Expr<Value<'a>>, &'a str), ParseError<'a>> {
+    condition_parser: Pc,
+    value_parser: Pv,
+) -> impl Parser<'a, &'a str, (C, V), ParseError<'a>>
+where
+    Pc: Parser<'a, &'a str, C, ParseError<'a>>,
+    Pv: Parser<'a, &'a str, V, ParseError<'a>>,
+{
     let unstructured_value = unstructured_value();
     group((indent(indentation), keyword("if"), just(' ')))
-        .ignore_then(Expr::parser(Value::parser()).nested_in(unstructured_value.clone()))
+        .ignore_then(condition_parser.nested_in(unstructured_value.clone()))
         .then_ignore(just(':'))
-        .then(unstructured_value)
+        .then(value_parser.nested_in(unstructured_value))
         .then_ignore(newline().or(end()))
         .labelled("conditional value rule")
 }
 
 #[test]
 fn test_conditional_rule() {
+    let conditional_rule = |indent| {
+        conditional_rule(
+            indent,
+            unstructured_conditional_term(),
+            unstructured_value(),
+        )
+    };
+
     assert_debug_snapshot!(conditional_rule(0).parse("if os == \"sux\": woot"), @r###"
     ParseResult {
         output: Some(
@@ -132,15 +149,23 @@ fn test_conditional_rule() {
     "###);
 }
 
-fn conditional_fallback<'a>(indentation: u8) -> impl Parser<'a, &'a str, &'a str, ParseError<'a>> {
+fn conditional_fallback<'a, V, Pv>(
+    indentation: u8,
+    value_parser: Pv,
+) -> impl Parser<'a, &'a str, V, ParseError<'a>>
+where
+    Pv: Parser<'a, &'a str, V, ParseError<'a>>,
+{
     indent(indentation)
-        .ignore_then(unstructured_value())
+        .ignore_then(value_parser.nested_in(unstructured_value()))
         .then_ignore(newline().or(end()))
         .labelled("conditional value fallback")
 }
 
 #[test]
 fn test_conditional_fallback() {
+    let conditional_fallback = |indent| conditional_fallback(indent, unstructured_value());
+
     assert_debug_snapshot!(conditional_fallback(0).parse("[PASS, FAIL]"), @r###"
     ParseResult {
         output: Some(
@@ -240,15 +265,21 @@ pub struct ConditionalValue<C, V> {
     pub fallback: Option<V>,
 }
 
-impl<'a> ConditionalValue<Expr<Value<'a>>, &'a str> {
-    pub(super) fn parser(
+impl<C, V> ConditionalValue<C, V> {
+    pub(super) fn parser<'a, Pc, Pv>(
         indentation: u8,
-    ) -> impl Parser<'a, &'a str, ConditionalValue<Expr<Value<'a>>, &'a str>, ParseError<'a>> {
-        conditional_rule(indentation)
+        condition_parser: Pc,
+        value_parser: Pv,
+    ) -> impl Parser<'a, &'a str, ConditionalValue<C, V>, ParseError<'a>>
+    where
+        Pc: Parser<'a, &'a str, C, ParseError<'a>>,
+        Pv: Clone + Parser<'a, &'a str, V, ParseError<'a>>,
+    {
+        conditional_rule(indentation, condition_parser, value_parser.clone())
             .repeated()
             .at_least(1)
             .collect::<Vec<_>>()
-            .then(conditional_fallback(indentation).or_not())
+            .then(conditional_fallback(indentation, value_parser).or_not())
             .validate(|(conditions, fallback), e, emitter| {
                 if conditions.is_empty() && fallback.is_none() {
                     emitter.emit(Rich::custom(
@@ -279,7 +310,13 @@ pub(crate) fn unstructured_value<'a>() -> impl Clone + Parser<'a, &'a str, &'a s
 
 #[test]
 fn test_conditional_value() {
-    let conditional_value = |indent| ConditionalValue::parser(indent);
+    let conditional_value = |indent| {
+        ConditionalValue::parser(
+            indent,
+            unstructured_conditional_term(),
+            unstructured_value(),
+        )
+    };
 
     assert_debug_snapshot!(
         // Should fail, no conditional rules.

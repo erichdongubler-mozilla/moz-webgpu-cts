@@ -50,6 +50,13 @@ impl<'a> Value<'a> {
 
 /// Conditional expressions supported by [WPT metadata properties](crate::metadata::properties).
 /// Usually contained by a [`ConditionalValue`](super::ConditionalValue).
+///
+/// It is recommended that implementors of the [`Properties`] trait use this type to implement the
+/// [`Properties::property_parser`] method.
+///
+/// [`PropertyValue::Conditional`]: crate::metadata::properties::PropertyValue::Conditional
+/// [`Properties`]: crate::metadata::properties::Properties
+/// [`Properties::property_parser`]: crate::metadata::properties::Properties::property_parser
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Expr<V> {
     Value(V),
