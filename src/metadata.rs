@@ -611,20 +611,6 @@ fn test<'a>() -> impl Parser<'a, &'a str, Test<'a>, ParseError<'a>> {
         Comment,
     }
 
-    let subtest = || {
-        section_name(1)
-            .then_ignore(newline().or(end()))
-            .labelled("subtest section header")
-            .then(
-                property(2)
-                    .labelled("subtest property")
-                    .repeated()
-                    .collect::<Vec<_>>()
-                    .map(|properties| properties.into_iter().collect()),
-            )
-            .labelled("subtest")
-    };
-
     let items = choice((
         subtest().map(|(name, properties)| Item::Subtest { name, properties }),
         property(1)
@@ -821,6 +807,108 @@ fn smoke_test() {
                 },
                 span: 1..144,
             },
+        ),
+        errs: [],
+    }
+    "###
+    );
+}
+
+fn subtest<'a>() -> impl Parser<
+    'a,
+    &'a str,
+    (
+        String,
+        IndexMap<&'a str, PropertyValue<conditional::Expr<conditional::Value<'a>>, &'a str>>,
+    ),
+    ParseError<'a>,
+> {
+    section_name(1)
+        .then_ignore(newline().or(end()))
+        .labelled("subtest section header")
+        .then(
+            property(2)
+                .labelled("subtest property")
+                .repeated()
+                .collect::<Vec<_>>()
+                .map(|properties| properties.into_iter().collect()),
+        )
+        .labelled("subtest")
+}
+
+#[test]
+fn smoke_subtest() {
+    let subtest = || newline().ignore_then(subtest());
+
+    assert_debug_snapshot!(
+        subtest().parse(r#"
+  [stuff and things]
+"#),
+        @r###"
+    ParseResult {
+        output: Some(
+            (
+                "stuff and things",
+                {},
+            ),
+        ),
+        errs: [],
+    }
+    "###
+    );
+
+    assert_debug_snapshot!(
+        subtest().parse(r#"
+  [stuff and things]
+    some_prop: it_works
+"#),
+        @r###"
+    ParseResult {
+        output: Some(
+            (
+                "stuff and things",
+                {
+                    "some_prop": Unconditional(
+                        "it_works",
+                    ),
+                },
+            ),
+        ),
+        errs: [],
+    }
+    "###
+    );
+
+    assert_debug_snapshot!(
+        subtest().parse(r#"
+  [stuff and things]
+    expected:
+      if thing: boo
+      yay
+"#),
+        @r###"
+    ParseResult {
+        output: Some(
+            (
+                "stuff and things",
+                {
+                    "expected": Conditional {
+                        conditions: [
+                            (
+                                Value(
+                                    Variable(
+                                        "thing",
+                                    ),
+                                ),
+                                " boo",
+                            ),
+                        ],
+                        fallback: Some(
+                            "yay",
+                        ),
+                    },
+                },
+            ),
         ),
         errs: [],
     }
