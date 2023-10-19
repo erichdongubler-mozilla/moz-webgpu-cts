@@ -83,7 +83,7 @@ fn run(cli: Cli) -> ExitCode {
         read_gecko_files_at(&gecko_checkout, &webgpu_cts_meta_parent_dir, "**/*.ini")
     };
 
-    fn render_parse_errors<'a>(
+    fn render_metadata_parse_errors<'a>(
         path: &Arc<PathBuf>,
         file_contents: &Arc<String>,
         errors: impl IntoIterator<Item = Rich<'a, char>>,
@@ -124,7 +124,7 @@ fn run(cli: Cli) -> ExitCode {
                 {
                     Err(errors) => {
                         fmt_err_found = true;
-                        render_parse_errors(&path, &file_contents, errors);
+                        render_metadata_parse_errors(&path, &file_contents, errors);
                     }
                     Ok(file) => {
                         let mut out =
@@ -196,7 +196,7 @@ fn run(cli: Cli) -> ExitCode {
                             })),
                             Err(errors) => {
                                 found_parse_err = true;
-                                render_parse_errors(path, file_contents, errors);
+                                render_metadata_parse_errors(path, file_contents, errors);
                                 None
                             }
                         }
