@@ -9,17 +9,21 @@
 //! [`Web-Platform-Tests Metadata` section]: https://web-platform-tests.org/tools/wptrunner/docs/expectation.html#web-platform-tests-metadata
 
 #[cfg(test)]
-use insta::assert_debug_snapshot;
+use {crate::metadata::properties::UnstructuredProperties, insta::assert_debug_snapshot};
 
 use chumsky::{
     extra::Full,
     prelude::Rich,
     primitive::{any, choice, custom, end, group, just},
     span::SimpleSpan,
-    text::{ident, inline_whitespace, keyword, newline},
+    text::newline,
     IterParser, Parser,
 };
 use indexmap::IndexMap;
+
+use self::properties::{Properties, PropertiesParseHelper};
+
+pub mod properties;
 
 /// An error emitted by [`File::parser`] and [other WPT metadata parsing logic][self].
 pub type ParseError<'a> = Full<Rich<'a, char>, (), ()>;
@@ -27,24 +31,35 @@ pub type ParseError<'a> = Full<Rich<'a, char>, (), ()>;
 /// Represents the contents of a single file written in the [WPT metadata format][self]. It can be
 /// constructed from this format using [`Self::parser`].
 ///
-/// N.B. that you should not only use the data represented in this structure to compute test
-/// metadata. It is _not_ complete by itself, because of the existence of layering in WPT metadata
-/// (i.e., [`__dir__.ini`] files).
+/// Properties for tests and subtests are abstracted out. If you don't have any opinions on how to
+/// parse these yet, you can use the [`properties::unstructured`] API, or
+/// [`File::parser_with_unstructured_props`] for convenience (both of which are gated behind the
+/// `unstructured-properties` feature) to just get output with minimally structured property data.
+/// If you'd like to more performance or stronger types with your properties, you will need to
+/// provide types that implement the [`Properties`] trait for `Tp` and `Sp`.
+///
+/// N.B. that you should not rely only on data represented in this structure to compute test
+/// metadata. It is _not_ complete by itself, because WPT metadata properties can be layered across
+/// multiple sources (i.e., [`__dir__.ini`] files exist).
 ///
 /// [`__dir__.ini`]: https://web-platform-tests.org/tools/wptrunner/docs/expectation.html#directory-metadata
 #[derive(Clone, Debug)]
-pub struct File<'a> {
-    pub tests: Vec<Test<'a>>,
+pub struct File<Tp, Sp> {
+    pub tests: Vec<Test<Tp, Sp>>,
 }
 
-impl<'a> File<'a> {
+impl<Tp, Sp> File<Tp, Sp> {
     /// Returns a parser for a single file written in the [WPT metadata format][self].
     ///
     /// No attempt is made to reconcile the provided string with additional layers of
     /// configuration. See [`Self`] for more details.
-    pub fn parser() -> impl Parser<'a, &'a str, File<'a>, ParseError<'a>> {
+    pub fn parser<'a>() -> impl Parser<'a, &'a str, File<Tp, Sp>, ParseError<'a>>
+    where
+        Tp: Properties<'a>,
+        Sp: Properties<'a>,
+    {
         filler()
-            .ignore_then(test())
+            .ignore_then(Test::<Tp, Sp>::parser())
             .then_ignore(filler())
             .repeated()
             .collect()
@@ -59,7 +74,7 @@ fn filler<'a>() -> impl Parser<'a, &'a str, (), ParseError<'a>> {
 #[test]
 fn smoke_parser() {
     assert_debug_snapshot!(
-        File::parser().parse(""),
+        File::parser_with_unstructured_props().parse(""),
         @r###"
     ParseResult {
         output: Some(
@@ -71,15 +86,24 @@ fn smoke_parser() {
     }
     "###
     );
-    assert_debug_snapshot!(File::parser().parse("[hoot]"), @r###"
+    assert_debug_snapshot!(File::parser_with_unstructured_props().parse("[hoot]"), @r###"
     ParseResult {
-        output: None,
-        errs: [
-            found end of input at 6..6 expected ''\r'', or ''\n'',
-        ],
+        output: Some(
+            File {
+                tests: [
+                    Test {
+                        name: "hoot",
+                        properties: {},
+                        subtests: {},
+                        span: 0..6,
+                    },
+                ],
+            },
+        ),
+        errs: [],
     }
     "###);
-    assert_debug_snapshot!(File::parser().parse("[blarg]\n"), @r###"
+    assert_debug_snapshot!(File::parser_with_unstructured_props().parse("[blarg]\n"), @r###"
     ParseResult {
         output: Some(
             File {
@@ -96,15 +120,30 @@ fn smoke_parser() {
         errs: [],
     }
     "###);
-    assert_debug_snapshot!(File::parser().parse("[blarg]\n[stuff]"), @r###"
+    assert_debug_snapshot!(File::parser_with_unstructured_props().parse("[blarg]\n[stuff]"), @r###"
     ParseResult {
-        output: None,
-        errs: [
-            found end of input at 15..15 expected ''\r'', or ''\n'',
-        ],
+        output: Some(
+            File {
+                tests: [
+                    Test {
+                        name: "blarg",
+                        properties: {},
+                        subtests: {},
+                        span: 0..8,
+                    },
+                    Test {
+                        name: "stuff",
+                        properties: {},
+                        subtests: {},
+                        span: 8..15,
+                    },
+                ],
+            },
+        ),
+        errs: [],
     }
     "###);
-    assert_debug_snapshot!(File::parser().parse("\n[blarg]\n[stuff]\n"), @r###"
+    assert_debug_snapshot!(File::parser_with_unstructured_props().parse("\n[blarg]\n[stuff]\n"), @r###"
     ParseResult {
         output: Some(
             File {
@@ -127,7 +166,7 @@ fn smoke_parser() {
         errs: [],
     }
     "###);
-    assert_debug_snapshot!(File::parser().parse("\n[blarg]\n\n[stuff]\n"), @r###"
+    assert_debug_snapshot!(File::parser_with_unstructured_props().parse("\n[blarg]\n\n[stuff]\n"), @r###"
     ParseResult {
         output: Some(
             File {
@@ -150,7 +189,7 @@ fn smoke_parser() {
         errs: [],
     }
     "###);
-    assert_debug_snapshot!(File::parser().parse("\n[blarg]\n  expected: PASS\n[stuff]\n"), @r###"
+    assert_debug_snapshot!(File::parser_with_unstructured_props().parse("\n[blarg]\n  expected: PASS\n[stuff]\n"), @r###"
     ParseResult {
         output: Some(
             File {
@@ -177,49 +216,299 @@ fn smoke_parser() {
         errs: [],
     }
     "###);
+
+    assert_debug_snapshot!(
+        File::parser_with_unstructured_props().parse(r#"
+[blarg]
+  expected: PASS
+[stuff]
+"#),
+        @r###"
+    ParseResult {
+        output: Some(
+            File {
+                tests: [
+                    Test {
+                        name: "blarg",
+                        properties: {
+                            "expected": Unconditional(
+                                "PASS",
+                            ),
+                        },
+                        subtests: {},
+                        span: 1..26,
+                    },
+                    Test {
+                        name: "stuff",
+                        properties: {},
+                        subtests: {},
+                        span: 26..34,
+                    },
+                ],
+            },
+        ),
+        errs: [],
+    }
+    "###);
+
+    assert_debug_snapshot!(
+        File::parser_with_unstructured_props().parse(r#"
+[blarg]
+  expected: PASS
+  # Below is wrong: indentation is off!
+    [stuff]
+      expected: TIMEOUT
+"#),
+        @r###"
+    ParseResult {
+        output: None,
+        errs: [
+            found '' '' at 66..67 expected "test section header",
+        ],
+    }
+    "###);
+
+    assert_debug_snapshot!(
+        File::parser_with_unstructured_props().parse(r#"
+[blarg]
+  expected: PASS
+  [stuff]
+    expected: TIMEOUT
+"#),
+        @r###"
+    ParseResult {
+        output: Some(
+            File {
+                tests: [
+                    Test {
+                        name: "blarg",
+                        properties: {
+                            "expected": Unconditional(
+                                "PASS",
+                            ),
+                        },
+                        subtests: {
+                            "stuff": Subtest {
+                                properties: {
+                                    "expected": Unconditional(
+                                        "TIMEOUT",
+                                    ),
+                                },
+                            },
+                        },
+                        span: 1..58,
+                    },
+                ],
+            },
+        ),
+        errs: [],
+    }
+    "###);
+
+    assert_debug_snapshot!(
+        File::parser_with_unstructured_props().parse(
+r#"
+[asdf]
+  [blarg]
+    expected:
+      if os == "linux": FAIL
+"#
+        ),
+        @r###"
+    ParseResult {
+        output: Some(
+            File {
+                tests: [
+                    Test {
+                        name: "asdf",
+                        properties: {},
+                        subtests: {
+                            "blarg": Subtest {
+                                properties: {
+                                    "expected": Conditional(
+                                        ConditionalValue {
+                                            conditions: [
+                                                (
+                                                    Eq(
+                                                        Value(
+                                                            Variable(
+                                                                "os",
+                                                            ),
+                                                        ),
+                                                        Value(
+                                                            Literal(
+                                                                String(
+                                                                    "linux",
+                                                                ),
+                                                            ),
+                                                        ),
+                                                    ),
+                                                    " FAIL",
+                                                ),
+                                            ],
+                                            fallback: None,
+                                        },
+                                    ),
+                                },
+                            },
+                        },
+                        span: 1..61,
+                    },
+                ],
+            },
+        ),
+        errs: [],
+    }
+    "###
+    );
+
+    assert_debug_snapshot!(
+    File::parser_with_unstructured_props().parse(
+r#"
+[asdf]
+  expected: PASS
+  [blarg]
+    expected: PASS
+"#
+    ),
+    @r###"
+    ParseResult {
+        output: Some(
+            File {
+                tests: [
+                    Test {
+                        name: "asdf",
+                        properties: {
+                            "expected": Unconditional(
+                                "PASS",
+                            ),
+                        },
+                        subtests: {
+                            "blarg": Subtest {
+                                properties: {
+                                    "expected": Unconditional(
+                                        "PASS",
+                                    ),
+                                },
+                            },
+                        },
+                        span: 1..54,
+                    },
+                ],
+            },
+        ),
+        errs: [],
+    }
+    "###
+    );
+
+    let parser = newline().ignore_then(File::parser_with_unstructured_props());
+
+    assert_debug_snapshot!(
+        parser.parse(r#"
+[asdf]
+  expected: PASS
+"#),
+    @r###"
+    ParseResult {
+        output: Some(
+            File {
+                tests: [
+                    Test {
+                        name: "asdf",
+                        properties: {
+                            "expected": Unconditional(
+                                "PASS",
+                            ),
+                        },
+                        subtests: {},
+                        span: 1..25,
+                    },
+                ],
+            },
+        ),
+        errs: [],
+    }
+    "###
+    );
 }
 
 /// A single first-level section in a [`File`].
 ///
 /// See [`File`] for more details for the human-readable format this corresponds to.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Test<'a> {
+pub struct Test<Tp, Sp> {
     pub name: String,
-    pub properties: IndexMap<&'a str, PropertyValue<&'a str, &'a str>>,
-    pub subtests: IndexMap<String, Subtest<'a>>,
+    pub properties: Tp,
+    pub subtests: IndexMap<String, Subtest<Sp>>,
     span: SimpleSpan,
+}
+
+impl<Tp, Sp> Test<Tp, Sp> {
+    pub fn parser<'a>() -> impl Parser<'a, &'a str, Test<Tp, Sp>, ParseError<'a>>
+    where
+        Tp: Properties<'a>,
+        Sp: Properties<'a>,
+    {
+        #[derive(Clone, Debug)]
+        enum Item<Tp, Sp> {
+            Subtest { name: String, properties: Sp },
+            Property(Tp),
+            Newline,
+            Comment,
+        }
+
+        let items = choice((
+            subtest().map(|(name, properties)| Item::Subtest { name, properties }),
+            Tp::property_parser(&mut PropertiesParseHelper::new(1))
+                .labelled("test property")
+                .map(Item::Property),
+            newline().labelled("empty line").to(Item::Newline),
+            comment(1).to(Item::Comment),
+        ))
+        .repeated()
+        .collect::<Vec<_>>()
+        .validate(|items, e, emitter| {
+            let mut properties = <Tp as Default>::default();
+            let mut subtests = IndexMap::new();
+            for item in items {
+                match item {
+                    Item::Property(prop) => properties.insert(prop, emitter),
+                    Item::Subtest { name, properties } => {
+                        if subtests.contains_key(&name) {
+                            emitter
+                                .emit(Rich::custom(e.span(), format!("duplicate {name} subtest")))
+                        }
+                        subtests.insert(name, Subtest { properties });
+                    }
+                    Item::Newline | Item::Comment => (),
+                }
+            }
+            (properties, subtests)
+        });
+
+        let test_header = section_name(0)
+            .then_ignore(newline().or(end()))
+            .labelled("test section header");
+
+        test_header
+            .then(items)
+            .map_with(|(name, (properties, subtests)), e| Test {
+                name,
+                span: e.span(),
+                properties,
+                subtests,
+            })
+    }
 }
 
 /// A single second-level section in a [`File`] underneath a [`Test`].
 ///
 /// See [`File`] for more details for the human-readable format this corresponds to.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Subtest<'a> {
-    pub properties: IndexMap<&'a str, PropertyValue<&'a str, &'a str>>,
+pub struct Subtest<P> {
+    pub properties: P,
 }
-
-/// A property value in a [`File`], [`Test`], or [`Subtest`]. Can be "unconditional"  or
-/// "conditional" (runtime-evaluated).
-///
-/// See [`File`] for more details for the human-readable format this corresponds to.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum PropertyValue<C, V> {
-    /// A property value that is only ever a specific value.
-    Unconditional(V),
-    /// A property value that must be computed from variables provided by an evaluator. Usually,
-    /// these variables do not vary between test runs on the same machine.
-    ///
-    /// Upstream documentation: [`Conditional Values`](https://web-platform-tests.org/tools/wptrunner/docs/expectation.html#conditional-values)
-    Conditional {
-        conditions: Vec<(Condition<C>, V)>,
-        fallback: Option<V>,
-    },
-}
-
-/// A (yet-to-be) strongly typed correspondent to conditions that can be used in
-/// [`PropertyValue::Conditional`].
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Condition<T>(T);
 
 fn comment<'a>(indentation: u8) -> impl Parser<'a, &'a str, &'a str, ParseError<'a>> {
     group((indent(indentation), just('#'), just(' ').or_not()))
@@ -234,7 +523,7 @@ fn smoke_comment() {
     ParseResult {
         output: None,
         errs: [
-            found ''a'' at 0..1 expected "comment",
+            found ''a'' at 0..1 expected ''#'',
         ],
     }
     "###);
@@ -309,7 +598,7 @@ fn smoke_comment() {
     ParseResult {
         output: None,
         errs: [
-            found ''#'' at 1..2 expected '' '',
+            found ''#'' at 1..2 expected "comment",
         ],
     }
     "###);
@@ -317,7 +606,7 @@ fn smoke_comment() {
     ParseResult {
         output: None,
         errs: [
-            found ''#'' at 0..1 expected "comment",
+            found ''#'' at 0..1 expected '' '',
         ],
     }
     "###);
@@ -357,7 +646,7 @@ fn smoke_comment() {
     ParseResult {
         output: None,
         errs: [
-            found ''#'' at 1..2 expected '' '',
+            found ''#'' at 1..2 expected "comment",
         ],
     }
     "###);
@@ -365,93 +654,16 @@ fn smoke_comment() {
     ParseResult {
         output: None,
         errs: [
-            found ''#'' at 0..1 expected "comment",
+            found ''#'' at 0..1 expected '' '',
         ],
     }
     "###);
 }
 
-fn test<'a>() -> impl Parser<'a, &'a str, Test<'a>, ParseError<'a>> {
-    #[derive(Clone, Debug)]
-    enum Item<'a> {
-        Subtest {
-            name: String,
-            properties: IndexMap<&'a str, PropertyValue<&'a str, &'a str>>,
-        },
-        Property {
-            key: &'a str,
-            value: PropertyValue<&'a str, &'a str>,
-        },
-        Newline,
-        Comment,
-    }
-
-    let subtest = || {
-        section_name(1)
-            .then_ignore(newline())
-            .labelled("subtest section header")
-            .then(
-                property(2)
-                    .labelled("subtest property")
-                    .repeated()
-                    .collect::<Vec<_>>(),
-            )
-            .map(|(subtest_name, properties)| Item::Subtest {
-                name: subtest_name,
-                properties: properties.into_iter().collect(),
-            })
-            .labelled("subtest")
-    };
-
-    let items = choice((
-        subtest(),
-        property(1)
-            .labelled("test property")
-            .map(|(key, value)| Item::Property { key, value }),
-        newline().labelled("empty line").to(Item::Newline),
-        comment(1).to(Item::Comment),
-    ))
-    .repeated()
-    .collect::<Vec<_>>()
-    .validate(|items, e, emitter| {
-        let mut properties = IndexMap::new();
-        let mut subtests = IndexMap::new();
-        for item in items {
-            match item {
-                Item::Property { key, value } => {
-                    if let Some(_old) = properties.insert(key, value) {
-                        emitter.emit(Rich::custom(e.span(), format!("duplicate {key} property")))
-                    }
-                }
-                Item::Subtest { name, properties } => {
-                    if subtests.contains_key(&name) {
-                        // TODO: use old and new item span, better msg.
-                        emitter.emit(Rich::custom(e.span(), format!("duplicate {name} subtest")))
-                    }
-                    subtests.insert(name, Subtest { properties });
-                }
-                Item::Newline | Item::Comment => (),
-            }
-        }
-        (properties, subtests)
-    });
-
-    let test_header = section_name(0)
-        .then_ignore(newline())
-        .labelled("test section header");
-
-    test_header
-        .then(items)
-        .map_with(|(name, (properties, subtests)), e| Test {
-            name,
-            span: e.span(),
-            properties,
-            subtests,
-        })
-}
-
 #[test]
 fn smoke_test() {
+    let test = || Test::<UnstructuredProperties<'_>, UnstructuredProperties<'_>>::parser();
+
     assert_debug_snapshot!(
         test().parse("[stuff and things]\n"),
         @r###"
@@ -489,195 +701,230 @@ fn smoke_test() {
     }
     "###
     );
+
+    let test = || newline().ignore_then(test());
+
+    assert_debug_snapshot!(
+        test().parse(r#"
+[stuff and things]
+  expected: PASS
+"#),
+        @r###"
+    ParseResult {
+        output: Some(
+            Test {
+                name: "stuff and things",
+                properties: {
+                    "expected": Unconditional(
+                        "PASS",
+                    ),
+                },
+                subtests: {},
+                span: 1..37,
+            },
+        ),
+        errs: [],
+    }
+    "###
+    );
+
+    assert_debug_snapshot!(
+        test().parse(r#"
+[stuff and things]
+  expected:
+    if thing: boo
+    yay
+"#),
+        @r###"
+    ParseResult {
+        output: Some(
+            Test {
+                name: "stuff and things",
+                properties: {
+                    "expected": Conditional(
+                        ConditionalValue {
+                            conditions: [
+                                (
+                                    Value(
+                                        Variable(
+                                            "thing",
+                                        ),
+                                    ),
+                                    " boo",
+                                ),
+                            ],
+                            fallback: Some(
+                                "yay",
+                            ),
+                        },
+                    ),
+                },
+                subtests: {},
+                span: 1..58,
+            },
+        ),
+        errs: [],
+    }
+    "###
+    );
+
+    assert_debug_snapshot!(
+        test().parse(r#"
+[cts.https.html?q=webgpu:api,operation,adapter,requestAdapter:requestAdapter_no_parameters:*]
+  [:]
+    expected:
+      if os == "mac": FAIL
+
+
+"#),
+    @r###"
+    ParseResult {
+        output: Some(
+            Test {
+                name: "cts.https.html?q=webgpu:api,operation,adapter,requestAdapter:requestAdapter_no_parameters:*",
+                properties: {},
+                subtests: {
+                    ":": Subtest {
+                        properties: {
+                            "expected": Conditional(
+                                ConditionalValue {
+                                    conditions: [
+                                        (
+                                            Eq(
+                                                Value(
+                                                    Variable(
+                                                        "os",
+                                                    ),
+                                                ),
+                                                Value(
+                                                    Literal(
+                                                        String(
+                                                            "mac",
+                                                        ),
+                                                    ),
+                                                ),
+                                            ),
+                                            " FAIL",
+                                        ),
+                                    ],
+                                    fallback: None,
+                                },
+                            ),
+                        },
+                    },
+                },
+                span: 1..144,
+            },
+        ),
+        errs: [],
+    }
+    "###
+    );
 }
 
-fn property<'a>(
-    indentation: u8,
-) -> impl Parser<'a, &'a str, (&'a str, PropertyValue<&'a str, &'a str>), ParseError<'a>> {
-    let conditional_indent_level = indentation
-        .checked_add(1)
-        .expect("unexpectedly high indentation level");
-
-    let property_value = || {
-        choice((
-            unconditional_value().map(PropertyValue::Unconditional),
-            conditional_value(conditional_indent_level).map(|(conditions, fallback)| {
-                PropertyValue::Conditional {
-                    conditions,
-                    fallback,
-                }
-            }),
-        ))
-        .labelled("property value")
-    };
-
-    property_key(indentation)
-        .then_ignore(group((just(':'), inline_whitespace())))
-        .then(property_value())
-}
-
-fn property_key<'a>(indentation: u8) -> impl Parser<'a, &'a str, &'a str, ParseError<'a>> {
-    indent(indentation)
-        .ignore_then(ident())
-        .labelled("property key")
-}
-
-fn unconditional_value<'a>() -> impl Parser<'a, &'a str, &'a str, ParseError<'a>> {
-    any()
-        .and_is(newline().not())
-        .repeated()
-        .at_least(1)
-        .to_slice()
-        .then_ignore(newline())
-        .labelled("unconditional value")
-}
-
-fn conditional_rule<'a>(
-    indentation: u8,
-) -> impl Parser<'a, &'a str, (Condition<&'a str>, &'a str), ParseError<'a>> {
-    group((indent(indentation), keyword("if"), just(' ')))
-        .ignore_then(
-            any()
-                .and_is(choice((newline(), just(":").to(()))).not())
+fn subtest<'a, Sp>() -> impl Parser<'a, &'a str, (String, Sp), ParseError<'a>>
+where
+    Sp: Properties<'a>,
+{
+    section_name(1)
+        .then_ignore(newline().or(end()))
+        .labelled("subtest section header")
+        .then(
+            Sp::property_parser(&mut PropertiesParseHelper::new(2))
+                .labelled("subtest property")
                 .repeated()
-                .to_slice()
-                .map(Condition)
-                .then_ignore(group((just(':'), inline_whitespace())))
-                .then(
-                    any()
-                        .and_is(choice((newline(), just(':').to(()))).not())
-                        .repeated()
-                        .to_slice(),
-                ),
+                .collect::<Vec<_>>()
+                .validate(|props, _e, emitter| {
+                    let mut properties = Sp::default();
+                    for prop in props {
+                        properties.insert(prop, emitter);
+                    }
+                    properties
+                }),
         )
-        .then_ignore(newline().or(end()))
-        .labelled("conditional value rule")
-}
-
-fn conditional_fallback<'a>(indentation: u8) -> impl Parser<'a, &'a str, &'a str, ParseError<'a>> {
-    indent(indentation)
-        .ignore_then(
-            keyword("if")
-                .not()
-                .ignore_then(any().and_is(newline().not()).repeated())
-                .to_slice(),
-        )
-        .then_ignore(newline().or(end()))
-        .labelled("conditional value fallback")
+        .labelled("subtest")
 }
 
 #[test]
-fn test_conditional_fallback() {
-    assert_debug_snapshot!(conditional_fallback(0).parse("[PASS, FAIL]"), @r###"
-    ParseResult {
-        output: Some(
-            "[PASS, FAIL]",
-        ),
-        errs: [],
-    }
-    "###);
-    assert_debug_snapshot!(conditional_fallback(0).parse(r#""okgo""#), @r###"
-    ParseResult {
-        output: Some(
-            "\"okgo\"",
-        ),
-        errs: [],
-    }
-    "###);
-    assert_debug_snapshot!(conditional_fallback(0).parse(""), @r###"
-    ParseResult {
-        output: Some(
-            "",
-        ),
-        errs: [],
-    }
-    "###);
-    assert_debug_snapshot!(conditional_fallback(1).parse(""), @r###"
-    ParseResult {
-        output: None,
-        errs: [
-            found end of input at 0..0 expected '' '',
-        ],
-    }
-    "###);
-    assert_debug_snapshot!(conditional_fallback(1).parse("  "), @r###"
-    ParseResult {
-        output: Some(
-            "",
-        ),
-        errs: [],
-    }
-    "###);
-    assert_debug_snapshot!(conditional_fallback(1).parse("  @False"), @r###"
-    ParseResult {
-        output: Some(
-            "@False",
-        ),
-        errs: [],
-    }
-    "###);
-    assert_debug_snapshot!(conditional_fallback(1).parse("    @False"), @r###"
-    ParseResult {
-        output: None,
-        errs: [
-            found '' '' at 2..3 expected something else,
-        ],
-    }
-    "###);
-    assert_debug_snapshot!(conditional_fallback(3).parse(""), @r###"
-    ParseResult {
-        output: None,
-        errs: [
-            found end of input at 0..0 expected '' '',
-        ],
-    }
-    "###);
-    assert_debug_snapshot!(conditional_fallback(3).parse("      "), @r###"
-    ParseResult {
-        output: Some(
-            "",
-        ),
-        errs: [],
-    }
-    "###);
-    assert_debug_snapshot!(conditional_fallback(3).parse("      @True"), @r###"
-    ParseResult {
-        output: Some(
-            "@True",
-        ),
-        errs: [],
-    }
-    "###);
-    assert_debug_snapshot!(conditional_fallback(3).parse("        @True"), @r###"
-    ParseResult {
-        output: None,
-        errs: [
-            found '' '' at 6..7 expected something else,
-        ],
-    }
-    "###);
-}
+fn smoke_subtest() {
+    let subtest = || newline().ignore_then(subtest::<UnstructuredProperties<'_>>());
 
-fn conditional_value<'a>(
-    indentation: u8,
-) -> impl Parser<'a, &'a str, (Vec<(Condition<&'a str>, &'a str)>, Option<&'a str>), ParseError<'a>>
-{
-    newline()
-        .ignore_then(conditional_rule(indentation).repeated().collect::<Vec<_>>())
-        .then(conditional_fallback(indentation).or_not())
-        .validate(|(conditions, fallback), e, emitter| {
-            if conditions.is_empty() && fallback.is_none() {
-                emitter.emit(Rich::custom(
-                    e.span(),
-                    concat!(
-                        "this conditional property value has no conditional ",
-                        "rules or fallback specified",
+    assert_debug_snapshot!(
+        subtest().parse(r#"
+  [stuff and things]
+"#),
+        @r###"
+    ParseResult {
+        output: Some(
+            (
+                "stuff and things",
+                {},
+            ),
+        ),
+        errs: [],
+    }
+    "###
+    );
+
+    assert_debug_snapshot!(
+        subtest().parse(r#"
+  [stuff and things]
+    some_prop: it_works
+"#),
+        @r###"
+    ParseResult {
+        output: Some(
+            (
+                "stuff and things",
+                {
+                    "some_prop": Unconditional(
+                        "it_works",
                     ),
-                ));
-            }
-            (conditions, fallback)
-        })
-        .labelled("conditional value")
+                },
+            ),
+        ),
+        errs: [],
+    }
+    "###
+    );
+
+    assert_debug_snapshot!(
+        subtest().parse(r#"
+  [stuff and things]
+    expected:
+      if thing: boo
+      yay
+"#),
+        @r###"
+    ParseResult {
+        output: Some(
+            (
+                "stuff and things",
+                {
+                    "expected": Conditional(
+                        ConditionalValue {
+                            conditions: [
+                                (
+                                    Value(
+                                        Variable(
+                                            "thing",
+                                        ),
+                                    ),
+                                    " boo",
+                                ),
+                            ],
+                            fallback: Some(
+                                "yay",
+                            ),
+                        },
+                    ),
+                },
+            ),
+        ),
+        errs: [],
+    }
+    "###
+    );
 }
 
 fn indent<'a>(level: u8) -> impl Parser<'a, &'a str, (), ParseError<'a>> {
@@ -885,7 +1132,7 @@ fn smoke_section_name() {
     ParseResult {
         output: None,
         errs: [
-            found ''b'' at 6..7 expected something else,
+            found ''b'' at 6..7 expected end of input,
         ],
     }
     "###);

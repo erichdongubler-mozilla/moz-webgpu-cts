@@ -3,8 +3,12 @@ name = "whippit"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = ["unstructured-properties"]
+unstructured-properties = []
+
 [dependencies]
-chumsky = { version = "1.0.0-alpha.6", features = ["label"] }
+chumsky = { version = "1.0.0-alpha.6", features = ["label", "pratt"] }
 clap = { version = "4.4.2", features = ["derive"] }
 env_logger = "0.10.0"
 indexmap = "2.0.0"
