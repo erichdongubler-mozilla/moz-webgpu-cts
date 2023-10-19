@@ -20,6 +20,7 @@ use miette::{miette, Diagnostic, NamedSource, Report, SourceSpan, WrapErr};
 use path_dsl::path;
 
 use regex::Regex;
+use wax::Glob;
 use whippit::{
     metadata::{
         properties::{ConditionalValue, PropertyValue},
@@ -578,7 +579,7 @@ fn read_gecko_files_at(
 ) -> Result<IndexMap<Arc<PathBuf>, Arc<String>>, ()> {
     log::info!("reading {glob_pattern} files at {}", base.display());
     let mut found_read_err = false;
-    let mut paths = wax::Glob::new(glob_pattern)
+    let mut paths = Glob::new(glob_pattern)
         .unwrap()
         .walk(base)
         .filter_map(|entry| match entry {
