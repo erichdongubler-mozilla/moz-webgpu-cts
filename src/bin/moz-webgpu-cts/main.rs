@@ -1,6 +1,6 @@
-mod triage;
+mod metadata;
 
-use self::triage::{
+use self::metadata::{
     AnalyzeableProps, Applicability, Expectation, Platform, SubtestOutcome, Test, TestOutcome,
 };
 
@@ -8,6 +8,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     fmt::Display,
     fs,
+    io::{self, BufWriter},
     path::{Path, PathBuf},
     process::ExitCode,
     sync::Arc,
@@ -21,9 +22,8 @@ use path_dsl::path;
 use regex::Regex;
 use whippit::{
     metadata::{
-        self,
         properties::{ConditionalValue, PropertyValue},
-        Subtest,
+        SectionHeader, Subtest,
     },
     reexport::chumsky::prelude::Rich,
 };
@@ -38,6 +38,8 @@ struct Cli {
 
 #[derive(Debug, Parser)]
 enum Subcommand {
+    #[clap(name = "fmt")]
+    Format,
     Triage,
     ReadTestVariants,
 }
@@ -63,34 +65,116 @@ fn run(cli: Cli) -> ExitCode {
         Ok(ckt_path) => ckt_path,
         Err(()) => return ExitCode::FAILURE,
     };
-    match subcommand {
-        Subcommand::Triage => {
-            let webgpu_cts_meta_parent_dir = {
-                path!(
-                    &gecko_checkout
-                        | "testing"
-                        | "web-platform"
-                        | "mozilla"
-                        | "meta"
-                        | "webgpu"
-                        | "chunked"
-                )
-            };
 
+    let read_metadata = || {
+        let webgpu_cts_meta_parent_dir = {
+            path!(
+                &gecko_checkout
+                    | "testing"
+                    | "web-platform"
+                    | "mozilla"
+                    | "meta"
+                    | "webgpu"
+                    | "chunked"
+            )
+        };
+
+        read_gecko_files_at(&gecko_checkout, &webgpu_cts_meta_parent_dir, "**/*.ini")
+    };
+
+    fn render_parse_errors<'a>(
+        path: &Arc<PathBuf>,
+        file_contents: &Arc<String>,
+        errors: impl IntoIterator<Item = Rich<'a, char>>,
+    ) {
+        #[derive(Debug, Diagnostic, thiserror::Error)]
+        #[error("{inner}")]
+        struct ParseError {
+            #[label]
+            span: SourceSpan,
+            #[source_code]
+            source_code: NamedSource,
+            inner: Rich<'static, char>,
+        }
+        let source_code = file_contents.clone();
+        for error in errors {
+            let span = error.span();
+            let error = ParseError {
+                source_code: NamedSource::new(path.to_str().unwrap(), source_code.clone()),
+                inner: error.clone().into_owned(),
+                span: SourceSpan::new(span.start.into(), (span.end - span.start).into()),
+            };
+            let error = miette::Report::new(error);
+            eprintln!("{error:?}");
+        }
+    }
+
+    match subcommand {
+        Subcommand::Format => {
+            let raw_test_files_by_path = match read_metadata() {
+                Ok(paths) => paths,
+                Err(()) => return ExitCode::FAILURE,
+            };
+            log::info!("formatting metadata in-place…");
+            let mut fmt_err_found = false;
+            for (path, file_contents) in raw_test_files_by_path {
+                match chumsky::Parser::parse(&metadata::File::parser(), &*file_contents)
+                    .into_result()
+                {
+                    Err(errors) => {
+                        fmt_err_found = true;
+                        render_parse_errors(&path, &file_contents, errors);
+                    }
+                    Ok(file) => {
+                        let mut out =
+                            match fs::File::create(&*path).map_err(Report::msg).wrap_err_with(
+                                || format!("error while reading file `{}`", path.display()),
+                            ) {
+                                Ok(f) => BufWriter::new(f),
+                                Err(e) => {
+                                    fmt_err_found = true;
+                                    log::error!("{e}");
+                                    continue;
+                                }
+                            };
+                        use io::Write;
+                        match write!(&mut out, "{}", metadata::format_file(&file))
+                            .map_err(Report::msg)
+                            .wrap_err_with(|| {
+                                format!("error while writing to `{}`", path.display())
+                            }) {
+                            Ok(()) => (),
+                            Err(e) => {
+                                log::error!("{e}");
+                                continue;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if fmt_err_found {
+                log::error!(concat!(
+                    "found one or more failures while formatting metadata, ",
+                    "see above for more details"
+                ));
+                ExitCode::FAILURE
+            } else {
+                ExitCode::SUCCESS
+            }
+        }
+        Subcommand::Triage => {
             #[derive(Debug)]
             struct TaggedTest {
                 orig_path: Arc<PathBuf>,
-                inner: triage::Test,
+                inner: metadata::Test,
             }
-
-            let raw_test_files_by_path =
-                match read_gecko_files_at(&gecko_checkout, &webgpu_cts_meta_parent_dir, "**/*.ini")
-                {
+            let tests_by_name = {
+                let mut found_parse_err = false;
+                let raw_test_files_by_path = match read_metadata() {
                     Ok(paths) => paths,
                     Err(()) => return ExitCode::FAILURE,
                 };
-            let tests_by_name = {
-                let mut found_parse_err = false;
                 let extracted = raw_test_files_by_path
                     .iter()
                     .filter_map(|(path, file_contents)| {
@@ -98,12 +182,11 @@ fn run(cli: Cli) -> ExitCode {
                             .into_result()
                         {
                             Ok(metadata::File { tests }) => Some(tests.into_iter().map(|inner| {
+                                let SectionHeader(name) = &inner.name;
                                 (
-                                    inner
-                                        .name
-                                        .strip_prefix("cts.https.html?q=")
-                                        .unwrap()
-                                        .to_owned(),
+                                    SectionHeader(
+                                        name.strip_prefix("cts.https.html?q=").unwrap().to_owned(),
+                                    ),
                                     TaggedTest {
                                         inner,
                                         orig_path: path.clone(),
@@ -111,33 +194,8 @@ fn run(cli: Cli) -> ExitCode {
                                 )
                             })),
                             Err(errors) => {
-                                #[derive(Debug, Diagnostic, thiserror::Error)]
-                                #[error("{inner}")]
-                                struct ParseError {
-                                    #[label]
-                                    span: SourceSpan,
-                                    #[source_code]
-                                    source_code: NamedSource,
-                                    inner: Rich<'static, char>,
-                                }
                                 found_parse_err = true;
-                                let source_code = file_contents.clone();
-                                for error in errors {
-                                    let span = error.span();
-                                    let error = ParseError {
-                                        source_code: NamedSource::new(
-                                            path.to_str().unwrap(),
-                                            source_code.clone(),
-                                        ),
-                                        inner: error.clone().into_owned(),
-                                        span: SourceSpan::new(
-                                            span.start.into(),
-                                            (span.end - span.start).into(),
-                                        ),
-                                    };
-                                    let error = miette::Report::new(error);
-                                    eprintln!("{error:?}");
-                                }
+                                render_parse_errors(path, file_contents, errors);
                                 None
                             }
                         }
@@ -161,11 +219,13 @@ fn run(cli: Cli) -> ExitCode {
 
             #[derive(Clone, Debug, Default)]
             struct PerPlatformAnalysis {
-                tests_with_runner_errors: BTreeSet<Arc<String>>,
-                tests_with_disabled: BTreeSet<Arc<String>>,
-                tests_with_crashes: BTreeSet<Arc<String>>,
-                subtests_with_failures_by_test: BTreeMap<Arc<String>, IndexSet<Arc<String>>>,
-                subtests_with_timeouts_by_test: BTreeMap<Arc<String>, IndexSet<Arc<String>>>,
+                tests_with_runner_errors: BTreeSet<Arc<SectionHeader>>,
+                tests_with_disabled: BTreeSet<Arc<SectionHeader>>,
+                tests_with_crashes: BTreeSet<Arc<SectionHeader>>,
+                subtests_with_failures_by_test:
+                    BTreeMap<Arc<SectionHeader>, IndexSet<Arc<SectionHeader>>>,
+                subtests_with_timeouts_by_test:
+                    BTreeMap<Arc<SectionHeader>, IndexSet<Arc<SectionHeader>>>,
             }
 
             #[derive(Clone, Debug, Default)]
@@ -228,7 +288,7 @@ fn run(cli: Cli) -> ExitCode {
                 } = test;
 
                 let Test {
-                    name: test_name,
+                    name: SectionHeader(test_name),
                     properties,
                     subtests,
                     ..
@@ -243,7 +303,7 @@ fn run(cli: Cli) -> ExitCode {
                     .strip_prefix("cts.https.html?q=")
                     .map(|n| n.to_owned())
                     .unwrap_or(test_name);
-                let test_name = Arc::new(test_name);
+                let test_name = Arc::new(SectionHeader(test_name));
 
                 if is_disabled {
                     analysis.for_each_platform_mut(|analysis| {
@@ -262,7 +322,7 @@ fn run(cli: Cli) -> ExitCode {
                 }
                 if let Some(expectations) = expectations {
                     fn analyze_test_outcome<F>(
-                        test_name: &Arc<String>,
+                        test_name: &Arc<SectionHeader>,
                         outcome: TestOutcome,
                         mut receiver: F,
                     ) where
@@ -341,8 +401,8 @@ fn run(cli: Cli) -> ExitCode {
 
                     if let Some(expectations) = expectations {
                         fn analyze_subtest_outcome<Fo>(
-                            test_name: &Arc<String>,
-                            subtest_name: &Arc<String>,
+                            test_name: &Arc<SectionHeader>,
+                            subtest_name: &Arc<SectionHeader>,
                             outcome: SubtestOutcome,
                             mut receiver: Fo,
                         ) where
