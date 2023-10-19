@@ -15,7 +15,7 @@ use std::{
 
 use clap::Parser;
 use indexmap::{IndexMap, IndexSet};
-use miette::{Diagnostic, NamedSource, SourceSpan};
+use miette::{miette, Diagnostic, NamedSource, Report, SourceSpan, WrapErr};
 use path_dsl::path;
 
 use regex::Regex;
@@ -31,7 +31,7 @@ use whippit::{
 #[derive(Debug, Parser)]
 struct Cli {
     #[clap(long)]
-    gecko_checkout: PathBuf,
+    gecko_checkout: Option<PathBuf>,
     #[clap(subcommand)]
     subcommand: Subcommand,
 }
@@ -55,6 +55,14 @@ fn run(cli: Cli) -> ExitCode {
         gecko_checkout,
         subcommand,
     } = cli;
+
+    let gecko_checkout = match gecko_checkout
+        .map(Ok)
+        .unwrap_or_else(search_for_moz_central_ckt)
+    {
+        Ok(ckt_path) => ckt_path,
+        Err(()) => return ExitCode::FAILURE,
+    };
     match subcommand {
         Subcommand::Triage => {
             let webgpu_cts_meta_parent_dir = {
@@ -561,4 +569,56 @@ fn read_gecko_files_at(
     }
 
     Ok(files)
+}
+
+/// Search for a `mozilla-central` checkout either via Mercurial or Git, iterating from the CWD to
+/// its parent directories.
+///
+/// This function reports to `log` automatically, so no meaningful [`Err`] value is returned.
+fn search_for_moz_central_ckt() -> miette::Result<PathBuf, ()> {
+    use lets_find_up::{find_up_with, FindUpKind, FindUpOptions};
+
+    let find_up_opts = || FindUpOptions {
+        cwd: Path::new("."),
+        kind: FindUpKind::Dir,
+    };
+    let find_up = |repo_tech_name, root_dir_name| {
+        log::debug!("searching for {repo_tech_name} checkout of `mozilla-central`…");
+        let err = || {
+            miette!(
+                "failed to find a {} repository ({:?}) in {}",
+                repo_tech_name,
+                root_dir_name,
+                "any of current working directory and its parent directories",
+            )
+        };
+        find_up_with(root_dir_name, find_up_opts())
+            .map_err(Report::msg)
+            .wrap_err_with(err)
+            .and_then(|loc_opt| loc_opt.ok_or_else(err))
+            .map(|mut dir| {
+                dir.pop();
+                dir
+            })
+    };
+    let gecko_source_root =
+        find_up("Mercurial", ".hg").or_else(|e| match find_up("Git", ".git") {
+            Ok(path) => {
+                log::debug!("{e:?}");
+                Ok(path)
+            }
+            Err(e2) => {
+                log::warn!("{e:?}");
+                log::warn!("{e2:?}");
+                log::error!("failed to find a Gecko repository root");
+                Err(())
+            }
+        })?;
+
+    log::info!(
+        "detected Gecko repository root at {}",
+        gecko_source_root.display()
+    );
+
+    Ok(gecko_source_root)
 }
