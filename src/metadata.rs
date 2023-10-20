@@ -34,11 +34,11 @@ pub type ParseError<'a> = Full<Rich<'a, char>, (), ()>;
 /// Represents the contents of a single file written in the [WPT metadata format][self]. It can be
 /// constructed from this format using [`Self::parser`].
 ///
-/// Properties for tests and subtests are abstracted out. If you don't have any opinions on how to
-/// parse these yet, you can use the [`properties::unstructured`] API, or
+/// Properties for tests (`Tp`) and subtests (`Sp`) are abstracted out. If you don't have any
+/// opinions on how to parse these yet, you can use the [`properties::unstructured`] API, or
 /// [`File::parser_with_unstructured_props`] for convenience (both of which are gated behind the
 /// `unstructured-properties` feature) to just get output with minimally structured property data.
-/// If you'd like to more performance or stronger types with your properties, you will need to
+/// If you'd like better performance or stronger types with your properties, you will need to
 /// provide types that implement the [`Properties`] trait for `Tp` and `Sp`.
 ///
 /// N.B. that you should not rely only on data represented in this structure to compute test
