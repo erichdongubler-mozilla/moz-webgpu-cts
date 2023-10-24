@@ -67,7 +67,7 @@ fn run(cli: Cli) -> ExitCode {
         Err(()) => return ExitCode::FAILURE,
     };
 
-    let read_metadata = || {
+    let read_metadata = || -> Result<_, ()> {
         let webgpu_cts_meta_parent_dir = {
             path!(
                 &gecko_checkout
@@ -80,7 +80,20 @@ fn run(cli: Cli) -> ExitCode {
             )
         };
 
-        read_gecko_files_at(&gecko_checkout, &webgpu_cts_meta_parent_dir, "**/*.ini")
+        let mut found_err = false;
+        let collected =
+            read_gecko_files_at(&gecko_checkout, &webgpu_cts_meta_parent_dir, "**/*.ini")?
+                .filter_map(|res| {
+                    found_err |= res.is_ok();
+                    res.ok()
+                })
+                .map(|(p, fc)| (Arc::new(p), Arc::new(fc)))
+                .collect::<IndexMap<_, _>>();
+        if found_err {
+            Err(())
+        } else {
+            Ok(collected)
+        }
     };
 
     fn render_metadata_parse_errors<'a>(
@@ -542,7 +555,19 @@ fn run(cli: Cli) -> ExitCode {
                 &webgpu_cts_test_parent_dir,
                 "**/cts.https.html",
             ) {
-                Ok(paths) => paths,
+                Ok(paths) => {
+                    let mut found_err = false;
+                    let collected = paths
+                        .filter_map(|res| {
+                            found_err |= res.is_ok();
+                            res.ok()
+                        })
+                        .collect::<IndexMap<_, _>>();
+                    if found_err {
+                        return ExitCode::FAILURE;
+                    }
+                    collected
+                }
                 Err(()) => return ExitCode::FAILURE,
             };
 
@@ -576,7 +601,7 @@ fn read_gecko_files_at(
     gecko_checkout: &Path,
     base: &Path,
     glob_pattern: &str,
-) -> Result<IndexMap<Arc<PathBuf>, Arc<String>>, ()> {
+) -> Result<impl Iterator<Item = Result<(PathBuf, String), ()>>, ()> {
     log::info!("reading {glob_pattern} files at {}", base.display());
     let mut found_read_err = false;
     let mut paths = Glob::new(glob_pattern)
@@ -617,26 +642,12 @@ fn read_gecko_files_at(
         return Err(());
     }
 
-    let files = paths
-        .into_iter()
-        .filter_map(|file| {
-            log::debug!("reading from {}…", file.display());
-            match fs::read_to_string(&file) {
-                Err(e) => {
-                    log::error!("failed to read {file:?}: {e}");
-                    found_read_err = true;
-                    None
-                }
-                Ok(contents) => Some((Arc::new(file), Arc::new(contents))),
-            }
-        })
-        .collect::<IndexMap<_, _>>();
-
-    if found_read_err {
-        return Err(());
-    }
-
-    Ok(files)
+    Ok(paths.into_iter().map(|path| -> Result<_, _> {
+        log::debug!("reading from {}…", path.display());
+        fs::read_to_string(&path)
+            .map_err(|e| log::error!("failed to read {path:?}: {e}"))
+            .map(|file_contents| (path, file_contents))
+    }))
 }
 
 /// Search for a `mozilla-central` checkout either via Mercurial or Git, iterating from the CWD to
