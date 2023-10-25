@@ -64,10 +64,10 @@ fn run(cli: Cli) -> ExitCode {
         .unwrap_or_else(search_for_moz_central_ckt)
     {
         Ok(ckt_path) => ckt_path,
-        Err(()) => return ExitCode::FAILURE,
+        Err(AlreadyReportedToCommandline) => return ExitCode::FAILURE,
     };
 
-    let read_metadata = || -> Result<_, ()> {
+    let read_metadata = || -> Result<_, AlreadyReportedToCommandline> {
         let webgpu_cts_meta_parent_dir = {
             path!(
                 &gecko_checkout
@@ -83,14 +83,17 @@ fn run(cli: Cli) -> ExitCode {
         let mut found_err = false;
         let collected =
             read_gecko_files_at(&gecko_checkout, &webgpu_cts_meta_parent_dir, "**/*.ini")?
-                .filter_map(|res| {
-                    found_err |= res.is_ok();
-                    res.ok()
+                .filter_map(|res| match res {
+                    Ok(ok) => Some(ok),
+                    Err(AlreadyReportedToCommandline) => {
+                        found_err = true;
+                        None
+                    }
                 })
                 .map(|(p, fc)| (Arc::new(p), Arc::new(fc)))
                 .collect::<IndexMap<_, _>>();
         if found_err {
-            Err(())
+            Err(AlreadyReportedToCommandline)
         } else {
             Ok(collected)
         }
@@ -127,7 +130,7 @@ fn run(cli: Cli) -> ExitCode {
         Subcommand::Format => {
             let raw_test_files_by_path = match read_metadata() {
                 Ok(paths) => paths,
-                Err(()) => return ExitCode::FAILURE,
+                Err(AlreadyReportedToCommandline) => return ExitCode::FAILURE,
             };
             log::info!("formatting metadata in-place…");
             let mut fmt_err_found = false;
@@ -187,7 +190,7 @@ fn run(cli: Cli) -> ExitCode {
                 let mut found_parse_err = false;
                 let raw_test_files_by_path = match read_metadata() {
                     Ok(paths) => paths,
-                    Err(()) => return ExitCode::FAILURE,
+                    Err(AlreadyReportedToCommandline) => return ExitCode::FAILURE,
                 };
                 let extracted = raw_test_files_by_path
                     .iter()
@@ -568,7 +571,7 @@ fn run(cli: Cli) -> ExitCode {
                     }
                     collected
                 }
-                Err(()) => return ExitCode::FAILURE,
+                Err(AlreadyReportedToCommandline) => return ExitCode::FAILURE,
             };
 
             let meta_variant_re =
@@ -601,7 +604,10 @@ fn read_gecko_files_at(
     gecko_checkout: &Path,
     base: &Path,
     glob_pattern: &str,
-) -> Result<impl Iterator<Item = Result<(PathBuf, String), ()>>, ()> {
+) -> Result<
+    impl Iterator<Item = Result<(PathBuf, String), AlreadyReportedToCommandline>>,
+    AlreadyReportedToCommandline,
+> {
     log::info!("reading {glob_pattern} files at {}", base.display());
     let mut found_read_err = false;
     let mut paths = Glob::new(glob_pattern)
@@ -639,13 +645,16 @@ fn read_gecko_files_at(
     );
 
     if found_read_err {
-        return Err(());
+        return Err(AlreadyReportedToCommandline);
     }
 
     Ok(paths.into_iter().map(|path| -> Result<_, _> {
         log::debug!("reading from {}…", path.display());
         fs::read_to_string(&path)
-            .map_err(|e| log::error!("failed to read {path:?}: {e}"))
+            .map_err(|e| {
+                log::error!("failed to read {path:?}: {e}");
+                AlreadyReportedToCommandline
+            })
             .map(|file_contents| (path, file_contents))
     }))
 }
@@ -654,7 +663,7 @@ fn read_gecko_files_at(
 /// its parent directories.
 ///
 /// This function reports to `log` automatically, so no meaningful [`Err`] value is returned.
-fn search_for_moz_central_ckt() -> miette::Result<PathBuf, ()> {
+fn search_for_moz_central_ckt() -> Result<PathBuf, AlreadyReportedToCommandline> {
     use lets_find_up::{find_up_with, FindUpKind, FindUpOptions};
 
     let find_up_opts = || FindUpOptions {
@@ -690,7 +699,7 @@ fn search_for_moz_central_ckt() -> miette::Result<PathBuf, ()> {
                 log::warn!("{e:?}");
                 log::warn!("{e2:?}");
                 log::error!("failed to find a Gecko repository root");
-                Err(())
+                Err(AlreadyReportedToCommandline)
             }
         })?;
 
@@ -701,3 +710,5 @@ fn search_for_moz_central_ckt() -> miette::Result<PathBuf, ()> {
 
     Ok(gecko_source_root)
 }
+
+struct AlreadyReportedToCommandline;
