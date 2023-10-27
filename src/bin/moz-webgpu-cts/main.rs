@@ -20,6 +20,7 @@ use miette::{miette, Diagnostic, NamedSource, Report, SourceSpan, WrapErr};
 use path_dsl::path;
 
 use regex::Regex;
+use wax::Glob;
 use whippit::{
     metadata::{
         properties::{ConditionalValue, PropertyValue},
@@ -63,10 +64,10 @@ fn run(cli: Cli) -> ExitCode {
         .unwrap_or_else(search_for_moz_central_ckt)
     {
         Ok(ckt_path) => ckt_path,
-        Err(()) => return ExitCode::FAILURE,
+        Err(AlreadyReportedToCommandline) => return ExitCode::FAILURE,
     };
 
-    let read_metadata = || {
+    let read_metadata = || -> Result<_, AlreadyReportedToCommandline> {
         let webgpu_cts_meta_parent_dir = {
             path!(
                 &gecko_checkout
@@ -79,10 +80,26 @@ fn run(cli: Cli) -> ExitCode {
             )
         };
 
-        read_gecko_files_at(&gecko_checkout, &webgpu_cts_meta_parent_dir, "**/*.ini")
+        let mut found_err = false;
+        let collected =
+            read_gecko_files_at(&gecko_checkout, &webgpu_cts_meta_parent_dir, "**/*.ini")?
+                .filter_map(|res| match res {
+                    Ok(ok) => Some(ok),
+                    Err(AlreadyReportedToCommandline) => {
+                        found_err = true;
+                        None
+                    }
+                })
+                .map(|(p, fc)| (Arc::new(p), Arc::new(fc)))
+                .collect::<IndexMap<_, _>>();
+        if found_err {
+            Err(AlreadyReportedToCommandline)
+        } else {
+            Ok(collected)
+        }
     };
 
-    fn render_parse_errors<'a>(
+    fn render_metadata_parse_errors<'a>(
         path: &Arc<PathBuf>,
         file_contents: &Arc<String>,
         errors: impl IntoIterator<Item = Rich<'a, char>>,
@@ -104,7 +121,7 @@ fn run(cli: Cli) -> ExitCode {
                 inner: error.clone().into_owned(),
                 span: SourceSpan::new(span.start.into(), (span.end - span.start).into()),
             };
-            let error = miette::Report::new(error);
+            let error = Report::new(error);
             eprintln!("{error:?}");
         }
     }
@@ -113,7 +130,7 @@ fn run(cli: Cli) -> ExitCode {
         Subcommand::Format => {
             let raw_test_files_by_path = match read_metadata() {
                 Ok(paths) => paths,
-                Err(()) => return ExitCode::FAILURE,
+                Err(AlreadyReportedToCommandline) => return ExitCode::FAILURE,
             };
             log::info!("formatting metadata in-place…");
             let mut fmt_err_found = false;
@@ -123,7 +140,7 @@ fn run(cli: Cli) -> ExitCode {
                 {
                     Err(errors) => {
                         fmt_err_found = true;
-                        render_parse_errors(&path, &file_contents, errors);
+                        render_metadata_parse_errors(&path, &file_contents, errors);
                     }
                     Ok(file) => {
                         let mut out =
@@ -173,7 +190,7 @@ fn run(cli: Cli) -> ExitCode {
                 let mut found_parse_err = false;
                 let raw_test_files_by_path = match read_metadata() {
                     Ok(paths) => paths,
-                    Err(()) => return ExitCode::FAILURE,
+                    Err(AlreadyReportedToCommandline) => return ExitCode::FAILURE,
                 };
                 let extracted = raw_test_files_by_path
                     .iter()
@@ -195,7 +212,7 @@ fn run(cli: Cli) -> ExitCode {
                             })),
                             Err(errors) => {
                                 found_parse_err = true;
-                                render_parse_errors(path, file_contents, errors);
+                                render_metadata_parse_errors(path, file_contents, errors);
                                 None
                             }
                         }
@@ -220,7 +237,7 @@ fn run(cli: Cli) -> ExitCode {
             #[derive(Clone, Debug, Default)]
             struct PerPlatformAnalysis {
                 tests_with_runner_errors: BTreeSet<Arc<SectionHeader>>,
-                tests_with_disabled: BTreeSet<Arc<SectionHeader>>,
+                tests_with_disabled_or_skip: BTreeSet<Arc<SectionHeader>>,
                 tests_with_crashes: BTreeSet<Arc<SectionHeader>>,
                 subtests_with_failures_by_test:
                     BTreeMap<Arc<SectionHeader>, IndexSet<Arc<SectionHeader>>>,
@@ -307,7 +324,9 @@ fn run(cli: Cli) -> ExitCode {
 
                 if is_disabled {
                     analysis.for_each_platform_mut(|analysis| {
-                        analysis.tests_with_disabled.insert(test_name.clone());
+                        analysis
+                            .tests_with_disabled_or_skip
+                            .insert(test_name.clone());
                     })
                 }
 
@@ -338,6 +357,11 @@ fn run(cli: Cli) -> ExitCode {
                             }),
                             TestOutcome::Error => receiver(&mut |analysis| {
                                 analysis.tests_with_runner_errors.insert(test_name.clone());
+                            }),
+                            TestOutcome::Skip => receiver(&mut |analysis| {
+                                analysis
+                                    .tests_with_disabled_or_skip
+                                    .insert(test_name.clone());
                             }),
                         }
                     }
@@ -395,7 +419,7 @@ fn run(cli: Cli) -> ExitCode {
                     if is_disabled {
                         analysis
                             .windows
-                            .tests_with_disabled
+                            .tests_with_disabled_or_skip
                             .insert(test_name.clone());
                     }
 
@@ -481,14 +505,14 @@ fn run(cli: Cli) -> ExitCode {
             analysis.for_each_platform(|platform, analysis| {
                 let PerPlatformAnalysis {
                     tests_with_runner_errors,
-                    tests_with_disabled,
+                    tests_with_disabled_or_skip,
                     tests_with_crashes,
                     subtests_with_failures_by_test,
                     subtests_with_timeouts_by_test,
                 } = analysis;
 
                 let num_tests_with_runner_errors = tests_with_runner_errors.len();
-                let num_tests_with_disabled = tests_with_disabled.len();
+                let num_tests_with_disabled = tests_with_disabled_or_skip.len();
                 let num_tests_with_crashes = tests_with_crashes.len();
                 let num_tests_with_failures_somewhere = subtests_with_failures_by_test.len();
                 let num_subtests_with_failures_somewhere = subtests_with_failures_by_test
@@ -534,8 +558,20 @@ fn run(cli: Cli) -> ExitCode {
                 &webgpu_cts_test_parent_dir,
                 "**/cts.https.html",
             ) {
-                Ok(paths) => paths,
-                Err(()) => return ExitCode::FAILURE,
+                Ok(paths) => {
+                    let mut found_err = false;
+                    let collected = paths
+                        .filter_map(|res| {
+                            found_err |= res.is_ok();
+                            res.ok()
+                        })
+                        .collect::<IndexMap<_, _>>();
+                    if found_err {
+                        return ExitCode::FAILURE;
+                    }
+                    collected
+                }
+                Err(AlreadyReportedToCommandline) => return ExitCode::FAILURE,
             };
 
             let meta_variant_re =
@@ -568,10 +604,13 @@ fn read_gecko_files_at(
     gecko_checkout: &Path,
     base: &Path,
     glob_pattern: &str,
-) -> Result<IndexMap<Arc<PathBuf>, Arc<String>>, ()> {
-    log::info!("reading {glob_pattern:?} files at {}", base.display());
+) -> Result<
+    impl Iterator<Item = Result<(PathBuf, String), AlreadyReportedToCommandline>>,
+    AlreadyReportedToCommandline,
+> {
+    log::info!("reading {glob_pattern} files at {}", base.display());
     let mut found_read_err = false;
-    let mut paths = wax::Glob::new(glob_pattern)
+    let mut paths = Glob::new(glob_pattern)
         .unwrap()
         .walk(base)
         .filter_map(|entry| match entry {
@@ -585,7 +624,7 @@ fn read_gecko_files_at(
                     None => &"",
                 };
                 log::error!(
-                    "failed to enumerate `cts.https.html` files{}\n  caused by: {e}",
+                    "failed to enumerate {glob_pattern} files{}\n  caused by: {e}",
                     path_disp
                 );
                 found_read_err = true;
@@ -606,36 +645,25 @@ fn read_gecko_files_at(
     );
 
     if found_read_err {
-        return Err(());
+        return Err(AlreadyReportedToCommandline);
     }
 
-    let files = paths
-        .into_iter()
-        .filter_map(|file| {
-            log::debug!("reading from {}…", file.display());
-            match fs::read_to_string(&file) {
-                Err(e) => {
-                    log::error!("failed to read {file:?}: {e}");
-                    found_read_err = true;
-                    None
-                }
-                Ok(contents) => Some((Arc::new(file), Arc::new(contents))),
-            }
-        })
-        .collect::<IndexMap<_, _>>();
-
-    if found_read_err {
-        return Err(());
-    }
-
-    Ok(files)
+    Ok(paths.into_iter().map(|path| -> Result<_, _> {
+        log::debug!("reading from {}…", path.display());
+        fs::read_to_string(&path)
+            .map_err(|e| {
+                log::error!("failed to read {path:?}: {e}");
+                AlreadyReportedToCommandline
+            })
+            .map(|file_contents| (path, file_contents))
+    }))
 }
 
 /// Search for a `mozilla-central` checkout either via Mercurial or Git, iterating from the CWD to
 /// its parent directories.
 ///
 /// This function reports to `log` automatically, so no meaningful [`Err`] value is returned.
-fn search_for_moz_central_ckt() -> miette::Result<PathBuf, ()> {
+fn search_for_moz_central_ckt() -> Result<PathBuf, AlreadyReportedToCommandline> {
     use lets_find_up::{find_up_with, FindUpKind, FindUpOptions};
 
     let find_up_opts = || FindUpOptions {
@@ -671,7 +699,7 @@ fn search_for_moz_central_ckt() -> miette::Result<PathBuf, ()> {
                 log::warn!("{e:?}");
                 log::warn!("{e2:?}");
                 log::error!("failed to find a Gecko repository root");
-                Err(())
+                Err(AlreadyReportedToCommandline)
             }
         })?;
 
@@ -682,3 +710,5 @@ fn search_for_moz_central_ckt() -> miette::Result<PathBuf, ()> {
 
     Ok(gecko_source_root)
 }
+
+struct AlreadyReportedToCommandline;

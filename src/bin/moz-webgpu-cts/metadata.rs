@@ -30,16 +30,14 @@ pub type Test = metadata::Test<AnalyzeableProps<TestOutcome>, AnalyzeableProps<S
 
 pub type Subtest = metadata::Subtest<AnalyzeableProps<SubtestOutcome>>;
 
-pub fn format_file<'a>(
-    file: &'a metadata::File<AnalyzeableProps<TestOutcome>, AnalyzeableProps<SubtestOutcome>>,
-) -> impl Display + 'a {
+pub fn format_file(file: &File) -> impl Display + '_ {
     lazy_format!(|f| {
         let metadata::File { tests } = file;
         write!(f, "{}", tests.iter().map(format_test).join_with("\n\n"))
     })
 }
 
-fn format_test<'a>(test: &'a Test) -> impl Display + 'a {
+fn format_test(test: &Test) -> impl Display + '_ {
     lazy_format!(|f| {
         let Test {
             name,
@@ -68,10 +66,7 @@ fn format_test<'a>(test: &'a Test) -> impl Display + 'a {
     })
 }
 
-fn format_properties<'a, Out>(
-    indentation: u8,
-    property: &'a AnalyzeableProps<Out>,
-) -> impl Display + 'a
+fn format_properties<Out>(indentation: u8, property: &AnalyzeableProps<Out>) -> impl Display + '_
 where
     Out: Display,
 {
@@ -125,7 +120,7 @@ where
                                 "{indent}  if {}: {}",
                                 platform
                                     .as_ref()
-                                    .map(|p| -> &dyn Display { &*p })
+                                    .map(|p| -> &dyn Display { p })
                                     .into_iter()
                                     .chain(
                                         build_profile
@@ -149,7 +144,7 @@ where
     })
 }
 
-fn format_exp<'a, Exp>(exp: &'a Expectation<Exp>) -> impl Display + 'a
+fn format_exp<Exp>(exp: &Expectation<Exp>) -> impl Display + '_
 where
     Exp: Display,
 {
@@ -418,6 +413,7 @@ pub enum TestOutcome {
     Timeout,
     Crash,
     Error,
+    Skip,
 }
 
 impl Default for TestOutcome {
@@ -436,6 +432,7 @@ impl Display for TestOutcome {
                 Self::Timeout => "TIMEOUT",
                 Self::Crash => "CRASH",
                 Self::Error => "ERROR",
+                Self::Skip => "SKIP",
             }
         )
     }
@@ -453,6 +450,7 @@ impl<'a> Properties<'a> for AnalyzeableProps<TestOutcome> {
                 keyword("CRASH").to(TestOutcome::Crash),
                 keyword("TIMEOUT").to(TestOutcome::Timeout),
                 keyword("ERROR").to(TestOutcome::Error),
+                keyword("SKIP").to(TestOutcome::Skip),
             )),
         )
         .boxed()
