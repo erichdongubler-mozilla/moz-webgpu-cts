@@ -15,6 +15,7 @@ use chumsky::{
 use enumset::EnumSetType;
 use format::lazy_format;
 use joinery::JoinableIterator;
+use serde::Deserialize;
 use strum::{EnumIter, IntoEnumIterator};
 use whippit::metadata::{
     self, file_parser,
@@ -263,7 +264,7 @@ pub enum BuildProfile {
     Optimized,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AnalyzeableProps<Out>
 where
     Out: EnumSetType,
@@ -350,7 +351,6 @@ where
                                 .collect();
 
                             NormalizedExpectationPropertyValue::from_fully_expanded(fully_expanded)
-                                .unwrap()
                         }
                     }
                 });
@@ -565,7 +565,8 @@ where
     }
 }
 
-#[derive(Debug, EnumSetType, Hash)]
+#[derive(Debug, Deserialize, EnumSetType, Hash)]
+#[serde(rename_all = "UPPERCASE")]
 pub enum TestOutcome {
     Ok,
     Timeout,
@@ -623,7 +624,8 @@ impl<'a> Properties<'a> for AnalyzeableProps<TestOutcome> {
     }
 }
 
-#[derive(Debug, EnumSetType, Hash)]
+#[derive(Debug, Deserialize, EnumSetType, Hash)]
+#[serde(rename_all = "UPPERCASE")]
 pub enum SubtestOutcome {
     Pass,
     Fail,
