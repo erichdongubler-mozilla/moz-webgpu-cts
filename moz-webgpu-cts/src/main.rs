@@ -29,6 +29,7 @@ use whippit::{
 };
 
 #[derive(Debug, Parser)]
+#[command(about, version)]
 struct Cli {
     #[clap(long)]
     gecko_checkout: Option<PathBuf>,

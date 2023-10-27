@@ -485,6 +485,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "moz-webgpu-cts"
+version = "0.2.1"
+dependencies = [
+ "chumsky",
+ "clap",
+ "env_logger",
+ "format",
+ "indexmap",
+ "insta",
+ "joinery",
+ "lets_find_up",
+ "log",
+ "miette",
+ "natord",
+ "path-dsl",
+ "regex",
+ "strum",
+ "thiserror",
+ "wax",
+ "whippit",
+]
+
+[[package]]
 name = "natord"
 version = "1.0.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -865,21 +888,9 @@ name = "whippit"
 version = "0.2.1"
 dependencies = [
  "chumsky",
- "clap",
- "env_logger",
  "format",
  "indexmap",
  "insta",
- "joinery",
- "lets_find_up",
- "log",
- "miette",
- "natord",
- "path-dsl",
- "regex",
- "strum",
- "thiserror",
- "wax",
 ]
 
 [[package]]
