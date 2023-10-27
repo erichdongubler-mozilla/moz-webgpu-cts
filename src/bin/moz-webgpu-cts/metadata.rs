@@ -8,6 +8,7 @@ use chumsky::{
     input::Emitter,
     prelude::Rich,
     primitive::{choice, just},
+    span::SimpleSpan,
     text::{inline_whitespace, keyword},
     Boxed, IterParser, Parser,
 };
@@ -226,13 +227,12 @@ where
             expectations,
         } = self;
 
-        match prop {
-            AnalyzeableProp::Expected(val) => {
+        let AnalyzeableProp { kind, span } = prop;
+
+        match kind {
+            AnalyzeablePropKind::Expected(val) => {
                 if expectations.is_some() {
-                    emitter.emit(Rich::custom(
-                        todo!("duplicate `expected` key detected"),
-                        "duplicate `expected` key detected",
-                    ));
+                    emitter.emit(Rich::custom(span, "duplicate `expected` key detected"));
                     return;
                 }
                 expectations.replace(match val {
@@ -287,12 +287,9 @@ where
                     }
                 });
             }
-            AnalyzeableProp::Disabled => {
+            AnalyzeablePropKind::Disabled => {
                 if *is_disabled {
-                    emitter.emit(Rich::custom(
-                        todo!("duplicate `expected` key detected"),
-                        "duplicate `disabled` key detected",
-                    ))
+                    emitter.emit(Rich::custom(span, "duplicate `disabled` key detected"))
                 }
                 *is_disabled = true;
             }
@@ -360,7 +357,13 @@ pub struct Applicability {
 }
 
 #[derive(Clone, Debug)]
-pub enum AnalyzeableProp<Out> {
+pub struct AnalyzeableProp<Out> {
+    span: SimpleSpan,
+    kind: AnalyzeablePropKind<Out>,
+}
+
+#[derive(Clone, Debug)]
+enum AnalyzeablePropKind<Out> {
     Expected(PropertyValue<Applicability, Expectation<Out>>),
     Disabled,
 }
@@ -502,8 +505,10 @@ impl<Out> AnalyzeableProp<Out> {
                     ))
                     .padded_by(inline_whitespace()),
                 )
-                .map(|((), val)| val)
-                .map(AnalyzeableProp::Expected),
+                .map_with(|((), val), e| AnalyzeableProp {
+                    span: e.span(),
+                    kind: AnalyzeablePropKind::Expected(val),
+                }),
             helper
                 .parser(
                     just("disabled").to(()),
@@ -520,7 +525,10 @@ impl<Out> AnalyzeableProp<Out> {
                             ));
                         }
                     }
-                    AnalyzeableProp::Disabled
+                    AnalyzeableProp {
+                        span: e.span(),
+                        kind: AnalyzeablePropKind::Disabled,
+                    }
                 }),
         ))
     }
