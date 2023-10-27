@@ -1,35 +1,17 @@
-[package]
-name = "whippit"
-description = "Tools and a library to work with Web Platform Tests data"
-version = "0.2.1"
-edition = "2021"
-repository = "https://github.com/ErichDonGubler/whippit"
-license = "MIT or Apache-2.0"
-publish = false
+[workspace]
+members = [
+	"moz-webgpu-cts",
+	"whippit",
+]
+resolver = "2"
 
-[features]
-default = ["unstructured-properties"]
-unstructured-properties = []
-
-[dependencies]
+[workspace.dependencies]
 chumsky = { version = "1.0.0-alpha.6", features = ["label", "pratt"] }
-clap = { version = "4.4.2", features = ["derive"] }
-env_logger = "0.10.0"
 format = "0.2.4"
 indexmap = "2.0.0"
-joinery = "3.1.0"
-lets_find_up = "0.0.3"
-log = "0.4.20"
-miette = { version = "5.10.0", features = ["fancy"] }
-natord = "1.0.9"
-path-dsl = "0.6.1"
-regex = "1.9.5"
-strum = { version = "0.25.0", features = ["derive"] }
-thiserror = "1.0.49"
-wax = "0.6.0"
-
-[dev-dependencies]
 insta = "1.33.0"
+log = "0.4.20"
+thiserror = "1.0.49"
 
 # The profile that 'cargo dist' will build with
 [profile.dist]
