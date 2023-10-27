@@ -4,6 +4,7 @@ use insta::assert_debug_snapshot;
 use chumsky::{
     pratt::{infix, left, prefix},
     primitive::{any, choice, just},
+    recursive::recursive,
     text::{ascii::ident, inline_whitespace, newline},
     Parser,
 };
@@ -72,19 +73,25 @@ impl<V> Expr<V> {
         var_parser: Pt,
     ) -> impl Clone + Parser<'a, &'a str, Expr<V>, ParseError<'a>>
     where
-        Pt: Clone + Parser<'a, &'a str, V, ParseError<'a>>,
+        V: 'a,
+        Pt: Clone + Parser<'a, &'a str, V, ParseError<'a>> + 'a,
     {
         let op = |symbol| just(symbol).padded_by(inline_whitespace());
 
-        var_parser.map(Expr::Value).pratt((
-            prefix(3, op("not"), |c| Expr::Not(Box::new(c))),
-            infix(left(2), op("=="), |c1, c2| {
-                Expr::Eq(Box::new(c1), Box::new(c2))
-            }),
-            infix(left(1), op("and"), |c1, c2| {
-                Expr::And(Box::new(c1), Box::new(c2))
-            }),
-        ))
+        recursive(move |expr| {
+            var_parser
+                .map(Expr::Value)
+                .or(expr.delimited_by(just('('), just(')')))
+                .pratt((
+                    prefix(3, op("not"), |c| Expr::Not(Box::new(c))),
+                    infix(left(2), op("=="), |c1, c2| {
+                        Expr::Eq(Box::new(c1), Box::new(c2))
+                    }),
+                    infix(left(1), op("and"), |c1, c2| {
+                        Expr::And(Box::new(c1), Box::new(c2))
+                    }),
+                ))
+        })
     }
 }
 
@@ -125,13 +132,131 @@ fn snapshots() {
     );
 
     assert_debug_snapshot!(
+        condition().parse(r#"(debug)"#),
+        @r###"
+    ParseResult {
+        output: Some(
+            Value(
+                Variable(
+                    "debug",
+                ),
+            ),
+        ),
+        errs: [],
+    }
+    "###
+    );
+
+    assert_debug_snapshot!(
+        condition().parse(r#"(((((((debug)))))))"#),
+        @r###"
+    ParseResult {
+        output: Some(
+            Value(
+                Variable(
+                    "debug",
+                ),
+            ),
+        ),
+        errs: [],
+    }
+    "###
+    );
+
+    assert_debug_snapshot!(
+        condition().parse(r#"((((os == "linux") and debug)))"#),
+        @r###"
+    ParseResult {
+        output: Some(
+            And(
+                Eq(
+                    Value(
+                        Variable(
+                            "os",
+                        ),
+                    ),
+                    Value(
+                        Literal(
+                            String(
+                                "linux",
+                            ),
+                        ),
+                    ),
+                ),
+                Value(
+                    Variable(
+                        "debug",
+                    ),
+                ),
+            ),
+        ),
+        errs: [],
+    }
+    "###
+    );
+
+    assert_debug_snapshot!(
+        condition().parse(r#"((os == "linux") and debug)"#),
+        @r###"
+    ParseResult {
+        output: Some(
+            And(
+                Eq(
+                    Value(
+                        Variable(
+                            "os",
+                        ),
+                    ),
+                    Value(
+                        Literal(
+                            String(
+                                "linux",
+                            ),
+                        ),
+                    ),
+                ),
+                Value(
+                    Variable(
+                        "debug",
+                    ),
+                ),
+            ),
+        ),
+        errs: [],
+    }
+    "###
+    );
+
+    assert_debug_snapshot!(
         condition().parse(r#"(os == "win") and not debug"#),
         @r###"
     ParseResult {
-        output: None,
-        errs: [
-            found ''('' at 0..1 expected something else,
-        ],
+        output: Some(
+            And(
+                Eq(
+                    Value(
+                        Variable(
+                            "os",
+                        ),
+                    ),
+                    Value(
+                        Literal(
+                            String(
+                                "win",
+                            ),
+                        ),
+                    ),
+                ),
+                Not(
+                    Value(
+                        Variable(
+                            "debug",
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        errs: [],
     }
     "###
     );
