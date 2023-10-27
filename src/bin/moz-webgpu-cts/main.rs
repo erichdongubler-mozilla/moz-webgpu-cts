@@ -576,7 +576,7 @@ fn read_gecko_files_at(
     base: &Path,
     glob_pattern: &str,
 ) -> Result<IndexMap<Arc<PathBuf>, Arc<String>>, ()> {
-    log::info!("reading {glob_pattern:?} files at {}", base.display());
+    log::info!("reading {glob_pattern} files at {}", base.display());
     let mut found_read_err = false;
     let mut paths = wax::Glob::new(glob_pattern)
         .unwrap()
@@ -592,7 +592,7 @@ fn read_gecko_files_at(
                     None => &"",
                 };
                 log::error!(
-                    "failed to enumerate {glob_pattern:?} files{}\n  caused by: {e}",
+                    "failed to enumerate {glob_pattern} files{}\n  caused by: {e}",
                     path_disp
                 );
                 found_read_err = true;
