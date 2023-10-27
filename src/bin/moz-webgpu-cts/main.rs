@@ -592,7 +592,7 @@ fn read_gecko_files_at(
                     None => &"",
                 };
                 log::error!(
-                    "failed to enumerate `cts.https.html` files{}\n  caused by: {e}",
+                    "failed to enumerate {glob_pattern:?} files{}\n  caused by: {e}",
                     path_disp
                 );
                 found_read_err = true;
