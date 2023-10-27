@@ -182,6 +182,7 @@ fn run(cli: Cli) -> ExitCode {
         Subcommand::Triage => {
             #[derive(Debug)]
             struct TaggedTest {
+                #[allow(unused)]
                 orig_path: Arc<PathBuf>,
                 inner: metadata::Test,
             }
