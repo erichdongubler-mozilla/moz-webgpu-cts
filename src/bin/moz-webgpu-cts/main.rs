@@ -220,7 +220,7 @@ fn run(cli: Cli) -> ExitCode {
             #[derive(Clone, Debug, Default)]
             struct PerPlatformAnalysis {
                 tests_with_runner_errors: BTreeSet<Arc<SectionHeader>>,
-                tests_with_disabled: BTreeSet<Arc<SectionHeader>>,
+                tests_with_disabled_or_skip: BTreeSet<Arc<SectionHeader>>,
                 tests_with_crashes: BTreeSet<Arc<SectionHeader>>,
                 subtests_with_failures_by_test:
                     BTreeMap<Arc<SectionHeader>, IndexSet<Arc<SectionHeader>>>,
@@ -307,7 +307,9 @@ fn run(cli: Cli) -> ExitCode {
 
                 if is_disabled {
                     analysis.for_each_platform_mut(|analysis| {
-                        analysis.tests_with_disabled.insert(test_name.clone());
+                        analysis
+                            .tests_with_disabled_or_skip
+                            .insert(test_name.clone());
                     })
                 }
 
@@ -338,6 +340,11 @@ fn run(cli: Cli) -> ExitCode {
                             }),
                             TestOutcome::Error => receiver(&mut |analysis| {
                                 analysis.tests_with_runner_errors.insert(test_name.clone());
+                            }),
+                            TestOutcome::Skip => receiver(&mut |analysis| {
+                                analysis
+                                    .tests_with_disabled_or_skip
+                                    .insert(test_name.clone());
                             }),
                         }
                     }
@@ -395,7 +402,7 @@ fn run(cli: Cli) -> ExitCode {
                     if is_disabled {
                         analysis
                             .windows
-                            .tests_with_disabled
+                            .tests_with_disabled_or_skip
                             .insert(test_name.clone());
                     }
 
@@ -481,14 +488,14 @@ fn run(cli: Cli) -> ExitCode {
             analysis.for_each_platform(|platform, analysis| {
                 let PerPlatformAnalysis {
                     tests_with_runner_errors,
-                    tests_with_disabled,
+                    tests_with_disabled_or_skip,
                     tests_with_crashes,
                     subtests_with_failures_by_test,
                     subtests_with_timeouts_by_test,
                 } = analysis;
 
                 let num_tests_with_runner_errors = tests_with_runner_errors.len();
-                let num_tests_with_disabled = tests_with_disabled.len();
+                let num_tests_with_disabled = tests_with_disabled_or_skip.len();
                 let num_tests_with_crashes = tests_with_crashes.len();
                 let num_tests_with_failures_somewhere = subtests_with_failures_by_test.len();
                 let num_subtests_with_failures_somewhere = subtests_with_failures_by_test

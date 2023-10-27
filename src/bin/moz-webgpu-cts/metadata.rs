@@ -418,6 +418,7 @@ pub enum TestOutcome {
     Timeout,
     Crash,
     Error,
+    Skip,
 }
 
 impl Default for TestOutcome {
@@ -436,6 +437,7 @@ impl Display for TestOutcome {
                 Self::Timeout => "TIMEOUT",
                 Self::Crash => "CRASH",
                 Self::Error => "ERROR",
+                Self::Skip => "SKIP",
             }
         )
     }
@@ -453,6 +455,7 @@ impl<'a> Properties<'a> for AnalyzeableProps<TestOutcome> {
                 keyword("CRASH").to(TestOutcome::Crash),
                 keyword("TIMEOUT").to(TestOutcome::Timeout),
                 keyword("ERROR").to(TestOutcome::Error),
+                keyword("SKIP").to(TestOutcome::Skip),
             )),
         )
         .boxed()
