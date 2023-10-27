@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap};
+use std::collections::BTreeMap;
 
 use crate::metadata::{BuildProfile, Platform};
 
@@ -36,13 +36,7 @@ pub enum MaybeCollapsed<C, E> {
 /// [`AnalyzeableProps`]: crate::metadata::AnalyzeableProps
 #[derive(Clone, Debug)]
 pub struct NormalizedExpectationPropertyValue<Out>(
-    pub(crate)  MaybeCollapsed<
-        MaybeCollapsed<Expectation<Out>, BTreeMap<BuildProfile, Expectation<Out>>>,
-        BTreeMap<
-            Platform,
-            MaybeCollapsed<Expectation<Out>, BTreeMap<BuildProfile, Expectation<Out>>>,
-        >,
-    >,
+    pub(crate) NormalizedExpectationPropertyValueData<Out>,
 );
 
 /// Data from a [`NormalizedExpectationPropertyValue`].
