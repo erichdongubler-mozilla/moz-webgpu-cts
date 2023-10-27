@@ -344,9 +344,9 @@ where
             }
         }
 
-        return Some(NormalizedExpectationPropertyValue(
+        Some(NormalizedExpectationPropertyValue(
             MaybeCollapsed::Collapsed(first_normalized_by_build_profile),
-        ));
+        ))
     }
 }
 
@@ -755,9 +755,13 @@ r#"
                                 properties: AnalyzeableProps {
                                     is_disabled: false,
                                     expectations: Some(
-                                        Unconditional(
-                                            Permanent(
-                                                Pass,
+                                        NormalizedExpectationPropertyValue(
+                                            Collapsed(
+                                                Collapsed(
+                                                    Permanent(
+                                                        Pass,
+                                                    ),
+                                                ),
                                             ),
                                         ),
                                     ),
@@ -821,12 +825,16 @@ r#"
                         properties: AnalyzeableProps {
                             is_disabled: false,
                             expectations: Some(
-                                Unconditional(
-                                    Intermittent(
-                                        {
-                                            Pass,
-                                            Fail,
-                                        },
+                                NormalizedExpectationPropertyValue(
+                                    Collapsed(
+                                        Collapsed(
+                                            Intermittent(
+                                                [
+                                                    Pass,
+                                                    Fail,
+                                                ],
+                                            ),
+                                        ),
                                     ),
                                 ),
                             ),
@@ -858,9 +866,13 @@ r#"
                 properties: AnalyzeableProps {
                     is_disabled: false,
                     expectations: Some(
-                        Unconditional(
-                            Permanent(
-                                Ok,
+                        NormalizedExpectationPropertyValue(
+                            Collapsed(
+                                Collapsed(
+                                    Permanent(
+                                        Ok,
+                                    ),
+                                ),
                             ),
                         ),
                     ),
@@ -870,9 +882,13 @@ r#"
                         properties: AnalyzeableProps {
                             is_disabled: false,
                             expectations: Some(
-                                Unconditional(
-                                    Permanent(
-                                        Pass,
+                                NormalizedExpectationPropertyValue(
+                                    Collapsed(
+                                        Collapsed(
+                                            Permanent(
+                                                Pass,
+                                            ),
+                                        ),
                                     ),
                                 ),
                             ),
@@ -910,23 +926,26 @@ r#"
                         properties: AnalyzeableProps {
                             is_disabled: false,
                             expectations: Some(
-                                Conditional(
-                                    ConditionalValue {
-                                        conditions: [
-                                            (
-                                                Applicability {
-                                                    platform: Some(
-                                                        Linux,
-                                                    ),
-                                                    build_profile: None,
-                                                },
+                                NormalizedExpectationPropertyValue(
+                                    Expanded(
+                                        {
+                                            Windows: Collapsed(
+                                                Permanent(
+                                                    Pass,
+                                                ),
+                                            ),
+                                            Linux: Collapsed(
                                                 Permanent(
                                                     Fail,
                                                 ),
                                             ),
-                                        ],
-                                        fallback: None,
-                                    },
+                                            MacOs: Collapsed(
+                                                Permanent(
+                                                    Pass,
+                                                ),
+                                            ),
+                                        },
+                                    ),
                                 ),
                             ),
                         },
@@ -964,27 +983,26 @@ r#"
                         properties: AnalyzeableProps {
                             is_disabled: false,
                             expectations: Some(
-                                Conditional(
-                                    ConditionalValue {
-                                        conditions: [
-                                            (
-                                                Applicability {
-                                                    platform: Some(
-                                                        Linux,
-                                                    ),
-                                                    build_profile: None,
-                                                },
+                                NormalizedExpectationPropertyValue(
+                                    Expanded(
+                                        {
+                                            Windows: Collapsed(
+                                                Permanent(
+                                                    Timeout,
+                                                ),
+                                            ),
+                                            Linux: Collapsed(
                                                 Permanent(
                                                     Fail,
                                                 ),
                                             ),
-                                        ],
-                                        fallback: Some(
-                                            Permanent(
-                                                Timeout,
+                                            MacOs: Collapsed(
+                                                Permanent(
+                                                    Timeout,
+                                                ),
                                             ),
-                                        ),
-                                    },
+                                        },
+                                    ),
                                 ),
                             ),
                         },
@@ -1020,23 +1038,26 @@ r#"
                         properties: AnalyzeableProps {
                             is_disabled: false,
                             expectations: Some(
-                                Conditional(
-                                    ConditionalValue {
-                                        conditions: [
-                                            (
-                                                Applicability {
-                                                    platform: Some(
-                                                        MacOs,
-                                                    ),
-                                                    build_profile: None,
-                                                },
+                                NormalizedExpectationPropertyValue(
+                                    Expanded(
+                                        {
+                                            Windows: Collapsed(
+                                                Permanent(
+                                                    Pass,
+                                                ),
+                                            ),
+                                            Linux: Collapsed(
+                                                Permanent(
+                                                    Pass,
+                                                ),
+                                            ),
+                                            MacOs: Collapsed(
                                                 Permanent(
                                                     Fail,
                                                 ),
                                             ),
-                                        ],
-                                        fallback: None,
-                                    },
+                                        },
+                                    ),
                                 ),
                             ),
                         },
