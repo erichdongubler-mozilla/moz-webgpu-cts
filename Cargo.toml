@@ -24,6 +24,7 @@ miette = { version = "5.10.0", features = ["fancy"] }
 natord = "1.0.9"
 path-dsl = "0.6.1"
 regex = "1.9.5"
+strum = { version = "0.25.0", features = ["derive"] }
 thiserror = "1.0.49"
 wax = "0.6.0"
 

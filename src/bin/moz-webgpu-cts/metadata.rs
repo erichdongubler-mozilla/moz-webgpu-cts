@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeMap,
     fmt::{self, Display},
     hash::Hash,
 };
@@ -11,8 +12,8 @@ use chumsky::{
     Boxed, IterParser, Parser,
 };
 use format::lazy_format;
-use indexmap::IndexSet;
 use joinery::JoinableIterator;
+use strum::{EnumIter, IntoEnumIterator};
 use whippit::metadata::{
     self,
     properties::{
@@ -20,6 +21,8 @@ use whippit::metadata::{
     },
     ParseError,
 };
+
+use crate::shared::{Expectation, MaybeCollapsed, NormalizedExpectationPropertyValue};
 
 #[cfg(test)]
 use {chumsky::text::newline, insta::assert_debug_snapshot};
@@ -68,7 +71,7 @@ fn format_test(test: &Test) -> impl Display + '_ {
 
 fn format_properties<Out>(indentation: u8, property: &AnalyzeableProps<Out>) -> impl Display + '_
 where
-    Out: Display,
+    Out: Default + Display + Eq + PartialEq,
 {
     lazy_format!(move |f| {
         let indent = lazy_format!(move |f| write!(
@@ -82,59 +85,82 @@ where
             is_disabled,
             expectations,
         } = property;
+
         if *is_disabled {
             writeln!(f, "{indent}disabled: true")?;
         }
-        if let Some(expectations) = expectations {
-            write!(f, "{indent}expected:")?;
 
-            match expectations {
-                PropertyValue::Unconditional(exp) => writeln!(f, " {}", format_exp(exp))?,
-                PropertyValue::Conditional(ConditionalValue {
-                    conditions,
-                    fallback,
-                }) => {
-                    writeln!(f)?;
-                    if !conditions.is_empty() {
-                        for (applicability, expectation) in conditions {
-                            let Applicability {
-                                platform,
-                                build_profile,
-                            } = applicability;
-                            let platform = platform.map(|p| {
-                                let platform_str = match p {
-                                    Platform::Windows => "win",
-                                    Platform::Linux => "linux",
-                                    Platform::MacOs => "mac",
-                                };
-                                lazy_format!(move |f| write!(f, "os == {platform_str:?}"))
-                            });
-                            let build_profile = build_profile.as_ref().map(|p| -> &'static str {
-                                match p {
-                                    BuildProfile::Debug => "debug",
-                                    BuildProfile::Optimized => "not debug",
-                                }
-                            });
-                            writeln!(
-                                f,
-                                "{indent}  if {}: {}",
-                                platform
-                                    .as_ref()
-                                    .map(|p| -> &dyn Display { p })
-                                    .into_iter()
-                                    .chain(
-                                        build_profile
-                                            .as_ref()
-                                            .into_iter()
-                                            .map(|s| -> &dyn Display { s })
-                                    )
-                                    .join_with(" and "),
-                                format_exp(expectation)
-                            )?;
+        if let Some(exps) = expectations {
+            fn if_not_default<Out>(
+                exp: &Expectation<Out>,
+                f: impl FnOnce() -> fmt::Result,
+            ) -> fmt::Result
+            where
+                Out: Default + Eq + PartialEq,
+            {
+                if !matches!(exp, Expectation::Permanent(perma) if perma == &Default::default()) {
+                    f()
+                } else {
+                    Ok(())
+                }
+            }
+
+            let expected = lazy_format!("{indent}expected");
+
+            let rhs = format_exp;
+
+            let NormalizedExpectationPropertyValue(exps) = exps;
+            let r#if = lazy_format!("{indent}  if");
+            let disp_build_profile = |build_profile| match build_profile {
+                BuildProfile::Debug => "debug",
+                BuildProfile::Optimized => "not debug",
+            };
+            match exps {
+                MaybeCollapsed::Collapsed(exps) => match exps {
+                    MaybeCollapsed::Collapsed(exps) => {
+                        if_not_default(exps, || writeln!(f, "{expected}: {}", rhs(exps)))?;
+                    }
+                    MaybeCollapsed::Expanded(by_build_profile) => {
+                        writeln!(f, "{expected}:")?;
+                        debug_assert!(!by_build_profile.is_empty());
+                        for (build_profile, exps) in by_build_profile {
+                            let build_profile = disp_build_profile(*build_profile);
+                            if_not_default(exps, || {
+                                writeln!(f, "{if} {build_profile}: {}", rhs(exps))
+                            })?;
                         }
                     }
-                    if let Some(fallback) = fallback {
-                        writeln!(f, "{indent}  {}", format_exp(fallback))?;
+                },
+                MaybeCollapsed::Expanded(by_platform) => {
+                    writeln!(f, "{expected}:")?;
+                    debug_assert!(!by_platform.is_empty());
+                    for (platform, exps) in by_platform {
+                        let platform = {
+                            let platform_str = match platform {
+                                Platform::Windows => "win",
+                                Platform::Linux => "linux",
+                                Platform::MacOs => "mac",
+                            };
+                            lazy_format!(move |f| write!(f, "os == {platform_str:?}"))
+                        };
+                        match exps {
+                            MaybeCollapsed::Collapsed(exps) => if_not_default(exps, || {
+                                writeln!(f, "{if} {platform}: {}", rhs(exps))
+                            })?,
+                            MaybeCollapsed::Expanded(by_build_profile) => {
+                                debug_assert!(!by_build_profile.is_empty());
+                                for (build_profile, exps) in by_build_profile {
+                                    let build_profile = disp_build_profile(*build_profile);
+                                    if_not_default(exps, || {
+                                        writeln!(
+                                            f,
+                                            "{if} {platform} and {build_profile}: {}",
+                                            rhs(exps)
+                                        )
+                                    })?;
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -158,14 +184,14 @@ where
     })
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, EnumIter, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Platform {
     Windows,
     Linux,
     MacOs,
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, EnumIter, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum BuildProfile {
     Debug,
     Optimized,
@@ -174,7 +200,7 @@ pub enum BuildProfile {
 #[derive(Clone, Debug)]
 pub struct AnalyzeableProps<Out> {
     pub is_disabled: bool,
-    pub expectations: Option<PropertyValue<Applicability, Expectation<Out>>>,
+    pub expectations: Option<NormalizedExpectationPropertyValue<Out>>,
 }
 
 impl<T> Default for AnalyzeableProps<T> {
@@ -186,10 +212,13 @@ impl<T> Default for AnalyzeableProps<T> {
     }
 }
 
-impl<'a, Exp> AnalyzeableProps<Exp> {
+impl<'a, Out> AnalyzeableProps<Out>
+where
+    Out: Clone + Default + Eq + PartialEq + Hash,
+{
     fn insert(
         &mut self,
-        prop: AnalyzeableProp<Exp>,
+        prop: AnalyzeableProp<Out>,
         emitter: &mut chumsky::input::Emitter<Rich<'a, char>>,
     ) {
         let Self {
@@ -199,12 +228,64 @@ impl<'a, Exp> AnalyzeableProps<Exp> {
 
         match prop {
             AnalyzeableProp::Expected(val) => {
-                if expectations.replace(val).is_some() {
+                if expectations.is_some() {
                     emitter.emit(Rich::custom(
                         todo!("duplicate `expected` key detected"),
                         "duplicate `expected` key detected",
-                    ))
+                    ));
+                    return;
                 }
+                expectations.replace(match val {
+                    PropertyValue::Unconditional(exp) => NormalizedExpectationPropertyValue(
+                        MaybeCollapsed::Collapsed(MaybeCollapsed::Collapsed(exp)),
+                    ),
+                    PropertyValue::Conditional(val) => {
+                        let ConditionalValue {
+                            conditions,
+                            fallback,
+                        } = val;
+                        if conditions.is_empty() {
+                            NormalizedExpectationPropertyValue(MaybeCollapsed::Collapsed(
+                                MaybeCollapsed::Collapsed(fallback.expect(concat!(
+                                    "at least one condition or fallback not present ",
+                                    "in conditional `expected` property value"
+                                ))),
+                            ))
+                        } else {
+                            let fully_expanded = Platform::iter()
+                                .filter_map(|p| {
+                                    let by_build_profile = BuildProfile::iter()
+                                        .filter_map(|bp| {
+                                            let mut matched = None;
+
+                                            for (applicability, val) in &conditions {
+                                                let Applicability {
+                                                    platform,
+                                                    build_profile,
+                                                } = applicability;
+                                                if platform.as_ref().map_or(true, |p2| *p2 == p)
+                                                    && build_profile
+                                                        .as_ref()
+                                                        .map_or(true, |bp2| *bp2 == bp)
+                                                {
+                                                    matched = Some(val.clone());
+                                                }
+                                            }
+                                            matched
+                                                .or(fallback.clone())
+                                                .map(|matched| (bp, matched))
+                                        })
+                                        .collect::<BTreeMap<_, _>>();
+                                    (!by_build_profile.is_empty())
+                                        .then_some(by_build_profile)
+                                        .map(|tree| (p, tree))
+                                })
+                                .collect();
+
+                            NormalizedExpectationPropertyValue::from_full(fully_expanded).unwrap()
+                        }
+                    }
+                });
             }
             AnalyzeableProp::Disabled => {
                 if *is_disabled {
@@ -216,6 +297,59 @@ impl<'a, Exp> AnalyzeableProps<Exp> {
                 *is_disabled = true;
             }
         }
+    }
+}
+
+impl<Out> NormalizedExpectationPropertyValue<Out>
+where
+    Out: Clone + Default + Eq + PartialEq,
+{
+    fn from_full(
+        mut outcomes: BTreeMap<Platform, BTreeMap<BuildProfile, Expectation<Out>>>,
+    ) -> Option<Self> {
+        if outcomes.is_empty() {
+            return None;
+        }
+
+        let normalize_by_build_profile =
+            |exp_by_build_profile: BTreeMap<BuildProfile, Expectation<Out>>| {
+                let default = &Default::default();
+                let mut iter =
+                    BuildProfile::iter().map(|bp| exp_by_build_profile.get(&bp).unwrap_or(default));
+                let first_exp = iter.next().unwrap();
+
+                for exp in iter {
+                    if exp != first_exp {
+                        return MaybeCollapsed::Expanded(exp_by_build_profile);
+                    }
+                }
+
+                MaybeCollapsed::Collapsed(first_exp.clone())
+            };
+
+        let mut iter = Platform::iter().map(|p| {
+            (
+                p,
+                normalize_by_build_profile(outcomes.remove(&p).unwrap_or_default()),
+            )
+        });
+        let (first_platform, first_normalized_by_build_profile) = iter.next().unwrap();
+        let mut normalized_expanded = BTreeMap::new();
+        while let Some((platform, normalized_by_build_profile)) = iter.next() {
+            let is_consistent = normalized_by_build_profile != first_normalized_by_build_profile;
+            normalized_expanded.insert(platform, normalized_by_build_profile);
+            if is_consistent {
+                normalized_expanded.insert(first_platform, first_normalized_by_build_profile);
+                normalized_expanded.extend(iter);
+                return Some(NormalizedExpectationPropertyValue(
+                    MaybeCollapsed::Expanded(normalized_expanded),
+                ));
+            }
+        }
+
+        return Some(NormalizedExpectationPropertyValue(
+            MaybeCollapsed::Collapsed(first_normalized_by_build_profile),
+        ));
     }
 }
 
@@ -389,21 +523,6 @@ impl<Out> AnalyzeableProp<Out> {
                     AnalyzeableProp::Disabled
                 }),
         ))
-    }
-}
-
-#[derive(Clone, Debug)]
-pub enum Expectation<Out> {
-    Permanent(Out),
-    Intermittent(IndexSet<Out>),
-}
-
-impl<Out> Default for Expectation<Out>
-where
-    Out: Default,
-{
-    fn default() -> Self {
-        Self::Permanent(Default::default())
     }
 }
 

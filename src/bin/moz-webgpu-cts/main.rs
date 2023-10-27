@@ -1,7 +1,9 @@
 mod metadata;
+mod shared;
 
-use self::metadata::{
-    AnalyzeableProps, Applicability, Expectation, Platform, SubtestOutcome, Test, TestOutcome,
+use self::{
+    metadata::{AnalyzeableProps, Platform, SubtestOutcome, Test, TestOutcome},
+    shared::{Expectation, MaybeCollapsed},
 };
 
 use std::{
@@ -22,10 +24,7 @@ use path_dsl::path;
 use regex::Regex;
 use wax::Glob;
 use whippit::{
-    metadata::{
-        properties::{ConditionalValue, PropertyValue},
-        SectionHeader, Subtest,
-    },
+    metadata::{SectionHeader, Subtest},
     reexport::chumsky::prelude::Rich,
 };
 
@@ -381,27 +380,35 @@ fn run(cli: Cli) -> ExitCode {
                                 })
                             })
                         };
-                    match expectations {
-                        PropertyValue::Unconditional(exp) => {
-                            apply_to_all_platforms(&mut analysis, exp)
-                        }
-                        PropertyValue::Conditional(ConditionalValue {
-                            conditions,
-                            fallback,
-                        }) => {
-                            for (condition, exp) in conditions {
-                                let Applicability {
-                                    platform,
-                                    build_profile: _,
-                                } = condition;
-                                if let Some(platform) = platform {
-                                    apply_to_specific_platforms(&mut analysis, platform, exp)
-                                } else {
+
+                    match expectations.into_inner() {
+                        MaybeCollapsed::Collapsed(exps) => match exps {
+                            MaybeCollapsed::Collapsed(exp) => {
+                                apply_to_all_platforms(&mut analysis, exp)
+                            }
+                            MaybeCollapsed::Expanded(by_build_profile) => {
+                                for (_build_profile, exp) in by_build_profile {
                                     apply_to_all_platforms(&mut analysis, exp)
                                 }
                             }
-                            if let Some(fallback) = fallback {
-                                apply_to_all_platforms(&mut analysis, fallback)
+                        },
+                        MaybeCollapsed::Expanded(by_platform) => {
+                            for (platform, exp_by_build_profile) in by_platform {
+                                // TODO: has a lot in common with above cases. Refactor out?
+                                match exp_by_build_profile {
+                                    MaybeCollapsed::Collapsed(exp) => {
+                                        apply_to_specific_platforms(&mut analysis, platform, exp)
+                                    }
+                                    MaybeCollapsed::Expanded(by_build_profile) => {
+                                        for (_build_profile, exp) in by_build_profile {
+                                            apply_to_specific_platforms(
+                                                &mut analysis,
+                                                platform,
+                                                exp,
+                                            )
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -474,27 +481,39 @@ fn run(cli: Cli) -> ExitCode {
                                     )
                                 })
                             };
-                        match expectations {
-                            PropertyValue::Unconditional(exp) => {
-                                apply_to_all_platforms(&mut analysis, exp)
-                            }
-                            PropertyValue::Conditional(ConditionalValue {
-                                conditions,
-                                fallback,
-                            }) => {
-                                for (condition, exp) in conditions {
-                                    let Applicability {
-                                        platform,
-                                        build_profile: _,
-                                    } = condition;
-                                    if let Some(platform) = platform {
-                                        apply_to_specific_platforms(&mut analysis, platform, exp)
-                                    } else {
+
+                        match expectations.into_inner() {
+                            MaybeCollapsed::Collapsed(exps) => match exps {
+                                MaybeCollapsed::Collapsed(exp) => {
+                                    apply_to_all_platforms(&mut analysis, exp)
+                                }
+                                MaybeCollapsed::Expanded(by_build_profile) => {
+                                    for (_build_profile, exp) in by_build_profile {
                                         apply_to_all_platforms(&mut analysis, exp)
                                     }
                                 }
-                                if let Some(fallback) = fallback {
-                                    apply_to_all_platforms(&mut analysis, fallback)
+                            },
+                            MaybeCollapsed::Expanded(by_platform) => {
+                                for (platform, exp_by_build_profile) in by_platform {
+                                    // TODO: has a lot in common with above cases. Refactor out?
+                                    match exp_by_build_profile {
+                                        MaybeCollapsed::Collapsed(exp) => {
+                                            apply_to_specific_platforms(
+                                                &mut analysis,
+                                                platform,
+                                                exp,
+                                            )
+                                        }
+                                        MaybeCollapsed::Expanded(by_build_profile) => {
+                                            for (_build_profile, exp) in by_build_profile {
+                                                apply_to_specific_platforms(
+                                                    &mut analysis,
+                                                    platform,
+                                                    exp,
+                                                )
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
