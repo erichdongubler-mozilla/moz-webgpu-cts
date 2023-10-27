@@ -46,6 +46,11 @@ pub type NormalizedExpectationPropertyValueData<Out> = MaybeCollapsed<
 >;
 
 impl<Out> NormalizedExpectationPropertyValue<Out> {
+    pub fn inner(&self) -> &NormalizedExpectationPropertyValueData<Out> {
+        let Self(inner) = self;
+        inner
+    }
+
     pub fn into_inner(self) -> NormalizedExpectationPropertyValueData<Out> {
         let Self(inner) = self;
         inner

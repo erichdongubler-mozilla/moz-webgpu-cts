@@ -107,16 +107,13 @@ where
             }
 
             let expected = lazy_format!("{indent}expected");
-
             let rhs = format_exp;
-
-            let NormalizedExpectationPropertyValue(exps) = exps;
             let r#if = lazy_format!("{indent}  if");
             let disp_build_profile = |build_profile| match build_profile {
                 BuildProfile::Debug => "debug",
                 BuildProfile::Optimized => "not debug",
             };
-            match exps {
+            match exps.inner() {
                 MaybeCollapsed::Collapsed(exps) => match exps {
                     MaybeCollapsed::Collapsed(exps) => {
                         if_not_default(exps, || writeln!(f, "{expected}: {}", rhs(exps)))?;
