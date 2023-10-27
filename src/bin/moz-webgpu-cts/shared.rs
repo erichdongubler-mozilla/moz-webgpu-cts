@@ -2,6 +2,10 @@ use std::{collections::BTreeMap};
 
 use crate::metadata::{BuildProfile, Platform};
 
+/// A set of expected outcomes in a [`Test`] or [`Subtest`].
+///
+/// [`Test`]: crate::metadata::Test
+/// [`Subtest`]: crate::metadata::Subtest
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Expectation<Out> {
     Permanent(Out),
