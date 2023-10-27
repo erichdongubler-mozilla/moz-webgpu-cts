@@ -22,7 +22,7 @@ use std::{
     io::{self, BufReader, BufWriter},
     path::{Path, PathBuf},
     process::ExitCode,
-    sync::Arc,
+    sync::{mpsc::channel, Arc},
 };
 
 use clap::{Parser, ValueEnum};
@@ -31,7 +31,7 @@ use format::lazy_format;
 use indexmap::{IndexMap, IndexSet};
 use miette::{miette, Diagnostic, IntoDiagnostic, NamedSource, Report, SourceSpan, WrapErr};
 use path_dsl::path;
-
+use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 use regex::Regex;
 use wax::Glob;
 use whippit::{metadata::SectionHeader, reexport::chumsky::prelude::Rich};
@@ -359,30 +359,34 @@ fn run(cli: Cli) -> ExitCode {
 
             log::info!("gathering reported test outcomes for reconciliation with metadata…");
 
-            let exec_reports_iter = exec_report_paths.iter().map(|path| {
-                fs::File::open(path)
-                    .map(BufReader::new)
-                    .map_err(Report::msg)
-                    .wrap_err("failed to open file")
-                    .and_then(|reader| {
-                        serde_json::from_reader::<_, ExecutionReport>(reader)
-                            .into_diagnostic()
-                            .wrap_err("failed to parse JSON")
-                    })
-                    .map(|parsed| (path, parsed))
-                    .wrap_err_with(|| {
-                        format!(
-                            "failed to read WPT execution report from {}",
-                            path.display()
-                        )
-                    })
-                    .map_err(|e| {
-                        log::error!("{e:?}");
-                        AlreadyReportedToCommandline
-                    })
-            });
+            let (exec_reports_sender, exec_reports_receiver) = channel();
+            exec_report_paths
+                .into_par_iter()
+                .for_each_with(exec_reports_sender, |sender, path| {
+                    let res = fs::File::open(&path)
+                        .map(BufReader::new)
+                        .map_err(Report::msg)
+                        .wrap_err("failed to open file")
+                        .and_then(|reader| {
+                            serde_json::from_reader::<_, ExecutionReport>(reader)
+                                .into_diagnostic()
+                                .wrap_err("failed to parse JSON")
+                        })
+                        .wrap_err_with(|| {
+                            format!(
+                                "failed to read WPT execution report from {}",
+                                path.display()
+                            )
+                        })
+                        .map(|parsed| (path, parsed))
+                        .map_err(|e| {
+                            log::error!("{e:?}");
+                            AlreadyReportedToCommandline
+                        });
+                    let _ = sender.send(res);
+                });
 
-            for res in exec_reports_iter {
+            for res in exec_reports_receiver {
                 let (_path, exec_report) = match res {
                     Ok(ok) => ok,
                     Err(AlreadyReportedToCommandline) => return ExitCode::FAILURE,
