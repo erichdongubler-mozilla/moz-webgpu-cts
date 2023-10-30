@@ -1,20 +1,8 @@
-# `whippit`
+# `moz-webgpu-cts` workspace
 
-A (WIP) tool for working with [`web-platform-tests`] ("WPT") expectations.
+Hey there! 👋 If you're here, you're likely interested in the [`moz-webgpu-cts`
+binary]. You _might_ also be interested in the [`whippit`] library, if you want
+to build tools like `moz-webgpu-cts`.
 
-[`web-platform-tests`]: https://web-platform-tests.org/
-
-![devo-2340125260](https://github.com/ErichDonGubler/whippit/assets/658538/1f381c3d-0f43-4dfc-817c-616d3a04bdc9)
-
-Whip it _good_!
-
----
-
-## FAQ
-
-### What's the reference for this project name?
-
--   "whip it" is how WPT sounds if pronounced naively.
--   [Devo's "Whip It Good"](https://www.youtube.com/watch?v=j_QLzthSkfM) has
-    always been a favorite song in @ErichDonGubler's family.
--   That's it. 😆
+[`moz-webgpu-cts` binary]: ./moz-webgpu-cts/
+[`whippit`]: ./whippit/
