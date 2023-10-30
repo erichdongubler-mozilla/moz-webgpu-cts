@@ -1,6 +1,6 @@
 # `whippit`
 
-A (WIP) tool for working with [`web-platform-tests`] ("WPT") expectations.
+A (WIP) library for parsing [`web-platform-tests`] ("WPT") expectations.
 
 [`web-platform-tests`]: https://web-platform-tests.org/
 
