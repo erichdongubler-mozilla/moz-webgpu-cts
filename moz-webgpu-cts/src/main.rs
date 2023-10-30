@@ -17,6 +17,7 @@ use std::{
 };
 
 use clap::Parser;
+use enumset::EnumSetType;
 use indexmap::{IndexMap, IndexSet};
 use miette::{miette, Diagnostic, NamedSource, Report, SourceSpan, WrapErr};
 use path_dsl::path;
@@ -334,6 +335,7 @@ fn run(cli: Cli) -> ExitCode {
                 fn apply_expectation<Out, F>(expectation: Expectation<Out>, mut f: F)
                 where
                     F: FnMut(Out),
+                    Out: EnumSetType,
                 {
                     match expectation {
                         Expectation::Permanent(outcome) => f(outcome),

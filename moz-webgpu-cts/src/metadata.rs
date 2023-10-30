@@ -12,6 +12,7 @@ use chumsky::{
     text::{inline_whitespace, keyword},
     Boxed, IterParser, Parser,
 };
+use enumset::EnumSetType;
 use format::lazy_format;
 use joinery::JoinableIterator;
 use strum::{EnumIter, IntoEnumIterator};
@@ -72,7 +73,7 @@ fn format_test(test: &Test) -> impl Display + '_ {
 
 fn format_properties<Out>(indentation: u8, property: &AnalyzeableProps<Out>) -> impl Display + '_
 where
-    Out: Default + Display + Eq + PartialEq,
+    Out: Default + Display + EnumSetType + Eq + PartialEq,
 {
     lazy_format!(move |f| {
         let indent = lazy_format!(move |f| write!(
@@ -97,7 +98,7 @@ where
                 f: impl FnOnce() -> fmt::Result,
             ) -> fmt::Result
             where
-                Out: Default + Eq + PartialEq,
+                Out: Default + EnumSetType + Eq + PartialEq,
             {
                 if !matches!(exp, Expectation::Permanent(perma) if perma == &Default::default()) {
                     f()
@@ -170,7 +171,7 @@ where
 
 fn format_exp<Exp>(exp: &Expectation<Exp>) -> impl Display + '_
 where
-    Exp: Display,
+    Exp: Display + EnumSetType,
 {
     lazy_format!(move |f| {
         match exp {
@@ -196,12 +197,18 @@ pub enum BuildProfile {
 }
 
 #[derive(Clone, Debug)]
-pub struct AnalyzeableProps<Out> {
+pub struct AnalyzeableProps<Out>
+where
+    Out: EnumSetType,
+{
     pub is_disabled: bool,
     pub expectations: Option<NormalizedExpectationPropertyValue<Out>>,
 }
 
-impl<Out> Default for AnalyzeableProps<Out> {
+impl<Out> Default for AnalyzeableProps<Out>
+where
+    Out: EnumSetType,
+{
     fn default() -> Self {
         Self {
             is_disabled: false,
@@ -212,7 +219,7 @@ impl<Out> Default for AnalyzeableProps<Out> {
 
 impl<'a, Out> AnalyzeableProps<Out>
 where
-    Out: Clone + Default + Eq + PartialEq + Hash,
+    Out: Clone + Default + EnumSetType + Eq + PartialEq + Hash,
 {
     fn insert(
         &mut self,
@@ -296,54 +303,63 @@ where
 
 impl<Out> NormalizedExpectationPropertyValue<Out>
 where
-    Out: Clone + Default + Eq + PartialEq,
+    Out: Clone + Default + EnumSetType + Eq + PartialEq,
 {
     fn from_full(
-        mut outcomes: BTreeMap<Platform, BTreeMap<BuildProfile, Expectation<Out>>>,
+        outcomes: BTreeMap<Platform, BTreeMap<BuildProfile, Expectation<Out>>>,
     ) -> Option<Self> {
         if outcomes.is_empty() {
             return None;
         }
 
-        let normalize_by_build_profile =
-            |exp_by_build_profile: BTreeMap<BuildProfile, Expectation<Out>>| {
-                let default = &Default::default();
-                let mut iter =
-                    BuildProfile::iter().map(|bp| exp_by_build_profile.get(&bp).unwrap_or(default));
-                let first_exp = iter.next().unwrap();
+        fn normalize<K, V, T, F>(
+            mut map: BTreeMap<K, V>,
+            mut f: F,
+        ) -> MaybeCollapsed<T, BTreeMap<K, T>>
+        where
+            F: FnMut(V) -> T,
+            K: IntoEnumIterator + Ord,
+            V: Default,
+            T: Clone + Default + Eq + PartialEq,
+        {
+            fn skip_default<K, V, I>(iter: I) -> impl Iterator<Item = (K, V)>
+            where
+                I: IntoIterator<Item = (K, V)>,
+                V: Default + Eq + PartialEq,
+            {
+                iter.into_iter().filter(|(_k, v)| v != &Default::default())
+            }
 
-                for exp in iter {
-                    if exp != first_exp {
-                        return MaybeCollapsed::Expanded(exp_by_build_profile);
-                    }
+            let mut iter = K::iter().map(|k| {
+                let v = map.remove(&k).unwrap_or_default();
+                (k, f(v))
+            });
+
+            let (first_key, first_t) = iter.next().unwrap();
+
+            let mut inconsistency_found = false;
+            let mut expanded = BTreeMap::default();
+            for (k, t) in iter.by_ref() {
+                if t == first_t {
+                    expanded.extend(skip_default([(k, t)]));
+                } else {
+                    inconsistency_found = true;
+                    expanded.extend(skip_default([(k, t)].into_iter().chain(iter)));
+                    break;
                 }
-
-                MaybeCollapsed::Collapsed(first_exp.clone())
-            };
-
-        let mut iter = Platform::iter().map(|p| {
-            (
-                p,
-                normalize_by_build_profile(outcomes.remove(&p).unwrap_or_default()),
-            )
-        });
-        let (first_platform, first_normalized_by_build_profile) = iter.next().unwrap();
-        let mut normalized_expanded = BTreeMap::new();
-        while let Some((platform, normalized_by_build_profile)) = iter.next() {
-            let is_consistent = normalized_by_build_profile != first_normalized_by_build_profile;
-            normalized_expanded.insert(platform, normalized_by_build_profile);
-            if is_consistent {
-                normalized_expanded.insert(first_platform, first_normalized_by_build_profile);
-                normalized_expanded.extend(iter);
-                return Some(NormalizedExpectationPropertyValue(
-                    MaybeCollapsed::Expanded(normalized_expanded),
-                ));
+            }
+            if inconsistency_found {
+                expanded.extend(skip_default([(first_key, first_t)]));
+                MaybeCollapsed::Expanded(expanded)
+            } else {
+                MaybeCollapsed::Collapsed(first_t)
             }
         }
 
-        Some(NormalizedExpectationPropertyValue(
-            MaybeCollapsed::Collapsed(first_normalized_by_build_profile),
-        ))
+        Some(NormalizedExpectationPropertyValue(normalize(
+            outcomes,
+            |by_build_profile| normalize(by_build_profile, std::convert::identity),
+        )))
     }
 }
 
@@ -354,18 +370,27 @@ pub struct Applicability {
 }
 
 #[derive(Clone, Debug)]
-pub struct AnalyzeableProp<Out> {
+pub struct AnalyzeableProp<Out>
+where
+    Out: EnumSetType,
+{
     span: SimpleSpan,
     kind: AnalyzeablePropKind<Out>,
 }
 
 #[derive(Clone, Debug)]
-enum AnalyzeablePropKind<Out> {
+enum AnalyzeablePropKind<Out>
+where
+    Out: EnumSetType,
+{
     Expected(PropertyValue<Applicability, Expectation<Out>>),
     Disabled,
 }
 
-impl<Out> AnalyzeableProp<Out> {
+impl<Out> AnalyzeableProp<Out>
+where
+    Out: EnumSetType,
+{
     fn property_parser<'a, P>(
         helper: &mut PropertiesParseHelper<'a>,
         outcome_parser: P,
@@ -531,7 +556,7 @@ impl<Out> AnalyzeableProp<Out> {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Debug, EnumSetType, Hash)]
 pub enum TestOutcome {
     Ok,
     Timeout,
@@ -589,7 +614,7 @@ impl<'a> Properties<'a> for AnalyzeableProps<TestOutcome> {
     }
 }
 
-#[derive(Clone, Copy, Debug, Hash, Eq, PartialEq)]
+#[derive(Debug, EnumSetType, Hash)]
 pub enum SubtestOutcome {
     Pass,
     Fail,
@@ -826,10 +851,7 @@ r#"
                                     Collapsed(
                                         Collapsed(
                                             Intermittent(
-                                                [
-                                                    Pass,
-                                                    Fail,
-                                                ],
+                                                EnumSet(Pass | Fail),
                                             ),
                                         ),
                                     ),
@@ -926,19 +948,9 @@ r#"
                                 NormalizedExpectationPropertyValue(
                                     Expanded(
                                         {
-                                            Windows: Collapsed(
-                                                Permanent(
-                                                    Pass,
-                                                ),
-                                            ),
                                             Linux: Collapsed(
                                                 Permanent(
                                                     Fail,
-                                                ),
-                                            ),
-                                            MacOs: Collapsed(
-                                                Permanent(
-                                                    Pass,
                                                 ),
                                             ),
                                         },
@@ -1038,16 +1050,6 @@ r#"
                                 NormalizedExpectationPropertyValue(
                                     Expanded(
                                         {
-                                            Windows: Collapsed(
-                                                Permanent(
-                                                    Pass,
-                                                ),
-                                            ),
-                                            Linux: Collapsed(
-                                                Permanent(
-                                                    Pass,
-                                                ),
-                                            ),
                                             MacOs: Collapsed(
                                                 Permanent(
                                                     Fail,
