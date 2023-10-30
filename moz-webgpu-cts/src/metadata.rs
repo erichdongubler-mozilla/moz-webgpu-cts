@@ -201,7 +201,7 @@ pub struct AnalyzeableProps<Out> {
     pub expectations: Option<NormalizedExpectationPropertyValue<Out>>,
 }
 
-impl<T> Default for AnalyzeableProps<T> {
+impl<Out> Default for AnalyzeableProps<Out> {
     fn default() -> Self {
         Self {
             is_disabled: false,
