@@ -14,7 +14,6 @@ use chumsky::{
 };
 use enumset::EnumSetType;
 use format::lazy_format;
-use indexmap::IndexMap;
 use joinery::JoinableIterator;
 use strum::{EnumIter, IntoEnumIterator};
 use whippit::metadata::{
@@ -32,7 +31,7 @@ use {chumsky::text::newline, insta::assert_debug_snapshot};
 
 #[derive(Clone, Debug, Default)]
 pub struct File {
-    pub tests: IndexMap<SectionHeader, Test>,
+    pub tests: BTreeMap<SectionHeader, Test>,
 }
 
 impl File {
@@ -61,7 +60,7 @@ impl<'a> metadata::File<'a> for File {
 #[derive(Clone, Debug, Default)]
 pub struct Test {
     pub properties: AnalyzeableProps<TestOutcome>,
-    pub subtests: IndexMap<SectionHeader, Subtest>,
+    pub subtests: BTreeMap<SectionHeader, Subtest>,
 }
 
 #[cfg(test)]
@@ -85,7 +84,7 @@ impl<'a> metadata::Test<'a> for Test {
 }
 
 #[derive(Default)]
-pub struct Subtests(IndexMap<SectionHeader, Subtest>);
+pub struct Subtests(BTreeMap<SectionHeader, Subtest>);
 
 impl<'a> metadata::Subtests<'a> for Subtests {
     type Subtest = Subtest;
