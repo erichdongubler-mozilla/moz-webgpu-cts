@@ -14,14 +14,15 @@ use chumsky::{
 };
 use enumset::EnumSetType;
 use format::lazy_format;
+use indexmap::IndexMap;
 use joinery::JoinableIterator;
 use strum::{EnumIter, IntoEnumIterator};
 use whippit::metadata::{
-    self,
+    self, file_parser,
     properties::{
         ConditionalValue, Expr, Literal, Properties, PropertiesParseHelper, PropertyValue, Value,
     },
-    ParseError,
+    ParseError, SectionHeader,
 };
 
 use crate::shared::{Expectation, MaybeCollapsed, NormalizedExpectationPropertyValue};
@@ -29,23 +30,111 @@ use crate::shared::{Expectation, MaybeCollapsed, NormalizedExpectationPropertyVa
 #[cfg(test)]
 use {chumsky::text::newline, insta::assert_debug_snapshot};
 
-pub type File = metadata::File<AnalyzeableProps<TestOutcome>, AnalyzeableProps<SubtestOutcome>>;
+#[derive(Clone, Debug, Default)]
+pub struct File {
+    pub tests: IndexMap<SectionHeader, Test>,
+}
 
-pub type Test = metadata::Test<AnalyzeableProps<TestOutcome>, AnalyzeableProps<SubtestOutcome>>;
+impl File {
+    pub fn parser<'a>() -> impl Parser<'a, &'a str, File, ParseError<'a>> {
+        file_parser()
+    }
+}
 
-pub type Subtest = metadata::Subtest<AnalyzeableProps<SubtestOutcome>>;
+impl<'a> metadata::File<'a> for File {
+    type Test = Test;
+
+    fn add_test(
+        &mut self,
+        name: SectionHeader,
+        test: Self::Test,
+        span: SimpleSpan,
+        emitter: &mut Emitter<Rich<'a, char>>,
+    ) {
+        if self.tests.get(&name).is_some() {
+            emitter.emit(Rich::custom(span, "duplicate test {name:?}"));
+        }
+        self.tests.insert(name, test);
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct Test {
+    pub properties: AnalyzeableProps<TestOutcome>,
+    pub subtests: IndexMap<SectionHeader, Subtest>,
+}
+
+#[cfg(test)]
+impl Test {
+    fn parser<'a>() -> impl Parser<'a, &'a str, (SectionHeader, Test), ParseError<'a>> {
+        metadata::test_parser()
+    }
+}
+
+impl<'a> metadata::Test<'a> for Test {
+    type Properties = AnalyzeableProps<TestOutcome>;
+    type Subtests = Subtests;
+
+    fn new(_span: SimpleSpan, properties: Self::Properties, subtests: Self::Subtests) -> Self {
+        let Subtests(subtests) = subtests;
+        Self {
+            properties,
+            subtests,
+        }
+    }
+}
+
+#[derive(Default)]
+pub struct Subtests(IndexMap<SectionHeader, Subtest>);
+
+impl<'a> metadata::Subtests<'a> for Subtests {
+    type Subtest = Subtest;
+
+    fn add_subtest(
+        &mut self,
+        name: SectionHeader,
+        subtest: Self::Subtest,
+        span: SimpleSpan,
+        emitter: &mut Emitter<Rich<'a, char>>,
+    ) {
+        let Self(subtests) = self;
+        if subtests.get(&name).is_some() {
+            emitter.emit(Rich::custom(span, "duplicate subtest {name:?}"));
+        }
+        subtests.insert(name, subtest);
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct Subtest {
+    pub properties: AnalyzeableProps<SubtestOutcome>,
+}
+
+impl<'a> metadata::Subtest<'a> for Subtest {
+    type Properties = AnalyzeableProps<SubtestOutcome>;
+
+    fn new(_span: SimpleSpan, properties: Self::Properties) -> Self {
+        Self { properties }
+    }
+}
 
 pub fn format_file(file: &File) -> impl Display + '_ {
     lazy_format!(|f| {
-        let metadata::File { tests } = file;
-        write!(f, "{}", tests.iter().map(format_test).join_with("\n\n"))
+        let File { tests } = file;
+        write!(
+            f,
+            "{}",
+            tests
+                .iter()
+                .map(|(name, test)| format_test(name, test))
+                .join_with("\n\n")
+        )
     })
 }
 
-fn format_test(test: &Test) -> impl Display + '_ {
+fn format_test<'a>(name: &'a SectionHeader, test: &'a Test) -> impl Display + 'a {
     lazy_format!(|f| {
         let Test {
-            name,
             subtests,
             properties,
             ..
@@ -605,7 +694,7 @@ impl<'a> Properties<'a> for AnalyzeableProps<TestOutcome> {
         .boxed()
     }
 
-    fn insert(
+    fn add_property(
         &mut self,
         prop: Self::ParsedProperty,
         emitter: &mut chumsky::input::Emitter<Rich<'a, char>>,
@@ -663,7 +752,7 @@ impl<'a> Properties<'a> for AnalyzeableProps<SubtestOutcome> {
         .boxed()
     }
 
-    fn insert(
+    fn add_property(
         &mut self,
         prop: Self::ParsedProperty,
         emitter: &mut chumsky::input::Emitter<Rich<'a, char>>,
@@ -682,12 +771,7 @@ where
 
 #[test]
 fn test_sample_exps() {
-    let parser = || {
-        newline().ignore_then(metadata::File::<
-            AnalyzeableProps<TestOutcome>,
-            AnalyzeableProps<SubtestOutcome>,
-        >::parser())
-    };
+    let parser = || newline().ignore_then(File::parser());
 
     assert_debug_snapshot!(
         parser().parse(
@@ -699,17 +783,15 @@ r#"
     ParseResult {
         output: Some(
             File {
-                tests: [
-                    Test {
-                        name: "asdf",
+                tests: {
+                    "asdf": Test {
                         properties: AnalyzeableProps {
                             is_disabled: false,
                             expectations: None,
                         },
                         subtests: {},
-                        span: 1..8,
                     },
-                ],
+                },
             },
         ),
         errs: [],
@@ -728,9 +810,8 @@ r#"
     ParseResult {
         output: Some(
             File {
-                tests: [
-                    Test {
-                        name: "asdf",
+                tests: {
+                    "asdf": Test {
                         properties: AnalyzeableProps {
                             is_disabled: false,
                             expectations: None,
@@ -743,9 +824,8 @@ r#"
                                 },
                             },
                         },
-                        span: 1..18,
                     },
-                ],
+                },
             },
         ),
         errs: [],
@@ -765,9 +845,8 @@ r#"
     ParseResult {
         output: Some(
             File {
-                tests: [
-                    Test {
-                        name: "asdf",
+                tests: {
+                    "asdf": Test {
                         properties: AnalyzeableProps {
                             is_disabled: false,
                             expectations: None,
@@ -790,9 +869,8 @@ r#"
                                 },
                             },
                         },
-                        span: 1..37,
                     },
-                ],
+                },
             },
         ),
         errs: [],
@@ -800,12 +878,7 @@ r#"
     "###
     );
 
-    let parser = || {
-        single_leading_newline(metadata::Test::<
-            AnalyzeableProps<TestOutcome>,
-            AnalyzeableProps<SubtestOutcome>,
-        >::parser())
-    };
+    let parser = || single_leading_newline(Test::parser());
 
     assert_debug_snapshot!(
         parser().parse(
@@ -836,32 +909,33 @@ r#"
         @r###"
     ParseResult {
         output: Some(
-            Test {
-                name: "asdf",
-                properties: AnalyzeableProps {
-                    is_disabled: false,
-                    expectations: None,
-                },
-                subtests: {
-                    "blarg": Subtest {
-                        properties: AnalyzeableProps {
-                            is_disabled: false,
-                            expectations: Some(
-                                NormalizedExpectationPropertyValue(
-                                    Collapsed(
+            (
+                "asdf",
+                Test {
+                    properties: AnalyzeableProps {
+                        is_disabled: false,
+                        expectations: None,
+                    },
+                    subtests: {
+                        "blarg": Subtest {
+                            properties: AnalyzeableProps {
+                                is_disabled: false,
+                                expectations: Some(
+                                    NormalizedExpectationPropertyValue(
                                         Collapsed(
-                                            Intermittent(
-                                                EnumSet(Pass | Fail),
+                                            Collapsed(
+                                                Intermittent(
+                                                    EnumSet(Pass | Fail),
+                                                ),
                                             ),
                                         ),
                                     ),
                                 ),
-                            ),
+                            },
                         },
                     },
                 },
-                span: 1..45,
-            },
+            ),
         ),
         errs: [],
     }
@@ -880,42 +954,43 @@ r#"
         @r###"
     ParseResult {
         output: Some(
-            Test {
-                name: "asdf",
-                properties: AnalyzeableProps {
-                    is_disabled: false,
-                    expectations: Some(
-                        NormalizedExpectationPropertyValue(
-                            Collapsed(
+            (
+                "asdf",
+                Test {
+                    properties: AnalyzeableProps {
+                        is_disabled: false,
+                        expectations: Some(
+                            NormalizedExpectationPropertyValue(
                                 Collapsed(
-                                    Permanent(
-                                        Ok,
-                                    ),
-                                ),
-                            ),
-                        ),
-                    ),
-                },
-                subtests: {
-                    "blarg": Subtest {
-                        properties: AnalyzeableProps {
-                            is_disabled: false,
-                            expectations: Some(
-                                NormalizedExpectationPropertyValue(
                                     Collapsed(
-                                        Collapsed(
-                                            Permanent(
-                                                Pass,
-                                            ),
+                                        Permanent(
+                                            Ok,
                                         ),
                                     ),
                                 ),
                             ),
+                        ),
+                    },
+                    subtests: {
+                        "blarg": Subtest {
+                            properties: AnalyzeableProps {
+                                is_disabled: false,
+                                expectations: Some(
+                                    NormalizedExpectationPropertyValue(
+                                        Collapsed(
+                                            Collapsed(
+                                                Permanent(
+                                                    Pass,
+                                                ),
+                                            ),
+                                        ),
+                                    ),
+                                ),
+                            },
                         },
                     },
                 },
-                span: 1..52,
-            },
+            ),
         ),
         errs: [],
     }
@@ -934,34 +1009,35 @@ r#"
         @r###"
     ParseResult {
         output: Some(
-            Test {
-                name: "asdf",
-                properties: AnalyzeableProps {
-                    is_disabled: false,
-                    expectations: None,
-                },
-                subtests: {
-                    "blarg": Subtest {
-                        properties: AnalyzeableProps {
-                            is_disabled: false,
-                            expectations: Some(
-                                NormalizedExpectationPropertyValue(
-                                    Expanded(
-                                        {
-                                            Linux: Collapsed(
-                                                Permanent(
-                                                    Fail,
+            (
+                "asdf",
+                Test {
+                    properties: AnalyzeableProps {
+                        is_disabled: false,
+                        expectations: None,
+                    },
+                    subtests: {
+                        "blarg": Subtest {
+                            properties: AnalyzeableProps {
+                                is_disabled: false,
+                                expectations: Some(
+                                    NormalizedExpectationPropertyValue(
+                                        Expanded(
+                                            {
+                                                Linux: Collapsed(
+                                                    Permanent(
+                                                        Fail,
+                                                    ),
                                                 ),
-                                            ),
-                                        },
+                                            },
+                                        ),
                                     ),
                                 ),
-                            ),
+                            },
                         },
                     },
                 },
-                span: 1..61,
-            },
+            ),
         ),
         errs: [],
     }
@@ -981,44 +1057,45 @@ r#"
         @r###"
     ParseResult {
         output: Some(
-            Test {
-                name: "asdf",
-                properties: AnalyzeableProps {
-                    is_disabled: false,
-                    expectations: None,
-                },
-                subtests: {
-                    "blarg": Subtest {
-                        properties: AnalyzeableProps {
-                            is_disabled: false,
-                            expectations: Some(
-                                NormalizedExpectationPropertyValue(
-                                    Expanded(
-                                        {
-                                            Windows: Collapsed(
-                                                Permanent(
-                                                    Timeout,
+            (
+                "asdf",
+                Test {
+                    properties: AnalyzeableProps {
+                        is_disabled: false,
+                        expectations: None,
+                    },
+                    subtests: {
+                        "blarg": Subtest {
+                            properties: AnalyzeableProps {
+                                is_disabled: false,
+                                expectations: Some(
+                                    NormalizedExpectationPropertyValue(
+                                        Expanded(
+                                            {
+                                                Windows: Collapsed(
+                                                    Permanent(
+                                                        Timeout,
+                                                    ),
                                                 ),
-                                            ),
-                                            Linux: Collapsed(
-                                                Permanent(
-                                                    Fail,
+                                                Linux: Collapsed(
+                                                    Permanent(
+                                                        Fail,
+                                                    ),
                                                 ),
-                                            ),
-                                            MacOs: Collapsed(
-                                                Permanent(
-                                                    Timeout,
+                                                MacOs: Collapsed(
+                                                    Permanent(
+                                                        Timeout,
+                                                    ),
                                                 ),
-                                            ),
-                                        },
+                                            },
+                                        ),
                                     ),
                                 ),
-                            ),
+                            },
                         },
                     },
                 },
-                span: 1..75,
-            },
+            ),
         ),
         errs: [],
     }
@@ -1036,34 +1113,35 @@ r#"
     @r###"
     ParseResult {
         output: Some(
-            Test {
-                name: "cts.https.html?q=webgpu:api,validation,buffer,destroy:twice:*",
-                properties: AnalyzeableProps {
-                    is_disabled: false,
-                    expectations: None,
-                },
-                subtests: {
-                    ":": Subtest {
-                        properties: AnalyzeableProps {
-                            is_disabled: false,
-                            expectations: Some(
-                                NormalizedExpectationPropertyValue(
-                                    Expanded(
-                                        {
-                                            MacOs: Collapsed(
-                                                Permanent(
-                                                    Fail,
+            (
+                "cts.https.html?q=webgpu:api,validation,buffer,destroy:twice:*",
+                Test {
+                    properties: AnalyzeableProps {
+                        is_disabled: false,
+                        expectations: None,
+                    },
+                    subtests: {
+                        ":": Subtest {
+                            properties: AnalyzeableProps {
+                                is_disabled: false,
+                                expectations: Some(
+                                    NormalizedExpectationPropertyValue(
+                                        Expanded(
+                                            {
+                                                MacOs: Collapsed(
+                                                    Permanent(
+                                                        Fail,
+                                                    ),
                                                 ),
-                                            ),
-                                        },
+                                            },
+                                        ),
                                     ),
                                 ),
-                            ),
+                            },
                         },
                     },
                 },
-                span: 1..113,
-            },
+            ),
         ),
         errs: [],
     }

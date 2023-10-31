@@ -9,12 +9,12 @@ publish = false
 
 [features]
 default = ["unstructured-properties"]
-unstructured-properties = []
+unstructured-properties = ["dep:indexmap"]
 
 [dependencies]
 chumsky = { workspace = true }
 format = { workspace = true }
-indexmap = { workspace = true }
+indexmap = { workspace = true, optional = true }
 
 [dev-dependencies]
 insta = { workspace = true }

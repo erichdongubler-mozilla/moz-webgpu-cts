@@ -9,12 +9,16 @@
 //! [`Web-Platform-Tests Metadata` section]: https://web-platform-tests.org/tools/wptrunner/docs/expectation.html#web-platform-tests-metadata
 
 #[cfg(test)]
-use {crate::metadata::properties::UnstructuredProperties, insta::assert_debug_snapshot};
+use {
+    crate::metadata::properties::unstructured::{UnstructuredFile, UnstructuredSubtest},
+    insta::assert_debug_snapshot,
+};
 
 use std::fmt::{self, Debug, Display};
 
 use chumsky::{
     extra::Full,
+    input::Emitter,
     prelude::Rich,
     primitive::{any, choice, custom, end, group, just},
     span::SimpleSpan,
@@ -22,7 +26,6 @@ use chumsky::{
     IterParser, Parser,
 };
 use format::lazy_format;
-use indexmap::IndexMap;
 
 use self::properties::{Properties, PropertiesParseHelper};
 
@@ -31,43 +34,54 @@ pub mod properties;
 /// An error emitted by [`File::parser`] and [other WPT metadata parsing logic][self].
 pub type ParseError<'a> = Full<Rich<'a, char>, (), ()>;
 
-/// Represents the contents of a single file written in the [WPT metadata format][self]. It can be
-/// constructed from this format using [`Self::parser`].
+/// Behavior that needs to be defined to parse [the WPT metadata format][self] with
+/// [`file_parser`].
 ///
-/// Properties for tests (`Tp`) and subtests (`Sp`) are abstracted out. If you don't have any
-/// opinions on how to parse these yet, you can use the [`properties::unstructured`] API, or
-/// [`File::parser_with_unstructured_props`] for convenience (both of which are gated behind the
-/// `unstructured-properties` feature) to just get output with minimally structured property data.
-/// If you'd like better performance or stronger types with your properties, you will need to
-/// provide types that implement the [`Properties`] trait for `Tp` and `Sp`.
+/// If you don't have any opinions for an implementation of your own, you can use the
+/// [`properties::unstructured`] API (gated behind the `unstructured` feature) for minimally
+/// structured data that is maximally permissive in its parsing.
 ///
-/// N.B. that you should not rely only on data represented in this structure to compute test
-/// metadata. It is _not_ complete by itself, because WPT metadata properties can be layered across
-/// multiple sources (i.e., [`__dir__.ini`] files exist).
+/// N.B. that you should not rely solely on data represented in this structure to compute test
+/// metadata for test execution. It is _not_ complete by itself, because WPT metadata properties
+/// can be layered across multiple sources (i.e., [`__dir__.ini`] files exist).
 ///
 /// [`__dir__.ini`]: https://web-platform-tests.org/tools/wptrunner/docs/expectation.html#directory-metadata
-#[derive(Clone, Debug)]
-pub struct File<Tp, Sp> {
-    pub tests: Vec<Test<Tp, Sp>>,
+pub trait File<'a>
+where
+    Self: Default,
+{
+    type Test: Test<'a>;
+
+    fn add_test(
+        &mut self,
+        name: SectionHeader,
+        test: Self::Test,
+        span: SimpleSpan,
+        emitter: &mut Emitter<Rich<'a, char>>,
+    );
 }
 
-impl<Tp, Sp> File<Tp, Sp> {
-    /// Returns a parser for a single file written in the [WPT metadata format][self].
-    ///
-    /// No attempt is made to reconcile the provided string with additional layers of
-    /// configuration. See [`Self`] for more details.
-    pub fn parser<'a>() -> impl Parser<'a, &'a str, File<Tp, Sp>, ParseError<'a>>
-    where
-        Tp: Properties<'a>,
-        Sp: Properties<'a>,
-    {
-        filler()
-            .ignore_then(Test::<Tp, Sp>::parser())
-            .then_ignore(filler())
-            .repeated()
-            .collect()
-            .map(|tests| File { tests })
-    }
+/// Returns a parser for a single [`File`] written in the [WPT metadata format][self].
+///
+/// No attempt is made to reconcile the provided string with additional layers of
+/// configuration. See [`File`] for more details.
+pub fn file_parser<'a, F>() -> impl Parser<'a, &'a str, F, ParseError<'a>>
+where
+    F: File<'a>,
+{
+    filler()
+        .ignore_then(test_parser())
+        .then_ignore(filler())
+        .map_with(|test, e| (e.span(), test))
+        .repeated()
+        .collect::<Vec<_>>()
+        .validate(|tests, _e, emitter| {
+            let mut file = F::default();
+            for (span, (name, test)) in tests {
+                file.add_test(name, test, span, emitter)
+            }
+            file
+        })
 }
 
 fn filler<'a>() -> impl Parser<'a, &'a str, (), ParseError<'a>> {
@@ -76,129 +90,128 @@ fn filler<'a>() -> impl Parser<'a, &'a str, (), ParseError<'a>> {
 
 #[test]
 fn smoke_parser() {
+    let file_parser = UnstructuredFile::parser;
+
     assert_debug_snapshot!(
-        File::parser_with_unstructured_props().parse(""),
+        file_parser().parse(""),
         @r###"
     ParseResult {
         output: Some(
-            File {
-                tests: [],
+            UnstructuredFile {
+                tests: {},
             },
         ),
         errs: [],
     }
     "###
     );
-    assert_debug_snapshot!(File::parser_with_unstructured_props().parse("[hoot]"), @r###"
+
+    assert_debug_snapshot!(file_parser().parse("[hoot]"), @r###"
     ParseResult {
         output: Some(
-            File {
-                tests: [
-                    Test {
-                        name: "hoot",
+            UnstructuredFile {
+                tests: {
+                    "hoot": UnstructuredTest {
                         properties: {},
                         subtests: {},
                         span: 0..6,
                     },
-                ],
+                },
             },
         ),
         errs: [],
     }
     "###);
-    assert_debug_snapshot!(File::parser_with_unstructured_props().parse("[blarg]\n"), @r###"
+
+    assert_debug_snapshot!(file_parser().parse("[blarg]\n"), @r###"
     ParseResult {
         output: Some(
-            File {
-                tests: [
-                    Test {
-                        name: "blarg",
+            UnstructuredFile {
+                tests: {
+                    "blarg": UnstructuredTest {
                         properties: {},
                         subtests: {},
                         span: 0..8,
                     },
-                ],
+                },
             },
         ),
         errs: [],
     }
     "###);
-    assert_debug_snapshot!(File::parser_with_unstructured_props().parse("[blarg]\n[stuff]"), @r###"
+
+    assert_debug_snapshot!(file_parser().parse("[blarg]\n[stuff]"), @r###"
     ParseResult {
         output: Some(
-            File {
-                tests: [
-                    Test {
-                        name: "blarg",
+            UnstructuredFile {
+                tests: {
+                    "blarg": UnstructuredTest {
                         properties: {},
                         subtests: {},
                         span: 0..8,
                     },
-                    Test {
-                        name: "stuff",
+                    "stuff": UnstructuredTest {
                         properties: {},
                         subtests: {},
                         span: 8..15,
                     },
-                ],
+                },
             },
         ),
         errs: [],
     }
     "###);
-    assert_debug_snapshot!(File::parser_with_unstructured_props().parse("\n[blarg]\n[stuff]\n"), @r###"
+
+    assert_debug_snapshot!(file_parser().parse("\n[blarg]\n[stuff]\n"), @r###"
     ParseResult {
         output: Some(
-            File {
-                tests: [
-                    Test {
-                        name: "blarg",
+            UnstructuredFile {
+                tests: {
+                    "blarg": UnstructuredTest {
                         properties: {},
                         subtests: {},
                         span: 1..9,
                     },
-                    Test {
-                        name: "stuff",
+                    "stuff": UnstructuredTest {
                         properties: {},
                         subtests: {},
                         span: 9..17,
                     },
-                ],
+                },
             },
         ),
         errs: [],
     }
     "###);
-    assert_debug_snapshot!(File::parser_with_unstructured_props().parse("\n[blarg]\n\n[stuff]\n"), @r###"
+
+    assert_debug_snapshot!(file_parser().parse("\n[blarg]\n\n[stuff]\n"), @r###"
     ParseResult {
         output: Some(
-            File {
-                tests: [
-                    Test {
-                        name: "blarg",
+            UnstructuredFile {
+                tests: {
+                    "blarg": UnstructuredTest {
                         properties: {},
                         subtests: {},
                         span: 1..10,
                     },
-                    Test {
-                        name: "stuff",
+                    "stuff": UnstructuredTest {
                         properties: {},
                         subtests: {},
                         span: 10..18,
                     },
-                ],
+                },
             },
         ),
         errs: [],
     }
     "###);
-    assert_debug_snapshot!(File::parser_with_unstructured_props().parse("\n[blarg]\n  expected: PASS\n[stuff]\n"), @r###"
+
+    assert_debug_snapshot!(file_parser().parse("\n[blarg]\n  expected: PASS\n[stuff]\n"), @r###"
     ParseResult {
         output: Some(
-            File {
-                tests: [
-                    Test {
-                        name: "blarg",
+            UnstructuredFile {
+                tests: {
+                    "blarg": UnstructuredTest {
                         properties: {
                             "expected": Unconditional(
                                 "PASS",
@@ -207,13 +220,12 @@ fn smoke_parser() {
                         subtests: {},
                         span: 1..26,
                     },
-                    Test {
-                        name: "stuff",
+                    "stuff": UnstructuredTest {
                         properties: {},
                         subtests: {},
                         span: 26..34,
                     },
-                ],
+                },
             },
         ),
         errs: [],
@@ -221,7 +233,7 @@ fn smoke_parser() {
     "###);
 
     assert_debug_snapshot!(
-        File::parser_with_unstructured_props().parse(r#"
+        file_parser().parse(r#"
 [blarg]
   expected: PASS
 [stuff]
@@ -229,10 +241,9 @@ fn smoke_parser() {
         @r###"
     ParseResult {
         output: Some(
-            File {
-                tests: [
-                    Test {
-                        name: "blarg",
+            UnstructuredFile {
+                tests: {
+                    "blarg": UnstructuredTest {
                         properties: {
                             "expected": Unconditional(
                                 "PASS",
@@ -241,13 +252,12 @@ fn smoke_parser() {
                         subtests: {},
                         span: 1..26,
                     },
-                    Test {
-                        name: "stuff",
+                    "stuff": UnstructuredTest {
                         properties: {},
                         subtests: {},
                         span: 26..34,
                     },
-                ],
+                },
             },
         ),
         errs: [],
@@ -255,7 +265,7 @@ fn smoke_parser() {
     "###);
 
     assert_debug_snapshot!(
-        File::parser_with_unstructured_props().parse(r#"
+        file_parser().parse(r#"
 [blarg]
   expected: PASS
   # Below is wrong: indentation is off!
@@ -272,7 +282,7 @@ fn smoke_parser() {
     "###);
 
     assert_debug_snapshot!(
-        File::parser_with_unstructured_props().parse(r#"
+        file_parser().parse(r#"
 [blarg]
   expected: PASS
   [stuff]
@@ -281,27 +291,27 @@ fn smoke_parser() {
         @r###"
     ParseResult {
         output: Some(
-            File {
-                tests: [
-                    Test {
-                        name: "blarg",
+            UnstructuredFile {
+                tests: {
+                    "blarg": UnstructuredTest {
                         properties: {
                             "expected": Unconditional(
                                 "PASS",
                             ),
                         },
                         subtests: {
-                            "stuff": Subtest {
+                            "stuff": UnstructuredSubtest {
                                 properties: {
                                     "expected": Unconditional(
                                         "TIMEOUT",
                                     ),
                                 },
+                                span: 36..58,
                             },
                         },
                         span: 1..58,
                     },
-                ],
+                },
             },
         ),
         errs: [],
@@ -309,7 +319,7 @@ fn smoke_parser() {
     "###);
 
     assert_debug_snapshot!(
-        File::parser_with_unstructured_props().parse(
+        file_parser().parse(
 r#"
 [asdf]
   [blarg]
@@ -320,13 +330,12 @@ r#"
         @r###"
     ParseResult {
         output: Some(
-            File {
-                tests: [
-                    Test {
-                        name: "asdf",
+            UnstructuredFile {
+                tests: {
+                    "asdf": UnstructuredTest {
                         properties: {},
                         subtests: {
-                            "blarg": Subtest {
+                            "blarg": UnstructuredSubtest {
                                 properties: {
                                     "expected": Conditional(
                                         ConditionalValue {
@@ -353,11 +362,12 @@ r#"
                                         },
                                     ),
                                 },
+                                span: 18..61,
                             },
                         },
                         span: 1..61,
                     },
-                ],
+                },
             },
         ),
         errs: [],
@@ -366,7 +376,7 @@ r#"
     );
 
     assert_debug_snapshot!(
-    File::parser_with_unstructured_props().parse(
+    file_parser().parse(
 r#"
 [asdf]
   expected: PASS
@@ -377,27 +387,27 @@ r#"
     @r###"
     ParseResult {
         output: Some(
-            File {
-                tests: [
-                    Test {
-                        name: "asdf",
+            UnstructuredFile {
+                tests: {
+                    "asdf": UnstructuredTest {
                         properties: {
                             "expected": Unconditional(
                                 "PASS",
                             ),
                         },
                         subtests: {
-                            "blarg": Subtest {
+                            "blarg": UnstructuredSubtest {
                                 properties: {
                                     "expected": Unconditional(
                                         "PASS",
                                     ),
                                 },
+                                span: 35..54,
                             },
                         },
                         span: 1..54,
                     },
-                ],
+                },
             },
         ),
         errs: [],
@@ -405,7 +415,7 @@ r#"
     "###
     );
 
-    let parser = newline().ignore_then(File::parser_with_unstructured_props());
+    let parser = newline().ignore_then(file_parser());
 
     assert_debug_snapshot!(
         parser.parse(r#"
@@ -415,10 +425,9 @@ r#"
     @r###"
     ParseResult {
         output: Some(
-            File {
-                tests: [
-                    Test {
-                        name: "asdf",
+            UnstructuredFile {
+                tests: {
+                    "asdf": UnstructuredTest {
                         properties: {
                             "expected": Unconditional(
                                 "PASS",
@@ -427,7 +436,7 @@ r#"
                         subtests: {},
                         span: 1..25,
                     },
-                ],
+                },
             },
         ),
         errs: [],
@@ -439,80 +448,82 @@ r#"
 /// A single first-level section in a [`File`].
 ///
 /// See [`File`] for more details for the human-readable format this corresponds to.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Test<Tp, Sp> {
-    pub name: SectionHeader,
-    pub properties: Tp,
-    pub subtests: IndexMap<SectionHeader, Subtest<Sp>>,
-    span: SimpleSpan,
+pub trait Test<'a> {
+    type Properties: Properties<'a>;
+    type Subtests: Subtests<'a>;
+
+    fn new(span: SimpleSpan, properties: Self::Properties, subtests: Self::Subtests) -> Self;
 }
 
-impl<Tp, Sp> Test<Tp, Sp> {
-    pub fn parser<'a>() -> impl Parser<'a, &'a str, Test<Tp, Sp>, ParseError<'a>>
-    where
-        Tp: Properties<'a>,
-        Sp: Properties<'a>,
-    {
-        #[derive(Clone, Debug)]
-        enum Item<Tp, Sp> {
-            Subtest { name: SectionHeader, properties: Sp },
-            Property(Tp),
-            Newline,
-            Comment,
-        }
+pub fn test_parser<'a, T>() -> impl Parser<'a, &'a str, (SectionHeader, T), ParseError<'a>>
+where
+    T: Test<'a>,
+{
+    #[derive(Debug)]
+    enum Item<Tp, S> {
+        Subtest { name: SectionHeader, subtest: S },
+        Property(Tp),
+        Newline,
+        Comment,
+    }
 
-        let items = choice((
-            subtest().map(|(name, properties)| Item::Subtest { name, properties }),
-            Tp::property_parser(&mut PropertiesParseHelper::new(1))
-                .labelled("test property")
-                .map(Item::Property),
-            newline().labelled("empty line").to(Item::Newline),
-            comment(1).to(Item::Comment),
-        ))
-        .repeated()
-        .collect::<Vec<_>>()
-        .validate(|items, e, emitter| {
-            let mut properties = <Tp as Default>::default();
-            let mut subtests = IndexMap::new();
-            for item in items {
+    let items = choice((
+        subtest_parser().map(|(name, subtest)| Item::Subtest { name, subtest }),
+        T::Properties::property_parser(&mut PropertiesParseHelper::new(1))
+            .labelled("test property")
+            .map(Item::Property),
+        newline().labelled("empty line").map(|()| Item::Newline),
+        comment(1).map(|_comment| Item::Comment),
+    ))
+    .map_with(|item, e| (e.span(), item))
+    .repeated()
+    .collect::<Vec<_>>();
+
+    let test_header = SectionHeader::parser(0)
+        .then_ignore(newline().or(end()))
+        .labelled("test section header");
+
+    test_header
+        .then(items)
+        .validate(|(name, items), e, emitter| {
+            let mut properties = T::Properties::default();
+            let mut subtests = T::Subtests::default();
+            for (span, item) in items {
                 match item {
-                    Item::Property(prop) => properties.insert(prop, emitter),
-                    Item::Subtest { name, properties } => {
-                        if subtests.contains_key(&name) {
-                            emitter.emit(Rich::custom(
-                                e.span(),
-                                format!("duplicate {} subtest", name.unescaped()),
-                            ))
-                        }
-                        subtests.insert(name, Subtest { properties });
+                    Item::Property(prop) => properties.add_property(prop, emitter),
+                    Item::Subtest { name, subtest } => {
+                        subtests.add_subtest(name, subtest, span, emitter)
                     }
                     Item::Newline | Item::Comment => (),
                 }
             }
-            (properties, subtests)
-        });
+            let test = T::new(e.span(), properties, subtests);
+            (name, test)
+        })
+}
 
-        let test_header = SectionHeader::parser(0)
-            .then_ignore(newline().or(end()))
-            .labelled("test section header");
+pub trait Subtests<'a>
+where
+    Self: Default,
+{
+    type Subtest: Subtest<'a>;
 
-        test_header
-            .then(items)
-            .map_with(|(name, (properties, subtests)), e| Test {
-                name,
-                span: e.span(),
-                properties,
-                subtests,
-            })
-    }
+    fn add_subtest(
+        &mut self,
+        name: SectionHeader,
+        subtest: Self::Subtest,
+        span: SimpleSpan,
+        emitter: &mut Emitter<Rich<'a, char>>,
+    );
 }
 
 /// A single second-level section in a [`File`] underneath a [`Test`].
 ///
 /// See [`File`] for more details for the human-readable format this corresponds to.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Subtest<P> {
-    pub properties: P,
+pub trait Subtest<'a> {
+    type Properties: Properties<'a>;
+
+    fn new(span: SimpleSpan, properties: Self::Properties) -> Self;
 }
 
 fn comment<'a>(indentation: u8) -> impl Parser<'a, &'a str, &'a str, ParseError<'a>> {
@@ -667,18 +678,21 @@ fn smoke_comment() {
 
 #[test]
 fn smoke_test() {
-    let test = || Test::<UnstructuredProperties<'_>, UnstructuredProperties<'_>>::parser();
+    let test = UnstructuredFile::parser;
 
     assert_debug_snapshot!(
         test().parse("[stuff and things]\n"),
         @r###"
     ParseResult {
         output: Some(
-            Test {
-                name: "stuff and things",
-                properties: {},
-                subtests: {},
-                span: 0..19,
+            UnstructuredFile {
+                tests: {
+                    "stuff and things": UnstructuredTest {
+                        properties: {},
+                        subtests: {},
+                        span: 0..19,
+                    },
+                },
             },
         ),
         errs: [],
@@ -691,15 +705,18 @@ fn smoke_test() {
         @r###"
     ParseResult {
         output: Some(
-            Test {
-                name: "stuff and things",
-                properties: {
-                    "expected": Unconditional(
-                        "PASS",
-                    ),
+            UnstructuredFile {
+                tests: {
+                    "stuff and things": UnstructuredTest {
+                        properties: {
+                            "expected": Unconditional(
+                                "PASS",
+                            ),
+                        },
+                        subtests: {},
+                        span: 0..36,
+                    },
                 },
-                subtests: {},
-                span: 0..36,
             },
         ),
         errs: [],
@@ -717,15 +734,18 @@ fn smoke_test() {
         @r###"
     ParseResult {
         output: Some(
-            Test {
-                name: "stuff and things",
-                properties: {
-                    "expected": Unconditional(
-                        "PASS",
-                    ),
+            UnstructuredFile {
+                tests: {
+                    "stuff and things": UnstructuredTest {
+                        properties: {
+                            "expected": Unconditional(
+                                "PASS",
+                            ),
+                        },
+                        subtests: {},
+                        span: 1..37,
+                    },
                 },
-                subtests: {},
-                span: 1..37,
             },
         ),
         errs: [],
@@ -743,29 +763,32 @@ fn smoke_test() {
         @r###"
     ParseResult {
         output: Some(
-            Test {
-                name: "stuff and things",
-                properties: {
-                    "expected": Conditional(
-                        ConditionalValue {
-                            conditions: [
-                                (
-                                    Value(
-                                        Variable(
-                                            "thing",
+            UnstructuredFile {
+                tests: {
+                    "stuff and things": UnstructuredTest {
+                        properties: {
+                            "expected": Conditional(
+                                ConditionalValue {
+                                    conditions: [
+                                        (
+                                            Value(
+                                                Variable(
+                                                    "thing",
+                                                ),
+                                            ),
+                                            " boo",
                                         ),
+                                    ],
+                                    fallback: Some(
+                                        "yay",
                                     ),
-                                    " boo",
-                                ),
-                            ],
-                            fallback: Some(
-                                "yay",
+                                },
                             ),
                         },
-                    ),
+                        subtests: {},
+                        span: 1..58,
+                    },
                 },
-                subtests: {},
-                span: 1..58,
             },
         ),
         errs: [],
@@ -785,40 +808,44 @@ fn smoke_test() {
     @r###"
     ParseResult {
         output: Some(
-            Test {
-                name: "cts.https.html?q=webgpu:api,operation,adapter,requestAdapter:requestAdapter_no_parameters:*",
-                properties: {},
-                subtests: {
-                    ":": Subtest {
-                        properties: {
-                            "expected": Conditional(
-                                ConditionalValue {
-                                    conditions: [
-                                        (
-                                            Eq(
-                                                Value(
-                                                    Variable(
-                                                        "os",
-                                                    ),
-                                                ),
-                                                Value(
-                                                    Literal(
-                                                        String(
-                                                            "mac",
+            UnstructuredFile {
+                tests: {
+                    "cts.https.html?q=webgpu:api,operation,adapter,requestAdapter:requestAdapter_no_parameters:*": UnstructuredTest {
+                        properties: {},
+                        subtests: {
+                            ":": UnstructuredSubtest {
+                                properties: {
+                                    "expected": Conditional(
+                                        ConditionalValue {
+                                            conditions: [
+                                                (
+                                                    Eq(
+                                                        Value(
+                                                            Variable(
+                                                                "os",
+                                                            ),
+                                                        ),
+                                                        Value(
+                                                            Literal(
+                                                                String(
+                                                                    "mac",
+                                                                ),
+                                                            ),
                                                         ),
                                                     ),
+                                                    " FAIL",
                                                 ),
-                                            ),
-                                            " FAIL",
-                                        ),
-                                    ],
-                                    fallback: None,
+                                            ],
+                                            fallback: None,
+                                        },
+                                    ),
                                 },
-                            ),
+                                span: 101..142,
+                            },
                         },
+                        span: 1..144,
                     },
                 },
-                span: 1..144,
             },
         ),
         errs: [],
@@ -827,24 +854,24 @@ fn smoke_test() {
     );
 }
 
-fn subtest<'a, Sp>() -> impl Parser<'a, &'a str, (SectionHeader, Sp), ParseError<'a>>
+fn subtest_parser<'a, S>() -> impl Parser<'a, &'a str, (SectionHeader, S), ParseError<'a>>
 where
-    Sp: Properties<'a>,
+    S: Subtest<'a>,
 {
     SectionHeader::parser(1)
         .then_ignore(newline().or(end()))
         .labelled("subtest section header")
         .then(
-            Sp::property_parser(&mut PropertiesParseHelper::new(2))
+            S::Properties::property_parser(&mut PropertiesParseHelper::new(2))
                 .labelled("subtest property")
                 .repeated()
                 .collect::<Vec<_>>()
-                .validate(|props, _e, emitter| {
-                    let mut properties = Sp::default();
+                .validate(|props, e, emitter| {
+                    let mut properties = S::Properties::default();
                     for prop in props {
-                        properties.insert(prop, emitter);
+                        properties.add_property(prop, emitter);
                     }
-                    properties
+                    S::new(e.span(), properties)
                 }),
         )
         .labelled("subtest")
@@ -852,7 +879,7 @@ where
 
 #[test]
 fn smoke_subtest() {
-    let subtest = || newline().ignore_then(subtest::<UnstructuredProperties<'_>>());
+    let subtest = || newline().ignore_then(subtest_parser::<UnstructuredSubtest<'_>>());
 
     assert_debug_snapshot!(
         subtest().parse(r#"
@@ -863,7 +890,10 @@ fn smoke_subtest() {
         output: Some(
             (
                 "stuff and things",
-                {},
+                UnstructuredSubtest {
+                    properties: {},
+                    span: 22..22,
+                },
             ),
         ),
         errs: [],
@@ -881,10 +911,13 @@ fn smoke_subtest() {
         output: Some(
             (
                 "stuff and things",
-                {
-                    "some_prop": Unconditional(
-                        "it_works",
-                    ),
+                UnstructuredSubtest {
+                    properties: {
+                        "some_prop": Unconditional(
+                            "it_works",
+                        ),
+                    },
+                    span: 22..46,
                 },
             ),
         ),
@@ -905,24 +938,27 @@ fn smoke_subtest() {
         output: Some(
             (
                 "stuff and things",
-                {
-                    "expected": Conditional(
-                        ConditionalValue {
-                            conditions: [
-                                (
-                                    Value(
-                                        Variable(
-                                            "thing",
+                UnstructuredSubtest {
+                    properties: {
+                        "expected": Conditional(
+                            ConditionalValue {
+                                conditions: [
+                                    (
+                                        Value(
+                                            Variable(
+                                                "thing",
+                                            ),
                                         ),
+                                        " boo",
                                     ),
-                                    " boo",
+                                ],
+                                fallback: Some(
+                                    "yay",
                                 ),
-                            ],
-                            fallback: Some(
-                                "yay",
-                            ),
-                        },
-                    ),
+                            },
+                        ),
+                    },
+                    span: 22..66,
                 },
             ),
         ),

@@ -40,8 +40,7 @@ pub enum PropertyValue<C, V> {
     Conditional(ConditionalValue<C, V>),
 }
 
-/// The core abstraction of strong property typing for a [`File`], [`Test`], and [`Subtest`],
-/// usually access through [`File::parser`].
+/// The core abstraction of strong property typing for [`File`]s, [`Test`]s, and [`Subtest`]s.
 ///
 /// It is used to initialize and accumulate into the implementing data structure to represent
 /// properties during parsing.
@@ -64,7 +63,10 @@ where
     ) -> Boxed<'a, 'a, &'a str, Self::ParsedProperty, ParseError<'a>>;
 
     /// Accumulate a parsed property into this data structure.
-    fn insert(&mut self, prop: Self::ParsedProperty, emitter: &mut Emitter<Rich<'a, char>>);
+    ///
+    /// No span is provided here, but you can get one with [`chumsky::Parser::map_with`] in your
+    /// implementation of [`Properties::property_parser`].
+    fn add_property(&mut self, prop: Self::ParsedProperty, emitter: &mut Emitter<Rich<'a, char>>);
 }
 
 /// A helper passed to implementors of [`Properties::property_parser`]. The major affordance of

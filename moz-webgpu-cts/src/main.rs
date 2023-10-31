@@ -2,7 +2,7 @@ mod metadata;
 mod shared;
 
 use self::{
-    metadata::{AnalyzeableProps, Platform, SubtestOutcome, Test, TestOutcome},
+    metadata::{AnalyzeableProps, File, Platform, Subtest, SubtestOutcome, Test, TestOutcome},
     shared::{Expectation, MaybeCollapsed},
 };
 
@@ -24,10 +24,7 @@ use path_dsl::path;
 
 use regex::Regex;
 use wax::Glob;
-use whippit::{
-    metadata::{SectionHeader, Subtest},
-    reexport::chumsky::prelude::Rich,
-};
+use whippit::{metadata::SectionHeader, reexport::chumsky::prelude::Rich};
 
 #[derive(Debug, Parser)]
 #[command(about, version)]
@@ -186,7 +183,7 @@ fn run(cli: Cli) -> ExitCode {
             struct TaggedTest {
                 #[allow(unused)]
                 orig_path: Arc<PathBuf>,
-                inner: metadata::Test,
+                inner: Test,
             }
             let tests_by_name = {
                 let mut found_parse_err = false;
@@ -200,8 +197,8 @@ fn run(cli: Cli) -> ExitCode {
                         match chumsky::Parser::parse(&metadata::File::parser(), file_contents)
                             .into_result()
                         {
-                            Ok(metadata::File { tests }) => Some(tests.into_iter().map(|inner| {
-                                let SectionHeader(name) = &inner.name;
+                            Ok(File { tests }) => Some(tests.into_iter().map(|(name, inner)| {
+                                let SectionHeader(name) = &name;
                                 (
                                     SectionHeader(
                                         name.strip_prefix("cts.https.html?q=").unwrap().to_owned(),
@@ -300,17 +297,15 @@ fn run(cli: Cli) -> ExitCode {
             }
 
             let mut analysis = Analysis::default();
-            for (_nice_name, test) in tests_by_name {
+            for (SectionHeader(test_name), test) in tests_by_name {
                 let TaggedTest {
                     orig_path: _,
                     inner: test,
                 } = test;
 
                 let Test {
-                    name: SectionHeader(test_name),
                     properties,
                     subtests,
-                    ..
                 } = test;
 
                 let AnalyzeableProps {
