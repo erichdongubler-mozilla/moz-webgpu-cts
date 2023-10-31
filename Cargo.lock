@@ -553,7 +553,7 @@ dependencies = [
 
 [[package]]
 name = "moz-webgpu-cts"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "chumsky",
  "clap",
@@ -953,7 +953,7 @@ dependencies = [
 
 [[package]]
 name = "whippit"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "chumsky",
  "format",
