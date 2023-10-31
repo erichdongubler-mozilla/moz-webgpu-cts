@@ -41,9 +41,9 @@ pub type ParseError<'a> = Full<Rich<'a, char>, (), ()>;
 /// [`properties::unstructured`] API (gated behind the `unstructured` feature) for minimally
 /// structured data that is maximally permissive in its parsing.
 ///
-/// N.B. that you should not rely only on data represented in this structure to compute test
-/// metadata. It is _not_ complete by itself, because WPT metadata properties can be layered across
-/// multiple sources (i.e., [`__dir__.ini`] files exist).
+/// N.B. that you should not rely solely on data represented in this structure to compute test
+/// metadata for test execution. It is _not_ complete by itself, because WPT metadata properties
+/// can be layered across multiple sources (i.e., [`__dir__.ini`] files exist).
 ///
 /// [`__dir__.ini`]: https://web-platform-tests.org/tools/wptrunner/docs/expectation.html#directory-metadata
 pub trait File<'a>
