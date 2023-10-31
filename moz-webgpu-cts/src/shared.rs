@@ -1,5 +1,7 @@
 use std::collections::BTreeMap;
 
+use enumset::{EnumSet, EnumSetType};
+
 use crate::metadata::{BuildProfile, Platform};
 
 /// A set of expected outcomes in a [`Test`] or [`Subtest`].
@@ -7,14 +9,17 @@ use crate::metadata::{BuildProfile, Platform};
 /// [`Test`]: crate::metadata::Test
 /// [`Subtest`]: crate::metadata::Subtest
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum Expectation<Out> {
+pub enum Expectation<Out>
+where
+    Out: EnumSetType,
+{
     Permanent(Out),
-    Intermittent(Vec<Out>),
+    Intermittent(EnumSet<Out>),
 }
 
 impl<Out> Default for Expectation<Out>
 where
-    Out: Default,
+    Out: Default + EnumSetType,
 {
     fn default() -> Self {
         Self::Permanent(Default::default())
@@ -29,6 +34,15 @@ pub enum MaybeCollapsed<C, E> {
     Expanded(E),
 }
 
+impl<C, E> Default for MaybeCollapsed<C, E>
+where
+    C: Default,
+{
+    fn default() -> Self {
+        Self::Collapsed(Default::default())
+    }
+}
+
 /// A normalized representation of [`Expectation`]s in [`AnalyzeableProps`].
 ///
 /// Yes, the type is _gnarly_. Sorry about that. This is some complex domain, okay? 😆😭
@@ -37,7 +51,9 @@ pub enum MaybeCollapsed<C, E> {
 #[derive(Clone, Debug)]
 pub struct NormalizedExpectationPropertyValue<Out>(
     pub(crate) NormalizedExpectationPropertyValueData<Out>,
-);
+)
+where
+    Out: EnumSetType;
 
 /// Data from a [`NormalizedExpectationPropertyValue`].
 pub type NormalizedExpectationPropertyValueData<Out> = MaybeCollapsed<
@@ -45,7 +61,15 @@ pub type NormalizedExpectationPropertyValueData<Out> = MaybeCollapsed<
     BTreeMap<Platform, MaybeCollapsed<Expectation<Out>, BTreeMap<BuildProfile, Expectation<Out>>>>,
 >;
 
-impl<Out> NormalizedExpectationPropertyValue<Out> {
+impl<Out> NormalizedExpectationPropertyValue<Out>
+where
+    Out: EnumSetType,
+{
+    pub fn inner(&self) -> &NormalizedExpectationPropertyValueData<Out> {
+        let Self(inner) = self;
+        inner
+    }
+
     pub fn into_inner(self) -> NormalizedExpectationPropertyValueData<Out> {
         let Self(inner) = self;
         inner
