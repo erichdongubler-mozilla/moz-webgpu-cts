@@ -63,6 +63,9 @@ where
     ) -> Boxed<'a, 'a, &'a str, Self::ParsedProperty, ParseError<'a>>;
 
     /// Accumulate a parsed property into this data structure.
+    ///
+    /// No span is provided here, but you can get one with [`chumsky::Parser::map_with`] in your
+    /// implementation of [`Properties::property_parser`].
     fn add_property(&mut self, prop: Self::ParsedProperty, emitter: &mut Emitter<Rich<'a, char>>);
 }
 
