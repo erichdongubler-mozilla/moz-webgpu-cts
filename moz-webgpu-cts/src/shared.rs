@@ -1,6 +1,6 @@
 use std::{
     collections::BTreeMap,
-    fmt::{self, Display, Formatter},
+    fmt::{self, Debug, Display, Formatter},
     num::NonZeroUsize,
     ops::{BitOr, BitOrAssign},
 };
@@ -17,7 +17,7 @@ use crate::metadata::{BuildProfile, Platform};
 ///
 /// [`Test`]: crate::metadata::Test
 /// [`Subtest`]: crate::metadata::Subtest
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Eq, PartialEq)]
 pub struct Expectation<Out>(EnumSet<Out>)
 where
     Out: EnumSetType;
@@ -98,6 +98,15 @@ where
                 )
                 .finish()
         }
+    }
+}
+
+impl<Out> Debug for Expectation<Out>
+where
+    Out: Debug + EnumSetType,
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.debug_list().entries(self.iter()).finish()
     }
 }
 

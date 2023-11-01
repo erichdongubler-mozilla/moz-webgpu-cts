@@ -780,9 +780,9 @@ r#"
                                         NormalizedExpectationPropertyValue(
                                             Collapsed(
                                                 Collapsed(
-                                                    Expectation(
-                                                        EnumSet(Pass),
-                                                    ),
+                                                    [
+                                                        Pass,
+                                                    ],
                                                 ),
                                             ),
                                         ),
@@ -845,9 +845,10 @@ r#"
                                     NormalizedExpectationPropertyValue(
                                         Collapsed(
                                             Collapsed(
-                                                Expectation(
-                                                    EnumSet(Pass | Fail),
-                                                ),
+                                                [
+                                                    Pass,
+                                                    Fail,
+                                                ],
                                             ),
                                         ),
                                     ),
@@ -884,9 +885,9 @@ r#"
                             NormalizedExpectationPropertyValue(
                                 Collapsed(
                                     Collapsed(
-                                        Expectation(
-                                            EnumSet(Ok),
-                                        ),
+                                        [
+                                            Ok,
+                                        ],
                                     ),
                                 ),
                             ),
@@ -900,9 +901,9 @@ r#"
                                     NormalizedExpectationPropertyValue(
                                         Collapsed(
                                             Collapsed(
-                                                Expectation(
-                                                    EnumSet(Pass),
-                                                ),
+                                                [
+                                                    Pass,
+                                                ],
                                             ),
                                         ),
                                     ),
@@ -946,9 +947,9 @@ r#"
                                         Expanded(
                                             {
                                                 Linux: Collapsed(
-                                                    Expectation(
-                                                        EnumSet(Fail),
-                                                    ),
+                                                    [
+                                                        Fail,
+                                                    ],
                                                 ),
                                             },
                                         ),
@@ -994,19 +995,19 @@ r#"
                                         Expanded(
                                             {
                                                 Windows: Collapsed(
-                                                    Expectation(
-                                                        EnumSet(Timeout),
-                                                    ),
+                                                    [
+                                                        Timeout,
+                                                    ],
                                                 ),
                                                 Linux: Collapsed(
-                                                    Expectation(
-                                                        EnumSet(Fail),
-                                                    ),
+                                                    [
+                                                        Fail,
+                                                    ],
                                                 ),
                                                 MacOs: Collapsed(
-                                                    Expectation(
-                                                        EnumSet(Timeout),
-                                                    ),
+                                                    [
+                                                        Timeout,
+                                                    ],
                                                 ),
                                             },
                                         ),
@@ -1050,9 +1051,9 @@ r#"
                                         Expanded(
                                             {
                                                 MacOs: Collapsed(
-                                                    Expectation(
-                                                        EnumSet(Fail),
-                                                    ),
+                                                    [
+                                                        Fail,
+                                                    ],
                                                 ),
                                             },
                                         ),
