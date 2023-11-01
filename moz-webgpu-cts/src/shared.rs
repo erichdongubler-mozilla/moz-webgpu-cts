@@ -1,29 +1,148 @@
-use std::collections::BTreeMap;
+use std::{
+    collections::BTreeMap,
+    fmt::{self, Display, Formatter},
+    num::NonZeroUsize,
+    ops::{BitOr, BitOrAssign},
+};
 
 use enumset::{EnumSet, EnumSetType};
 use strum::IntoEnumIterator;
 
 use crate::metadata::{BuildProfile, Platform};
 
-/// A set of expected outcomes in a [`Test`] or [`Subtest`].
+/// A non-empty set of expected outcomes in a [`Test`] or [`Subtest`].
+///
+/// The default test expectation is a "good" outcome, where testing passes. The `Out` type
+/// parameter should return this value in its implementation of `Default`.
 ///
 /// [`Test`]: crate::metadata::Test
 /// [`Subtest`]: crate::metadata::Subtest
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum Expectation<Out>
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Expectation<Out>(EnumSet<Out>)
 where
-    Out: EnumSetType,
-{
-    Permanent(Out),
-    Intermittent(EnumSet<Out>),
-}
+    Out: EnumSetType;
 
 impl<Out> Default for Expectation<Out>
 where
     Out: Default + EnumSetType,
 {
     fn default() -> Self {
-        Self::Permanent(Default::default())
+        Self::permanent(Out::default())
+    }
+}
+
+impl<Out> Expectation<Out>
+where
+    Out: EnumSetType,
+{
+    /// Returns [`None`] if `outcomes` is empty.
+    #[track_caller]
+    pub fn new(outcomes: EnumSet<Out>) -> Option<Self> {
+        (!outcomes.is_empty()).then_some(Self(outcomes))
+    }
+
+    pub fn permanent(outcome: Out) -> Self {
+        Self(EnumSet::from_iter([outcome]))
+    }
+
+    #[track_caller]
+    pub fn intermittent(outcomes: EnumSet<Out>) -> Option<Self> {
+        if outcomes.len() <= 1 {
+            None
+        } else {
+            Some(Self::new(outcomes).unwrap())
+        }
+    }
+
+    fn inner(&self) -> &EnumSet<Out> {
+        let Self(inner) = self;
+        inner
+    }
+
+    pub fn len(&self) -> NonZeroUsize {
+        self.inner()
+            .len()
+            .try_into()
+            .expect("invariant violation: empty `Expectation`")
+    }
+
+    pub fn is_permanent(&self) -> bool {
+        self.len().get() == 1
+    }
+
+    pub fn as_permanent(&self) -> Option<Out> {
+        self.is_permanent().then(|| self.iter().next().unwrap())
+    }
+
+    pub fn into_iter(self) -> impl Iterator<Item = Out> {
+        self.inner().into_iter()
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = Out> {
+        self.inner().iter()
+    }
+}
+
+impl<Out> Display for Expectation<Out>
+where
+    Out: Display + EnumSetType,
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        if let Some(perma) = self.as_permanent() {
+            write!(f, "{perma}")
+        } else {
+            f.debug_list()
+                .entries(
+                    self.iter()
+                        .map(|out| format::Debug(move |f| write!(f, "{out}"))),
+                )
+                .finish()
+        }
+    }
+}
+
+impl<Out> BitOr for Expectation<Out>
+where
+    Out: EnumSetType,
+{
+    type Output = Self;
+
+    fn bitor(self, rhs: Self) -> Self::Output {
+        let Self(lhs) = self;
+        let Self(rhs) = rhs;
+
+        Self(lhs | rhs)
+    }
+}
+
+impl<Out> BitOrAssign for Expectation<Out>
+where
+    Out: EnumSetType,
+{
+    fn bitor_assign(&mut self, rhs: Self) {
+        *self = *self | rhs;
+    }
+}
+
+impl<Out> BitOr<Out> for Expectation<Out>
+where
+    Out: EnumSetType,
+{
+    type Output = Self;
+
+    fn bitor(self, rhs: Out) -> Self::Output {
+        let Self(lhs) = self;
+
+        Self(lhs | rhs)
+    }
+}
+
+impl<Out> BitOrAssign<Out> for Expectation<Out>
+where
+    Out: EnumSetType,
+{
+    fn bitor_assign(&mut self, rhs: Out) {
+        *self = *self | rhs;
     }
 }
 

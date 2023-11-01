@@ -308,15 +308,12 @@ fn run(cli: Cli) -> ExitCode {
                     })
                 }
 
-                fn apply_expectation<Out, F>(expectation: Expectation<Out>, mut f: F)
+                fn apply_expectation<Out, F>(expectation: Expectation<Out>, f: F)
                 where
                     F: FnMut(Out),
                     Out: EnumSetType,
                 {
-                    match expectation {
-                        Expectation::Permanent(outcome) => f(outcome),
-                        Expectation::Intermittent(outcomes) => outcomes.into_iter().for_each(f),
-                    }
+                    expectation.into_iter().for_each(f)
                 }
                 if let Some(expectations) = expectations {
                     fn analyze_test_outcome<F>(
