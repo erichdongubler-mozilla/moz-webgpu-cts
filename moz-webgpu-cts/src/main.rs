@@ -50,6 +50,20 @@ struct Cli {
 enum Subcommand {
     /// Adjust test expectations in metadata using `wptreport.json` reports from CI runs covering
     /// Firefox's implementation of WebGPU.
+    ///
+    /// The general usage of this subcommand is to (1) reset expectations according to some
+    /// heuristic, and then (2) extend expectations from more reports later to accommodate any
+    /// intermittents that are found. More concretely:
+    ///
+    /// 1. Pick a `reset-*` preset (which we'll call `RESET_PRESET`). See docs for `preset` for
+    ///    more details on making this choice.
+    /// 2. Gather reports into path(s) of your choice.
+    /// 2. Run `moz-webgpu-cts process-reports --preset=$RESET_PRESET …` against the reports
+    ///    you've gathered to cover all new permanent outcomes. If you are confident you picked the
+    ///    right `RESET_PRESET`, you may delete the reports you provided to this run.
+    /// 3. As unexpected intermittent outcomes are discovered, run `moz-webgpu-cts process-reports
+    ///    --preset=merge …` with reports. You may delete the reports after their outcomes have
+    ///    been merged in.
     ProcessReports {
         /// Direct paths to report files to be processed.
         report_paths: Vec<PathBuf>,
@@ -59,6 +73,25 @@ enum Subcommand {
         /// forward slashes (`/`) are the only valid path separator for these globs.
         #[clap(long = "glob", value_name = "REPORT_GLOB")]
         report_globs: Vec<String>,
+        /// A heuristic for resolving differences between current metadata and processed reports.
+        ///
+        /// When you use this subcommand, you need to use both the `merge` preset and a choice of
+        /// `reset-*` heuristic. The choice mostly depends on your taste for regressions in
+        /// intermittent outcomes:
+        ///
+        /// * Is your goal is to make changes to Firefox, and make CI pass again? If so, you
+        ///   probably want `reset-contractory`.
+        /// * Are you trying to run the `triage` subcommand on a minimized set of expected
+        ///   outcomes? If so, you probably want `reset-all`.
+        ///
+        /// `reset-contradictory` changes expectations to match the set of outcomes observed in the
+        /// provided `reports_*` when they are not a strict subset of expected outcomes in
+        /// metadata. This is guaranteed to cover new permanent outcomes in metadata, while
+        /// minimizing changes to current intermittent outcomes in metadata. It may, however,
+        /// result in some intermittent outcomes not being reset to new permanent outcomes.
+        ///
+        /// `reset-all` changes expectations to match reported outcomes _exactly_. Metadata is not
+        /// even considered.
         #[clap(long)]
         preset: ReportProcessingPreset,
     },
