@@ -11,7 +11,7 @@ use self::{
     report::{
         ExecutionReport, RunInfo, SubtestExecutionResult, TestExecutionEntry, TestExecutionResult,
     },
-    shared::{Expectation, MaybeCollapsed, TestPath},
+    shared::{Expectation, MaybeCollapsed, NormalizedExpectationPropertyValue, TestPath},
 };
 
 use std::{
@@ -47,8 +47,15 @@ struct Cli {
 
 #[derive(Debug, Parser)]
 enum Subcommand {
+    /// Adjust test expectations in metadata using `wptreport.json` reports from CI runs covering
+    /// Firefox's implementation of WebGPU.
     ProcessReports {
+        /// Direct paths to report files to be processed.
         report_paths: Vec<PathBuf>,
+        /// Cross-platform `wax` globs to enumerate report files to be processed.
+        ///
+        /// N.B. for Windows users: backslashes are used strictly for escaped characters, and
+        /// forward slashes (`/`) are the only valid path separator for these globs.
         #[clap(long = "glob", value_name = "REPORT_GLOB")]
         report_globs: Vec<String>,
         #[clap(long)]
@@ -62,7 +69,7 @@ enum Subcommand {
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
 enum ReportProcessingPreset {
-    ResetToReported,
+    ResetAll,
 }
 
 fn main() -> ExitCode {
@@ -430,13 +437,16 @@ fn run(cli: Cli) -> ExitCode {
                         build_profile: BuildProfile,
                         reported_outcome: Out,
                     ) where
-                        Out: Default + EnumSetType + Hash,
+                        Out: EnumSetType + Hash,
                     {
-                        *recorded
-                            .entry(platform)
-                            .or_default()
-                            .entry(build_profile)
-                            .or_default() |= reported_outcome;
+                        match recorded.entry(platform).or_default().entry(build_profile) {
+                            std::collections::btree_map::Entry::Vacant(entry) => {
+                                entry.insert(Expectation::permanent(reported_outcome));
+                            }
+                            std::collections::btree_map::Entry::Occupied(mut entry) => {
+                                *entry.get_mut() |= reported_outcome
+                            }
+                        }
                     }
                     accumulate(
                         &mut recorded_test_outcomes.reported,
@@ -478,10 +488,19 @@ fn run(cli: Cli) -> ExitCode {
                         where
                             Out: Debug + Default + EnumSetType,
                         {
-                            let (metadata, reported) = outcomes.into_normalized();
+                            let OutcomesForComparison { metadata, reported } = outcomes;
+
+                            let metadata = metadata
+                                .map(|maybe_disabled| {
+                                    maybe_disabled.map_enabled(|opt| opt.unwrap_or_default())
+                                })
+                                .unwrap_or_default();
+
+                            let normalize = NormalizedExpectationPropertyValue::from_fully_expanded;
+
                             let reconciled_expectations =
                                 metadata.map_enabled(|_metadata| match preset {
-                                    ReportProcessingPreset::ResetToReported => reported,
+                                    ReportProcessingPreset::ResetAll => normalize(reported),
                                 });
                             match reconciled_expectations {
                                 MaybeDisabled::Disabled => AnalyzeableProps {

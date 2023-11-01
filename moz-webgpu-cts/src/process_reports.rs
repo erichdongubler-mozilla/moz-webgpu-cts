@@ -16,28 +16,6 @@ where
     pub reported: BTreeMap<Platform, BTreeMap<BuildProfile, Expectation<Out>>>,
 }
 
-impl<Out> OutcomesForComparison<Out>
-where
-    Out: Default + EnumSetType,
-{
-    pub(crate) fn into_normalized(
-        self,
-    ) -> (
-        MaybeDisabled<NormalizedExpectationPropertyValue<Out>>,
-        NormalizedExpectationPropertyValue<Out>,
-    ) {
-        let Self { metadata, reported } = self;
-
-        let metadata = metadata
-            .map(|maybe_disabled| maybe_disabled.map_enabled(|opt| opt.unwrap_or_default()))
-            .unwrap_or_default();
-
-        let reported = NormalizedExpectationPropertyValue::from_fully_expanded(reported);
-
-        (metadata, reported)
-    }
-}
-
 impl<Out> Default for OutcomesForComparison<Out>
 where
     Out: EnumSetType,
