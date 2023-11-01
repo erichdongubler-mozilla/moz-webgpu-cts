@@ -375,7 +375,8 @@ where
                                 })
                                 .collect();
 
-                            NormalizedExpectationPropertyValue::from_full(fully_expanded).unwrap()
+                            NormalizedExpectationPropertyValue::from_fully_expanded(fully_expanded)
+                                .unwrap()
                         }
                     }
                 });

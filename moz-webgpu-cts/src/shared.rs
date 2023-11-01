@@ -83,7 +83,7 @@ where
         inner
     }
 
-    pub(crate) fn from_full(
+    pub(crate) fn from_fully_expanded(
         outcomes: BTreeMap<Platform, BTreeMap<BuildProfile, Expectation<Out>>>,
     ) -> Option<Self>
     where
