@@ -43,7 +43,11 @@ where
     }
 }
 
-/// A normalized representation of [`Expectation`]s in [`AnalyzeableProps`].
+/// A normalized representation of [`Expectation`]s in [`AnalyzeableProps`], which collapses
+/// backwards along the following branching factors:
+///
+/// * [`Platform`]
+/// * [`BuildProfile`]
 ///
 /// Yes, the type is _gnarly_. Sorry about that. This is some complex domain, okay? 😆😭
 ///
