@@ -308,21 +308,19 @@ where
                     return;
                 }
                 expectations.replace(match val {
-                    PropertyValue::Unconditional(exp) => NormalizedExpectationPropertyValue(
-                        MaybeCollapsed::Collapsed(MaybeCollapsed::Collapsed(exp)),
-                    ),
+                    PropertyValue::Unconditional(exp) => {
+                        NormalizedExpectationPropertyValue::uniform(exp)
+                    }
                     PropertyValue::Conditional(val) => {
                         let ConditionalValue {
                             conditions,
                             fallback,
                         } = val;
                         if conditions.is_empty() {
-                            NormalizedExpectationPropertyValue(MaybeCollapsed::Collapsed(
-                                MaybeCollapsed::Collapsed(fallback.expect(concat!(
-                                    "at least one condition or fallback not present ",
-                                    "in conditional `expected` property value"
-                                ))),
-                            ))
+                            NormalizedExpectationPropertyValue::uniform(fallback.expect(concat!(
+                                "at least one condition or fallback not present ",
+                                "in conditional `expected` property value"
+                            )))
                         } else {
                             let fully_expanded = Platform::iter()
                                 .filter_map(|p| {

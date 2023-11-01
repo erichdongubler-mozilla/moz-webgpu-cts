@@ -173,9 +173,7 @@ where
 ///
 /// [`AnalyzeableProps`]: crate::metadata::AnalyzeableProps
 #[derive(Clone, Debug)]
-pub struct NormalizedExpectationPropertyValue<Out>(
-    pub(crate) NormalizedExpectationPropertyValueData<Out>,
-)
+pub struct NormalizedExpectationPropertyValue<Out>(NormalizedExpectationPropertyValueData<Out>)
 where
     Out: EnumSetType;
 
@@ -192,6 +190,12 @@ impl<Out> NormalizedExpectationPropertyValue<Out>
 where
     Out: EnumSetType,
 {
+    pub fn uniform(expectation: Expectation<Out>) -> Self {
+        Self(MaybeCollapsed::Collapsed(MaybeCollapsed::Collapsed(
+            expectation,
+        )))
+    }
+
     pub fn inner(&self) -> &NormalizedExpectationPropertyValueData<Out> {
         let Self(inner) = self;
         inner
