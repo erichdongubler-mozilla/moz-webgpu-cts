@@ -189,7 +189,7 @@ where
             where
                 Out: Default + EnumSetType + Eq + PartialEq,
             {
-                if !matches!(exp, Expectation::Permanent(perma) if perma == &Default::default()) {
+                if exp != &Default::default() {
                     f()
                 } else {
                     Ok(())
@@ -197,7 +197,6 @@ where
             }
 
             let expected = lazy_format!("{indent}expected");
-            let rhs = format_exp;
             let r#if = lazy_format!("{indent}  if");
             let disp_build_profile = |build_profile| match build_profile {
                 BuildProfile::Debug => "debug",
@@ -206,16 +205,14 @@ where
             match exps.inner() {
                 MaybeCollapsed::Collapsed(exps) => match exps {
                     MaybeCollapsed::Collapsed(exps) => {
-                        if_not_default(exps, || writeln!(f, "{expected}: {}", rhs(exps)))?;
+                        if_not_default(exps, || writeln!(f, "{expected}: {exps}"))?;
                     }
                     MaybeCollapsed::Expanded(by_build_profile) => {
                         writeln!(f, "{expected}:")?;
                         debug_assert!(!by_build_profile.is_empty());
                         for (build_profile, exps) in by_build_profile {
                             let build_profile = disp_build_profile(*build_profile);
-                            if_not_default(exps, || {
-                                writeln!(f, "{if} {build_profile}: {}", rhs(exps))
-                            })?;
+                            if_not_default(exps, || writeln!(f, "{if} {build_profile}: {exps}"))?;
                         }
                     }
                 },
@@ -232,19 +229,15 @@ where
                             lazy_format!(move |f| write!(f, "os == {platform_str:?}"))
                         };
                         match exps {
-                            MaybeCollapsed::Collapsed(exps) => if_not_default(exps, || {
-                                writeln!(f, "{if} {platform}: {}", rhs(exps))
-                            })?,
+                            MaybeCollapsed::Collapsed(exps) => {
+                                if_not_default(exps, || writeln!(f, "{if} {platform}: {exps}"))?
+                            }
                             MaybeCollapsed::Expanded(by_build_profile) => {
                                 debug_assert!(!by_build_profile.is_empty());
                                 for (build_profile, exps) in by_build_profile {
                                     let build_profile = disp_build_profile(*build_profile);
                                     if_not_default(exps, || {
-                                        writeln!(
-                                            f,
-                                            "{if} {platform} and {build_profile}: {}",
-                                            rhs(exps)
-                                        )
+                                        writeln!(f, "{if} {platform} and {build_profile}: {exps}")
                                     })?;
                                 }
                             }
@@ -255,20 +248,6 @@ where
         }
 
         Ok(())
-    })
-}
-
-fn format_exp<Exp>(exp: &Expectation<Exp>) -> impl Display + '_
-where
-    Exp: Display + EnumSetType,
-{
-    lazy_format!(move |f| {
-        match exp {
-            Expectation::Permanent(outcome) => write!(f, "{outcome}"),
-            Expectation::Intermittent(outcomes) => {
-                write!(f, "[{}]", outcomes.iter().join_with(", "))
-            }
-        }
     })
 }
 
@@ -329,21 +308,19 @@ where
                     return;
                 }
                 expectations.replace(match val {
-                    PropertyValue::Unconditional(exp) => NormalizedExpectationPropertyValue(
-                        MaybeCollapsed::Collapsed(MaybeCollapsed::Collapsed(exp)),
-                    ),
+                    PropertyValue::Unconditional(exp) => {
+                        NormalizedExpectationPropertyValue::uniform(exp)
+                    }
                     PropertyValue::Conditional(val) => {
                         let ConditionalValue {
                             conditions,
                             fallback,
                         } = val;
                         if conditions.is_empty() {
-                            NormalizedExpectationPropertyValue(MaybeCollapsed::Collapsed(
-                                MaybeCollapsed::Collapsed(fallback.expect(concat!(
-                                    "at least one condition or fallback not present ",
-                                    "in conditional `expected` property value"
-                                ))),
-                            ))
+                            NormalizedExpectationPropertyValue::uniform(fallback.expect(concat!(
+                                "at least one condition or fallback not present ",
+                                "in conditional `expected` property value"
+                            )))
                         } else {
                             let fully_expanded = Platform::iter()
                                 .filter_map(|p| {
@@ -361,12 +338,10 @@ where
                                                         .as_ref()
                                                         .map_or(true, |bp2| *bp2 == bp)
                                                 {
-                                                    matched = Some(val.clone());
+                                                    matched = Some(*val);
                                                 }
                                             }
-                                            matched
-                                                .or(fallback.clone())
-                                                .map(|matched| (bp, matched))
+                                            matched.or(fallback).map(|matched| (bp, matched))
                                         })
                                         .collect::<BTreeMap<_, _>>();
                                     (!by_build_profile.is_empty())
@@ -375,7 +350,8 @@ where
                                 })
                                 .collect();
 
-                            NormalizedExpectationPropertyValue::from_full(fully_expanded).unwrap()
+                            NormalizedExpectationPropertyValue::from_fully_expanded(fully_expanded)
+                                .unwrap()
                         }
                     }
                 });
@@ -387,68 +363,6 @@ where
                 *is_disabled = true;
             }
         }
-    }
-}
-
-impl<Out> NormalizedExpectationPropertyValue<Out>
-where
-    Out: Clone + Default + EnumSetType + Eq + PartialEq,
-{
-    fn from_full(
-        outcomes: BTreeMap<Platform, BTreeMap<BuildProfile, Expectation<Out>>>,
-    ) -> Option<Self> {
-        if outcomes.is_empty() {
-            return None;
-        }
-
-        fn normalize<K, V, T, F>(
-            mut map: BTreeMap<K, V>,
-            mut f: F,
-        ) -> MaybeCollapsed<T, BTreeMap<K, T>>
-        where
-            F: FnMut(V) -> T,
-            K: IntoEnumIterator + Ord,
-            V: Default,
-            T: Clone + Default + Eq + PartialEq,
-        {
-            fn skip_default<K, V, I>(iter: I) -> impl Iterator<Item = (K, V)>
-            where
-                I: IntoIterator<Item = (K, V)>,
-                V: Default + Eq + PartialEq,
-            {
-                iter.into_iter().filter(|(_k, v)| v != &Default::default())
-            }
-
-            let mut iter = K::iter().map(|k| {
-                let v = map.remove(&k).unwrap_or_default();
-                (k, f(v))
-            });
-
-            let (first_key, first_t) = iter.next().unwrap();
-
-            let mut inconsistency_found = false;
-            let mut expanded = BTreeMap::default();
-            for (k, t) in iter.by_ref() {
-                if t == first_t {
-                    expanded.extend(skip_default([(k, t)]));
-                } else {
-                    inconsistency_found = true;
-                    expanded.extend(skip_default([(k, t)].into_iter().chain(iter)));
-                    break;
-                }
-            }
-            if inconsistency_found {
-                expanded.extend(skip_default([(first_key, first_t)]));
-                MaybeCollapsed::Expanded(expanded)
-            } else {
-                MaybeCollapsed::Collapsed(first_t)
-            }
-        }
-
-        Some(NormalizedExpectationPropertyValue(normalize(
-            outcomes,
-            |by_build_profile| normalize(by_build_profile, std::convert::identity),
-        )))
     }
 }
 
@@ -605,14 +519,21 @@ where
                     just("expected").to(()),
                     conditional_term.clone(),
                     choice((
-                        outcome_parser.clone().map(Expectation::Permanent),
+                        outcome_parser.clone().map(Expectation::permanent),
                         outcome_parser
                             .padded_by(inline_whitespace())
                             .separated_by(just(','))
                             .collect::<Vec<_>>()
                             .map(|vec| vec.into_iter().collect())
                             .delimited_by(just('['), just(']'))
-                            .map(Expectation::Intermittent),
+                            .try_map(|outcomes, span| {
+                                Expectation::intermittent(outcomes).ok_or_else(|| {
+                                    Rich::custom(
+                                        span,
+                                        "intermittent outcomes must have at least 2 elements",
+                                    )
+                                })
+                            }),
                     ))
                     .padded_by(inline_whitespace()),
                 )
@@ -859,9 +780,9 @@ r#"
                                         NormalizedExpectationPropertyValue(
                                             Collapsed(
                                                 Collapsed(
-                                                    Permanent(
+                                                    [
                                                         Pass,
-                                                    ),
+                                                    ],
                                                 ),
                                             ),
                                         ),
@@ -924,9 +845,10 @@ r#"
                                     NormalizedExpectationPropertyValue(
                                         Collapsed(
                                             Collapsed(
-                                                Intermittent(
-                                                    EnumSet(Pass | Fail),
-                                                ),
+                                                [
+                                                    Pass,
+                                                    Fail,
+                                                ],
                                             ),
                                         ),
                                     ),
@@ -963,9 +885,9 @@ r#"
                             NormalizedExpectationPropertyValue(
                                 Collapsed(
                                     Collapsed(
-                                        Permanent(
+                                        [
                                             Ok,
-                                        ),
+                                        ],
                                     ),
                                 ),
                             ),
@@ -979,9 +901,9 @@ r#"
                                     NormalizedExpectationPropertyValue(
                                         Collapsed(
                                             Collapsed(
-                                                Permanent(
+                                                [
                                                     Pass,
-                                                ),
+                                                ],
                                             ),
                                         ),
                                     ),
@@ -1025,9 +947,9 @@ r#"
                                         Expanded(
                                             {
                                                 Linux: Collapsed(
-                                                    Permanent(
+                                                    [
                                                         Fail,
-                                                    ),
+                                                    ],
                                                 ),
                                             },
                                         ),
@@ -1073,19 +995,19 @@ r#"
                                         Expanded(
                                             {
                                                 Windows: Collapsed(
-                                                    Permanent(
+                                                    [
                                                         Timeout,
-                                                    ),
+                                                    ],
                                                 ),
                                                 Linux: Collapsed(
-                                                    Permanent(
+                                                    [
                                                         Fail,
-                                                    ),
+                                                    ],
                                                 ),
                                                 MacOs: Collapsed(
-                                                    Permanent(
+                                                    [
                                                         Timeout,
-                                                    ),
+                                                    ],
                                                 ),
                                             },
                                         ),
@@ -1129,9 +1051,9 @@ r#"
                                         Expanded(
                                             {
                                                 MacOs: Collapsed(
-                                                    Permanent(
+                                                    [
                                                         Fail,
-                                                    ),
+                                                    ],
                                                 ),
                                             },
                                         ),

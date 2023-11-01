@@ -140,31 +140,12 @@ fn run(cli: Cli) -> ExitCode {
                         fmt_err_found = true;
                         render_metadata_parse_errors(&path, &file_contents, errors);
                     }
-                    Ok(file) => {
-                        let mut out =
-                            match fs::File::create(&*path).map_err(Report::msg).wrap_err_with(
-                                || format!("error while reading file `{}`", path.display()),
-                            ) {
-                                Ok(f) => BufWriter::new(f),
-                                Err(e) => {
-                                    fmt_err_found = true;
-                                    log::error!("{e}");
-                                    continue;
-                                }
-                            };
-                        use io::Write;
-                        match write!(&mut out, "{}", metadata::format_file(&file))
-                            .map_err(Report::msg)
-                            .wrap_err_with(|| {
-                                format!("error while writing to `{}`", path.display())
-                            }) {
-                            Ok(()) => (),
-                            Err(e) => {
-                                log::error!("{e}");
-                                continue;
-                            }
+                    Ok(file) => match write_to_file(&path, metadata::format_file(&file)) {
+                        Ok(()) => (),
+                        Err(AlreadyReportedToCommandline) => {
+                            fmt_err_found = true;
                         }
-                    }
+                    },
                 }
             }
 
@@ -327,15 +308,12 @@ fn run(cli: Cli) -> ExitCode {
                     })
                 }
 
-                fn apply_expectation<Out, F>(expectation: Expectation<Out>, mut f: F)
+                fn apply_expectation<Out, F>(expectation: Expectation<Out>, f: F)
                 where
                     F: FnMut(Out),
                     Out: EnumSetType,
                 {
-                    match expectation {
-                        Expectation::Permanent(outcome) => f(outcome),
-                        Expectation::Intermittent(outcomes) => outcomes.into_iter().for_each(f),
-                    }
+                    expectation.into_iter().for_each(f)
                 }
                 if let Some(expectations) = expectations {
                     fn analyze_test_outcome<F>(
@@ -730,3 +708,29 @@ fn search_for_moz_central_ckt() -> Result<PathBuf, AlreadyReportedToCommandline>
 }
 
 struct AlreadyReportedToCommandline;
+
+fn write_to_file(path: &Path, contents: impl Display) -> Result<(), AlreadyReportedToCommandline> {
+    let mut out = match fs::File::create(path)
+        .map_err(Report::msg)
+        .wrap_err_with(|| format!("error while reading file `{}`", path.display()))
+    {
+        Ok(f) => BufWriter::new(f),
+        Err(e) => {
+            log::error!("{e}");
+            return Err(AlreadyReportedToCommandline);
+        }
+    };
+    use io::Write;
+    match write!(&mut out, "{contents}")
+        .map_err(Report::msg)
+        .wrap_err_with(|| format!("error while writing to `{}`", path.display()))
+    {
+        Ok(()) => (),
+        Err(e) => {
+            log::error!("{e}");
+            return Err(AlreadyReportedToCommandline);
+        }
+    }
+
+    Ok(())
+}
