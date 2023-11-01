@@ -55,10 +55,13 @@ pub struct NormalizedExpectationPropertyValue<Out>(
 where
     Out: EnumSetType;
 
+pub type NormalizedExpectationByBuildProfile<Out> =
+    MaybeCollapsed<Expectation<Out>, BTreeMap<BuildProfile, Expectation<Out>>>;
+
 /// Data from a [`NormalizedExpectationPropertyValue`].
 pub type NormalizedExpectationPropertyValueData<Out> = MaybeCollapsed<
-    MaybeCollapsed<Expectation<Out>, BTreeMap<BuildProfile, Expectation<Out>>>,
-    BTreeMap<Platform, MaybeCollapsed<Expectation<Out>, BTreeMap<BuildProfile, Expectation<Out>>>>,
+    NormalizedExpectationByBuildProfile<Out>,
+    BTreeMap<Platform, NormalizedExpectationByBuildProfile<Out>>,
 >;
 
 impl<Out> NormalizedExpectationPropertyValue<Out>
