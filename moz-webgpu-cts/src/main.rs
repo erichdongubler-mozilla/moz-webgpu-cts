@@ -70,6 +70,7 @@ enum Subcommand {
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
 enum ReportProcessingPreset {
+    Merge,
     ResetContradictory,
     ResetAll,
 }
@@ -512,6 +513,10 @@ fn run(cli: Cli) -> ExitCode {
                                             rep.filter(|rep| !meta.is_superset(rep)).unwrap_or(meta)
                                         }
                                     }
+                                    ReportProcessingPreset::Merge => |meta, rep| match rep {
+                                        Some(rep) => meta | rep,
+                                        None => meta,
+                                    },
                                 };
 
                                 normalize(
