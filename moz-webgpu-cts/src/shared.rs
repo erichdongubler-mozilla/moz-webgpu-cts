@@ -87,6 +87,13 @@ where
     pub fn iter(&self) -> impl Iterator<Item = Out> {
         self.inner().iter()
     }
+
+    pub fn is_superset(&self, rep: &Expectation<Out>) -> bool
+    where
+        Out: std::fmt::Debug + Default + EnumSetType,
+    {
+        self.inner().is_superset(*rep.inner())
+    }
 }
 
 impl<Out> Display for Expectation<Out>
@@ -289,6 +296,27 @@ where
         NormalizedExpectationPropertyValue(normalize(outcomes, |by_build_profile| {
             normalize(by_build_profile, std::convert::identity)
         }))
+    }
+
+    pub fn get(&self, platform: Platform, build_profile: BuildProfile) -> Expectation<Out>
+    where
+        Out: Default,
+    {
+        match self.inner() {
+            MaybeCollapsed::Collapsed(exps) => match exps {
+                MaybeCollapsed::Collapsed(exps) => *exps,
+                MaybeCollapsed::Expanded(exps) => {
+                    exps.get(&build_profile).copied().unwrap_or_default()
+                }
+            },
+            MaybeCollapsed::Expanded(exps) => exps
+                .get(&platform)
+                .and_then(|exps| match exps {
+                    MaybeCollapsed::Collapsed(exps) => Some(*exps),
+                    MaybeCollapsed::Expanded(exps) => exps.get(&build_profile).copied(),
+                })
+                .unwrap_or_default(),
+        }
     }
 }
 

@@ -33,6 +33,7 @@ use miette::{miette, Diagnostic, IntoDiagnostic, NamedSource, Report, SourceSpan
 use path_dsl::path;
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 use regex::Regex;
+use strum::IntoEnumIterator;
 use wax::Glob;
 use whippit::{metadata::SectionHeader, reexport::chumsky::prelude::Rich};
 
@@ -69,6 +70,7 @@ enum Subcommand {
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
 enum ReportProcessingPreset {
+    ResetContradictory,
     ResetAll,
 }
 
@@ -495,10 +497,41 @@ fn run(cli: Cli) -> ExitCode {
 
                             let normalize = NormalizedExpectationPropertyValue::from_fully_expanded;
 
-                            let reconciled_expectations =
-                                metadata.map_enabled(|_metadata| match preset {
-                                    ReportProcessingPreset::ResetAll => normalize(reported),
-                                });
+                            let reconciled_expectations = metadata.map_enabled(|metadata| {
+                                let resolve = match preset {
+                                    ReportProcessingPreset::ResetAll => return normalize(reported),
+                                    ReportProcessingPreset::ResetContradictory => {
+                                        |meta: Expectation<_>, rep: Option<Expectation<_>>| {
+                                            rep.filter(|rep| !meta.is_superset(rep)).unwrap_or(meta)
+                                        }
+                                    }
+                                };
+
+                                normalize(
+                                    Platform::iter()
+                                        .map(|platform| {
+                                            let build_profiles = BuildProfile::iter()
+                                                .map(|build_profile| {
+                                                    (
+                                                        build_profile,
+                                                        resolve(
+                                                            metadata.get(platform, build_profile),
+                                                            reported
+                                                                .get(&platform)
+                                                                .and_then(|rep| {
+                                                                    rep.get(&build_profile)
+                                                                })
+                                                                .copied(),
+                                                        ),
+                                                    )
+                                                })
+                                                .collect();
+                                            (platform, build_profiles)
+                                        })
+                                        .collect(),
+                                )
+                            });
+
                             match reconciled_expectations {
                                 MaybeDisabled::Disabled => AnalyzeableProps {
                                     is_disabled: true,
