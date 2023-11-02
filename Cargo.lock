@@ -553,7 +553,7 @@ dependencies = [
 
 [[package]]
 name = "moz-webgpu-cts"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "chumsky",
  "clap",
