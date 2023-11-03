@@ -57,11 +57,14 @@ enum Subcommand {
     ///
     /// 1. Pick a `reset-*` preset (which we'll call `RESET_PRESET`). See docs for `preset` for
     ///    more details on making this choice.
+    ///
     /// 2. Gather reports into path(s) of your choice.
-    /// 2. Run `moz-webgpu-cts process-reports --preset=$RESET_PRESET …` against the reports
+    ///
+    /// 3. Run `moz-webgpu-cts process-reports --preset=$RESET_PRESET …` against the reports
     ///    you've gathered to cover all new permanent outcomes. If you are confident you picked the
     ///    right `RESET_PRESET`, you may delete the reports you provided to this run.
-    /// 3. As unexpected intermittent outcomes are discovered, run `moz-webgpu-cts process-reports
+    ///
+    /// 4. As unexpected intermittent outcomes are discovered, run `moz-webgpu-cts process-reports
     ///    --preset=merge …` with reports. You may delete the reports after their outcomes have
     ///    been merged in.
     ProcessReports {
@@ -80,7 +83,8 @@ enum Subcommand {
         /// intermittent outcomes:
         ///
         /// * Is your goal is to make changes to Firefox, and make CI pass again? If so, you
-        ///   probably want `reset-contractory`.
+        ///   probably want `reset-contradictory`.
+        ///
         /// * Are you trying to run the `triage` subcommand on a minimized set of expected
         ///   outcomes? If so, you probably want `reset-all`.
         ///
