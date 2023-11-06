@@ -1,28 +1,39 @@
 mod metadata;
+mod process_reports;
+mod report;
 mod shared;
 
 use self::{
-    metadata::{AnalyzeableProps, File, Platform, Subtest, SubtestOutcome, Test, TestOutcome},
-    shared::{Expectation, MaybeCollapsed},
+    metadata::{
+        AnalyzeableProps, BuildProfile, File, Platform, Subtest, SubtestOutcome, Test, TestOutcome,
+    },
+    process_reports::{MaybeDisabled, OutcomesForComparison, TestOutcomes},
+    report::{
+        ExecutionReport, RunInfo, SubtestExecutionResult, TestExecutionEntry, TestExecutionResult,
+    },
+    shared::{Expectation, MaybeCollapsed, NormalizedExpectationPropertyValue, TestPath},
 };
 
 use std::{
     collections::{BTreeMap, BTreeSet},
-    fmt::Display,
+    fmt::{Debug, Display},
     fs,
-    io::{self, BufWriter},
+    hash::Hash,
+    io::{self, BufReader, BufWriter},
     path::{Path, PathBuf},
     process::ExitCode,
-    sync::Arc,
+    sync::{mpsc::channel, Arc},
 };
 
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use enumset::EnumSetType;
+use format::lazy_format;
 use indexmap::{IndexMap, IndexSet};
-use miette::{miette, Diagnostic, NamedSource, Report, SourceSpan, WrapErr};
+use miette::{miette, Diagnostic, IntoDiagnostic, NamedSource, Report, SourceSpan, WrapErr};
 use path_dsl::path;
-
+use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 use regex::Regex;
+use strum::IntoEnumIterator;
 use wax::Glob;
 use whippit::{metadata::SectionHeader, reexport::chumsky::prelude::Rich};
 
@@ -37,10 +48,68 @@ struct Cli {
 
 #[derive(Debug, Parser)]
 enum Subcommand {
+    /// Adjust test expectations in metadata using `wptreport.json` reports from CI runs covering
+    /// Firefox's implementation of WebGPU.
+    ///
+    /// The general usage of this subcommand is to (1) reset expectations according to some
+    /// heuristic, and then (2) extend expectations from more reports later to accommodate any
+    /// intermittents that are found. More concretely:
+    ///
+    /// 1. Pick a `reset-*` preset (which we'll call `RESET_PRESET`). See docs for `preset` for
+    ///    more details on making this choice.
+    ///
+    /// 2. Gather reports into path(s) of your choice.
+    ///
+    /// 3. Run `moz-webgpu-cts process-reports --preset=$RESET_PRESET …` against the reports
+    ///    you've gathered to cover all new permanent outcomes. If you are confident you picked the
+    ///    right `RESET_PRESET`, you may delete the reports you provided to this run.
+    ///
+    /// 4. As intermittent outcomes are discovered (maybe again), run `moz-webgpu-cts
+    ///    process-reports --preset=merge …` with reports. You may delete the reports after their
+    ///    outcomes have been merged in.
+    ProcessReports {
+        /// Direct paths to report files to be processed.
+        report_paths: Vec<PathBuf>,
+        /// Cross-platform `wax` globs to enumerate report files to be processed.
+        ///
+        /// N.B. for Windows users: backslashes are used strictly for escaped characters, and
+        /// forward slashes (`/`) are the only valid path separator for these globs.
+        #[clap(long = "glob", value_name = "REPORT_GLOB")]
+        report_globs: Vec<String>,
+        /// A heuristic for resolving differences between current metadata and processed reports.
+        ///
+        /// When you use this subcommand, you need to use both the `merge` preset and a choice of
+        /// `reset-*` heuristic. The choice mostly depends on your taste for regressions in
+        /// intermittent outcomes:
+        ///
+        /// * Is your goal is to make changes to Firefox, and make CI pass again? If so, you
+        ///   probably want `reset-contradictory`.
+        ///
+        /// * Are you trying to run the `triage` subcommand on a minimized set of expected
+        ///   outcomes? If so, you probably want `reset-all`.
+        ///
+        /// `reset-contradictory` changes expectations to match the set of outcomes observed in the
+        /// provided `reports_*` when they are not a strict subset of expected outcomes in
+        /// metadata. This is guaranteed to cover new permanent outcomes in metadata, while
+        /// minimizing changes to current intermittent outcomes in metadata. It may, however,
+        /// result in some intermittent outcomes not being reset to new permanent outcomes.
+        ///
+        /// `reset-all` changes expectations to match reported outcomes _exactly_. Metadata is not
+        /// even considered.
+        #[clap(long)]
+        preset: ReportProcessingPreset,
+    },
     #[clap(name = "fmt")]
     Format,
     Triage,
     ReadTestVariants,
+}
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum ReportProcessingPreset {
+    Merge,
+    ResetContradictory,
+    ResetAll,
 }
 
 fn main() -> ExitCode {
@@ -125,6 +194,467 @@ fn run(cli: Cli) -> ExitCode {
     }
 
     match subcommand {
+        Subcommand::ProcessReports {
+            report_globs,
+            report_paths,
+            preset,
+        } => {
+            let report_globs = {
+                let mut found_glob_parse_err = false;
+                let globs = report_globs
+                    .into_iter()
+                    .filter_map(|glob| match Glob::diagnosed(&glob) {
+                        Ok((glob, _diagnostics)) => Some(glob.into_owned().partition()),
+                        Err(diagnostics) => {
+                            found_glob_parse_err = true;
+                            let error_reports = diagnostics
+                                .into_iter()
+                                .filter(|diag| {
+                                    // N.B.: There should be at least one of these!
+                                    diag.severity()
+                                        .map_or(true, |sev| sev == miette::Severity::Error)
+                                })
+                                .map(Report::new_boxed);
+                            for report in error_reports {
+                                eprintln!("{report:?}");
+                            }
+                            None
+                        }
+                    })
+                    .collect::<Vec<_>>();
+
+                if found_glob_parse_err {
+                    log::error!("failed to parse one or more WPT report globs; bailing");
+                    return ExitCode::FAILURE;
+                }
+
+                globs
+            };
+
+            if report_paths.is_empty() && report_globs.is_empty() {
+                log::error!("no report paths specified, bailing");
+                return ExitCode::FAILURE;
+            }
+
+            let exec_report_paths = {
+                let mut found_glob_walk_err = false;
+                let files = report_globs
+                    .iter()
+                    .flat_map(|(base_path, glob)| {
+                        glob.walk(base_path)
+                            .filter_map(|entry| match entry {
+                                Ok(entry) => Some(entry.into_path()),
+                                Err(e) => {
+                                    found_glob_walk_err = true;
+                                    let ctx_msg = if let Some(path) = e.path() {
+                                        format!(
+                                            "failed to enumerate files for glob `{}` at path {}",
+                                            glob,
+                                            path.display()
+                                        )
+                                    } else {
+                                        format!("failed to enumerate files for glob `{glob}`")
+                                    };
+                                    let e = Report::msg(e).wrap_err(ctx_msg);
+                                    eprintln!("{e:?}");
+                                    None
+                                }
+                            })
+                            .collect::<Vec<_>>() // OPT: Can we get rid of this somehow?
+                    })
+                    .chain(report_paths)
+                    .collect::<Vec<_>>();
+
+                if found_glob_walk_err {
+                    log::error!(concat!(
+                        "failed to enumerate files with WPT report globs, ",
+                        "see above for more details"
+                    ));
+                    return ExitCode::FAILURE;
+                }
+
+                files
+            };
+
+            if exec_report_paths.is_empty() {
+                log::error!("no WPT report files found, bailing");
+                return ExitCode::FAILURE;
+            }
+
+            log::trace!("working with the following WPT report files: {exec_report_paths:#?}");
+            log::info!("working with {} WPT report files", exec_report_paths.len());
+
+            let meta_files_by_path = {
+                let raw_meta_files_by_path = match read_metadata() {
+                    Ok(paths) => paths,
+                    Err(AlreadyReportedToCommandline) => return ExitCode::FAILURE,
+                };
+
+                log::info!("parsing metadata…");
+                let mut found_parse_err = false;
+
+                let files = raw_meta_files_by_path
+                    .into_iter()
+                    .filter_map(|(path, file_contents)| {
+                        match chumsky::Parser::parse(&File::parser(), &*file_contents).into_result()
+                        {
+                            Err(errors) => {
+                                found_parse_err = true;
+                                render_metadata_parse_errors(&path, &file_contents, errors);
+                                None
+                            }
+                            Ok(file) => Some((path, file)),
+                        }
+                    })
+                    .collect::<IndexMap<_, _>>();
+
+                if found_parse_err {
+                    log::error!(concat!(
+                        "found one or more failures while parsing metadata, ",
+                        "see above for more details"
+                    ));
+                    return ExitCode::FAILURE;
+                }
+
+                files
+            };
+
+            let mut outcomes_by_test = IndexMap::<TestPath, TestOutcomes>::default();
+
+            log::info!("loading metadata for comparison to reports…");
+            for (path, file) in meta_files_by_path {
+                let File { tests } = file;
+                for (SectionHeader(name), test) in tests {
+                    let Test {
+                        properties:
+                            AnalyzeableProps {
+                                is_disabled,
+                                expectations,
+                            },
+                        subtests,
+                    } = test;
+
+                    let test_path = TestPath::from_fx_metadata_test(
+                        path.strip_prefix(&gecko_checkout).unwrap(),
+                        &name,
+                    )
+                    .unwrap();
+
+                    let freak_out_do_nothing = |what: &dyn Display| {
+                        log::error!("hoo boy, not sure what to do yet: {what}")
+                    };
+
+                    let TestOutcomes {
+                        test_outcomes: recorded_test_outcomes,
+                        subtests: recorded_subtests,
+                    } = outcomes_by_test
+                        .entry(test_path.clone().into_owned())
+                        .or_default();
+
+                    let test_path = &test_path;
+                    let mut reported_dupe_already = false;
+
+                    let maybe_disabled = if is_disabled {
+                        MaybeDisabled::Disabled
+                    } else {
+                        MaybeDisabled::Enabled(expectations)
+                    };
+                    if let Some(_old) = recorded_test_outcomes.metadata.replace(maybe_disabled) {
+                        freak_out_do_nothing(
+                            &lazy_format!(
+                                "duplicate entry for {test_path:?}, discarding previous entries with this and further dupes"
+                            )
+                        );
+                        reported_dupe_already = true;
+                    }
+
+                    for (SectionHeader(subtest_name), subtest) in subtests {
+                        let Subtest {
+                            properties:
+                                AnalyzeableProps {
+                                    is_disabled,
+                                    expectations,
+                                },
+                        } = subtest;
+                        let recorded_subtest_outcomes =
+                            recorded_subtests.entry(subtest_name.clone()).or_default();
+                        let maybe_disabled = if is_disabled {
+                            MaybeDisabled::Disabled
+                        } else {
+                            MaybeDisabled::Enabled(expectations)
+                        };
+                        if let Some(_old) =
+                            recorded_subtest_outcomes.metadata.replace(maybe_disabled)
+                        {
+                            if !reported_dupe_already {
+                                freak_out_do_nothing(&lazy_format!(
+                                    "duplicate subtest in {test_path:?} named {subtest_name:?}, discarding previous entries with this and further dupes"
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+
+            log::info!("gathering reported test outcomes for reconciliation with metadata…");
+
+            let (exec_reports_sender, exec_reports_receiver) = channel();
+            exec_report_paths
+                .into_par_iter()
+                .for_each_with(exec_reports_sender, |sender, path| {
+                    let res = fs::File::open(&path)
+                        .map(BufReader::new)
+                        .map_err(Report::msg)
+                        .wrap_err("failed to open file")
+                        .and_then(|reader| {
+                            serde_json::from_reader::<_, ExecutionReport>(reader)
+                                .into_diagnostic()
+                                .wrap_err("failed to parse JSON")
+                        })
+                        .wrap_err_with(|| {
+                            format!(
+                                "failed to read WPT execution report from {}",
+                                path.display()
+                            )
+                        })
+                        .map(|parsed| (path, parsed))
+                        .map_err(|e| {
+                            log::error!("{e:?}");
+                            AlreadyReportedToCommandline
+                        });
+                    let _ = sender.send(res);
+                });
+
+            for res in exec_reports_receiver {
+                let (_path, exec_report) = match res {
+                    Ok(ok) => ok,
+                    Err(AlreadyReportedToCommandline) => return ExitCode::FAILURE,
+                };
+
+                let ExecutionReport {
+                    run_info:
+                        RunInfo {
+                            platform,
+                            build_profile,
+                        },
+                    entries,
+                } = exec_report;
+
+                for entry in entries {
+                    let TestExecutionEntry { test_name, result } = entry;
+
+                    let test_path = TestPath::from_execution_report(&test_name).unwrap();
+                    let TestOutcomes {
+                        test_outcomes: recorded_test_outcomes,
+                        subtests: recorded_subtests,
+                    } = outcomes_by_test
+                        .entry(test_path.clone().into_owned())
+                        .or_default();
+
+                    let (reported_outcome, reported_subtests) = match result {
+                        TestExecutionResult::Complete { outcome, subtests } => (outcome, subtests),
+                        TestExecutionResult::JobMaybeTimedOut { status, subtests } => {
+                            if !status.is_empty() {
+                                log::warn!(
+                                    concat!(
+                                        "expected an empty `status` field for {:?}, ",
+                                        "but found the {:?} status"
+                                    ),
+                                    test_path,
+                                    status,
+                                )
+                            }
+                            (TestOutcome::Timeout, subtests)
+                        }
+                    };
+
+                    fn accumulate<Out>(
+                        recorded: &mut BTreeMap<Platform, BTreeMap<BuildProfile, Expectation<Out>>>,
+                        platform: Platform,
+                        build_profile: BuildProfile,
+                        reported_outcome: Out,
+                    ) where
+                        Out: EnumSetType + Hash,
+                    {
+                        match recorded.entry(platform).or_default().entry(build_profile) {
+                            std::collections::btree_map::Entry::Vacant(entry) => {
+                                entry.insert(Expectation::permanent(reported_outcome));
+                            }
+                            std::collections::btree_map::Entry::Occupied(mut entry) => {
+                                *entry.get_mut() |= reported_outcome
+                            }
+                        }
+                    }
+                    accumulate(
+                        &mut recorded_test_outcomes.reported,
+                        platform,
+                        build_profile,
+                        reported_outcome,
+                    );
+
+                    for reported_subtest in reported_subtests {
+                        let SubtestExecutionResult {
+                            subtest_name: reported_subtest_name,
+                            outcome: reported_outcome,
+                        } = reported_subtest;
+
+                        accumulate(
+                            &mut recorded_subtests
+                                .entry(reported_subtest_name.clone())
+                                .or_default()
+                                .reported,
+                            platform,
+                            build_profile,
+                            reported_outcome,
+                        );
+                    }
+                }
+            }
+
+            log::info!("metadata and reports gathered, now reconciling outcomes…");
+
+            let mut found_reconciliation_err = false;
+            let recombined_tests_iter =
+                outcomes_by_test
+                    .into_iter()
+                    .filter_map(|(test_path, outcomes)| {
+                        fn reconcile<Out>(
+                            outcomes: OutcomesForComparison<Out>,
+                            preset: ReportProcessingPreset,
+                        ) -> AnalyzeableProps<Out>
+                        where
+                            Out: Debug + Default + EnumSetType,
+                        {
+                            let OutcomesForComparison { metadata, reported } = outcomes;
+
+                            let metadata = metadata
+                                .map(|maybe_disabled| {
+                                    maybe_disabled.map_enabled(|opt| opt.unwrap_or_default())
+                                })
+                                .unwrap_or_default();
+
+                            let normalize = NormalizedExpectationPropertyValue::from_fully_expanded;
+
+                            let reconciled_expectations = metadata.map_enabled(|metadata| {
+                                let resolve = match preset {
+                                    ReportProcessingPreset::ResetAll => return normalize(reported),
+                                    ReportProcessingPreset::ResetContradictory => {
+                                        |meta: Expectation<_>, rep: Option<Expectation<_>>| {
+                                            rep.filter(|rep| !meta.is_superset(rep)).unwrap_or(meta)
+                                        }
+                                    }
+                                    ReportProcessingPreset::Merge => |meta, rep| match rep {
+                                        Some(rep) => meta | rep,
+                                        None => meta,
+                                    },
+                                };
+
+                                normalize(
+                                    Platform::iter()
+                                        .map(|platform| {
+                                            let build_profiles = BuildProfile::iter()
+                                                .map(|build_profile| {
+                                                    (
+                                                        build_profile,
+                                                        resolve(
+                                                            metadata.get(platform, build_profile),
+                                                            reported
+                                                                .get(&platform)
+                                                                .and_then(|rep| {
+                                                                    rep.get(&build_profile)
+                                                                })
+                                                                .copied(),
+                                                        ),
+                                                    )
+                                                })
+                                                .collect();
+                                            (platform, build_profiles)
+                                        })
+                                        .collect(),
+                                )
+                            });
+
+                            match reconciled_expectations {
+                                MaybeDisabled::Disabled => AnalyzeableProps {
+                                    is_disabled: true,
+                                    expectations: Default::default(),
+                                },
+                                MaybeDisabled::Enabled(expectations) => AnalyzeableProps {
+                                    is_disabled: false,
+                                    expectations: Some(expectations),
+                                },
+                            }
+                        }
+
+                        let TestOutcomes {
+                            test_outcomes,
+                            subtests: recorded_subtests,
+                        } = outcomes;
+
+                        let properties = reconcile(test_outcomes, preset);
+
+                        let mut subtests = BTreeMap::new();
+                        for (subtest_name, subtest) in recorded_subtests {
+                            let subtest_name = SectionHeader(subtest_name);
+                            if subtests.get(&subtest_name).is_some() {
+                                found_reconciliation_err = true;
+                                log::error!("internal error: duplicate test path {test_path:?}");
+                            }
+                            subtests.insert(
+                                subtest_name,
+                                Subtest {
+                                    properties: reconcile(subtest, preset),
+                                },
+                            );
+                        }
+
+                        if subtests.is_empty() && properties == Default::default() {
+                            None
+                        } else {
+                            Some((test_path, (properties, subtests)))
+                        }
+                    });
+
+            log::info!(
+                "outcome reconciliation complete, gathering tests back into new metadata files…"
+            );
+
+            let mut files = BTreeMap::<PathBuf, File>::new();
+            for (test_path, (properties, subtests)) in recombined_tests_iter {
+                let name = test_path.test_name().to_string();
+                let path = gecko_checkout.join(test_path.rel_metadata_path_fx().to_string());
+                let file = files.entry(path).or_default();
+                file.tests.insert(
+                    SectionHeader(name),
+                    Test {
+                        properties,
+                        subtests,
+                    },
+                );
+            }
+
+            log::info!("gathering of new metadata files completed, writing to file system…");
+
+            for (path, file) in files {
+                log::debug!("writing new metadata to {}", path.display());
+                match write_to_file(&path, metadata::format_file(&file)) {
+                    Ok(()) => (),
+                    Err(AlreadyReportedToCommandline) => {
+                        found_reconciliation_err = true;
+                    }
+                }
+            }
+
+            if found_reconciliation_err {
+                log::error!(concat!(
+                    "one or more errors found while reconciling, ",
+                    "exiting with failure; see above for more details"
+                ));
+                return ExitCode::FAILURE;
+            }
+
+            ExitCode::SUCCESS
+        }
         Subcommand::Format => {
             let raw_test_files_by_path = match read_metadata() {
                 Ok(paths) => paths,
@@ -133,9 +663,7 @@ fn run(cli: Cli) -> ExitCode {
             log::info!("formatting metadata in-place…");
             let mut fmt_err_found = false;
             for (path, file_contents) in raw_test_files_by_path {
-                match chumsky::Parser::parse(&metadata::File::parser(), &*file_contents)
-                    .into_result()
-                {
+                match chumsky::Parser::parse(&File::parser(), &*file_contents).into_result() {
                     Err(errors) => {
                         fmt_err_found = true;
                         render_metadata_parse_errors(&path, &file_contents, errors);

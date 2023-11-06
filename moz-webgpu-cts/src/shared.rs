@@ -1,11 +1,17 @@
 use std::{
+    borrow::Cow,
     collections::BTreeMap,
     fmt::{self, Debug, Display, Formatter},
     num::NonZeroUsize,
     ops::{BitOr, BitOrAssign},
+    path::Path,
 };
 
+use camino::{Utf8Component, Utf8Path};
+
 use enumset::{EnumSet, EnumSetType};
+use format::lazy_format;
+use joinery::JoinableIterator;
 use strum::IntoEnumIterator;
 
 use crate::metadata::{BuildProfile, Platform};
@@ -80,6 +86,13 @@ where
 
     pub fn iter(&self) -> impl Iterator<Item = Out> {
         self.inner().iter()
+    }
+
+    pub fn is_superset(&self, rep: &Expectation<Out>) -> bool
+    where
+        Out: std::fmt::Debug + Default + EnumSetType,
+    {
+        self.inner().is_superset(*rep.inner())
     }
 }
 
@@ -181,7 +194,7 @@ where
 /// Yes, the type is _gnarly_. Sorry about that. This is some complex domain, okay? 😆😭
 ///
 /// [`AnalyzeableProps`]: crate::metadata::AnalyzeableProps
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NormalizedExpectationPropertyValue<Out>(NormalizedExpectationPropertyValueData<Out>)
 where
     Out: EnumSetType;
@@ -194,6 +207,17 @@ pub type NormalizedExpectationPropertyValueData<Out> = MaybeCollapsed<
     NormalizedExpectationByBuildProfile<Out>,
     BTreeMap<Platform, NormalizedExpectationByBuildProfile<Out>>,
 >;
+
+impl<Out> Default for NormalizedExpectationPropertyValue<Out>
+where
+    Out: Default + EnumSetType,
+{
+    fn default() -> Self {
+        Self(MaybeCollapsed::Collapsed(MaybeCollapsed::Collapsed(
+            Default::default(),
+        )))
+    }
+}
 
 impl<Out> NormalizedExpectationPropertyValue<Out>
 where
@@ -217,12 +241,12 @@ where
 
     pub(crate) fn from_fully_expanded(
         outcomes: BTreeMap<Platform, BTreeMap<BuildProfile, Expectation<Out>>>,
-    ) -> Option<Self>
+    ) -> Self
     where
         Out: Default,
     {
         if outcomes.is_empty() {
-            return None;
+            return Self::default();
         }
 
         fn normalize<K, V, T, F>(
@@ -269,9 +293,347 @@ where
             }
         }
 
-        Some(NormalizedExpectationPropertyValue(normalize(
-            outcomes,
-            |by_build_profile| normalize(by_build_profile, std::convert::identity),
-        )))
+        NormalizedExpectationPropertyValue(normalize(outcomes, |by_build_profile| {
+            normalize(by_build_profile, std::convert::identity)
+        }))
     }
+
+    pub fn get(&self, platform: Platform, build_profile: BuildProfile) -> Expectation<Out>
+    where
+        Out: Default,
+    {
+        match self.inner() {
+            MaybeCollapsed::Collapsed(exps) => match exps {
+                MaybeCollapsed::Collapsed(exps) => *exps,
+                MaybeCollapsed::Expanded(exps) => {
+                    exps.get(&build_profile).copied().unwrap_or_default()
+                }
+            },
+            MaybeCollapsed::Expanded(exps) => exps
+                .get(&platform)
+                .and_then(|exps| match exps {
+                    MaybeCollapsed::Collapsed(exps) => Some(*exps),
+                    MaybeCollapsed::Expanded(exps) => exps.get(&build_profile).copied(),
+                })
+                .unwrap_or_default(),
+        }
+    }
+}
+
+/// A single symbolic path to a test and its metadata.
+///
+/// This API is useful as a common representation of a path for [`crate::report::ExecutionReport`]s
+/// and [`crate::metadata::File`]s.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(crate) struct TestPath<'a> {
+    pub scope: TestScope,
+    /// A relative offset into `scope`.
+    pub path: Cow<'a, Utf8Path>,
+    /// The variant of this particular test from this test's source code. If set, you should be
+    /// able to correlate this with
+    ///
+    /// Generally, a test in WPT is _either_ a single test, or a set of test variants. That is, for
+    /// a given `path`, there will be a single `variant: None`, or multiple tests with `variant:
+    /// Some(…)`.
+    pub variant: Option<Cow<'a, str>>,
+}
+
+const SCOPE_DIR_FX_PRIVATE_STR: &str = "testing/web-platform/mozilla/meta";
+const SCOPE_DIR_FX_PRIVATE_COMPONENTS: &[&str] = &["testing", "web-platform", "mozilla", "meta"];
+const SCOPE_DIR_FX_PUBLIC_STR: &str = "testing/web-platform/meta";
+const SCOPE_DIR_FX_PUBLIC_COMPONENTS: &[&str] = &["testing", "web-platform", "meta"];
+
+impl<'a> TestPath<'a> {
+    pub fn from_execution_report(
+        test_url_path: &'a str,
+    ) -> Result<Self, ExecutionReportPathError<'a>> {
+        let err = || ExecutionReportPathError { test_url_path };
+        let Some((scope, path)) = test_url_path
+            .strip_prefix("/_mozilla/")
+            .map(|stripped| (TestScope::FirefoxPrivate, stripped))
+            .or_else(|| {
+                test_url_path
+                    .strip_prefix('/')
+                    .map(|stripped| (TestScope::Public, stripped))
+            })
+        else {
+            return Err(err());
+        };
+
+        if path.contains('\\') {
+            return Err(err());
+        }
+
+        let (path, variant) = match path.split('/').next_back() {
+            Some(path_and_maybe_variants) => match path_and_maybe_variants.find('?') {
+                Some(query_params_start_idx) => (
+                    &path[..path.len() - (path_and_maybe_variants.len() - query_params_start_idx)],
+                    Some(&path_and_maybe_variants[query_params_start_idx..]),
+                ),
+                None => (path, None),
+            },
+            None => return Err(err()),
+        };
+
+        Ok(Self {
+            scope,
+            path: Utf8Path::new(path).into(),
+            variant: variant.map(Into::into),
+        })
+    }
+
+    pub fn from_fx_metadata_test(
+        rel_meta_file_path: &'a Path,
+        test_name: &'a str,
+    ) -> Result<Self, MetadataTestPathError<'a>> {
+        let rel_meta_file_path =
+            Utf8Path::new(rel_meta_file_path.to_str().ok_or(MetadataTestPathError {
+                rel_meta_file_path,
+                test_name,
+            })?);
+        let err = || MetadataTestPathError {
+            rel_meta_file_path: rel_meta_file_path.as_std_path(),
+            test_name,
+        };
+        let rel_meta_file_path = Utf8Path::new(
+            rel_meta_file_path
+                .as_str()
+                .strip_suffix(".ini")
+                .ok_or(err())?,
+        );
+
+        let (scope, path) = {
+            if let Ok(path) = rel_meta_file_path.strip_prefix(SCOPE_DIR_FX_PRIVATE_STR) {
+                (TestScope::FirefoxPrivate, path)
+            } else if let Ok(path) = rel_meta_file_path.strip_prefix(SCOPE_DIR_FX_PUBLIC_STR) {
+                (TestScope::Public, path)
+            } else {
+                return Err(err());
+            }
+        };
+
+        let (base_name, variant) = Self::split_test_base_name_from_variant(test_name);
+
+        if path.components().next_back() != Some(Utf8Component::Normal(base_name)) {
+            return Err(err());
+        }
+
+        Ok(Self {
+            scope,
+            path: Utf8Path::new(path).into(),
+            variant: variant.map(Into::into),
+        })
+    }
+
+    fn split_test_base_name_from_variant(url_ish_name: &'a str) -> (&'a str, Option<&'a str>) {
+        match url_ish_name.find('?') {
+            Some(query_params_start_idx) => (
+                &url_ish_name[..url_ish_name.len() - (url_ish_name.len() - query_params_start_idx)],
+                Some(&url_ish_name[query_params_start_idx..]),
+            ),
+            None => (url_ish_name, None),
+        }
+    }
+
+    pub fn into_owned(self) -> TestPath<'static> {
+        let Self {
+            scope,
+            path,
+            variant,
+        } = self;
+
+        TestPath {
+            scope: scope.clone(),
+            path: path.clone().into_owned().into(),
+            variant: variant.clone().map(|v| v.into_owned().into()),
+        }
+    }
+
+    pub(crate) fn test_name(&self) -> impl Display + '_ {
+        let Self {
+            path,
+            variant,
+            scope: _,
+        } = self;
+        let base_name = path.file_name().unwrap();
+
+        lazy_format!(move |f| {
+            write!(f, "{base_name}")?;
+            if let Some(variant) = variant {
+                write!(f, "{variant}")?;
+            }
+            Ok(())
+        })
+    }
+
+    pub(crate) fn rel_metadata_path_fx(&self) -> impl Display + '_ {
+        let Self {
+            path,
+            variant: _,
+            scope,
+        } = self;
+
+        let scope_dir = match scope {
+            TestScope::Public => SCOPE_DIR_FX_PUBLIC_COMPONENTS,
+            TestScope::FirefoxPrivate => SCOPE_DIR_FX_PRIVATE_COMPONENTS,
+        }
+        .iter()
+        .join_with(std::path::MAIN_SEPARATOR);
+
+        lazy_format!(move |f| { write!(f, "{scope_dir}{}{path}.ini", std::path::MAIN_SEPARATOR) })
+    }
+}
+
+impl Display for TestPath<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self {
+            variant,
+            // These are used by our call to `rel_metadata_path_fx` below:
+            scope: _,
+            path: _,
+        } = self;
+        write!(
+            f,
+            "{}{}",
+            self.rel_metadata_path_fx(),
+            lazy_format!(|f| {
+                match variant {
+                    Some(variant) => write!(f, "{variant}"),
+                    None => Ok(()),
+                }
+            })
+        )
+    }
+}
+
+#[derive(Debug)]
+pub struct ExecutionReportPathError<'a> {
+    test_url_path: &'a str,
+}
+
+impl Display for ExecutionReportPathError<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self { test_url_path } = self;
+        write!(
+            f,
+            concat!(
+                "failed to derive test path from execution report's entry ",
+                "for a test at URL path {:?}"
+            ),
+            test_url_path
+        )
+    }
+}
+
+#[derive(Debug)]
+pub struct MetadataTestPathError<'a> {
+    rel_meta_file_path: &'a Path,
+    test_name: &'a str,
+}
+
+impl Display for MetadataTestPathError<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self {
+            rel_meta_file_path,
+            test_name,
+        } = self;
+        write!(
+            f,
+            "failed to derive test path from relative metadata path {:?} and test name {:?}",
+            rel_meta_file_path, test_name
+        )
+    }
+}
+
+/// Symbolically represents a file root from which tests and metadata are based.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(crate) enum TestScope {
+    /// A public test available at some point in the history of [WPT upstream]. Note that while
+    /// a test may be public, metadata associated with it is in a private location.
+    ///
+    /// [WPT upstream]: https://github.com/web-platform-tests/wpt
+    Public,
+    /// A private test specific to Firefox.
+    FirefoxPrivate,
+}
+
+#[test]
+fn parse_test_path() {
+    assert_eq!(
+        TestPath::from_fx_metadata_test(
+            Path::new("testing/web-platform/mozilla/meta/blarg/cts.https.html.ini"),
+            "cts.https.html?stuff=things"
+        )
+        .unwrap(),
+        TestPath {
+            scope: TestScope::FirefoxPrivate,
+            path: Utf8Path::new("blarg/cts.https.html").into(),
+            variant: Some("?stuff=things".into()),
+        }
+    );
+
+    assert_eq!(
+        TestPath::from_fx_metadata_test(
+            Path::new("testing/web-platform/meta/stuff/things/cts.https.html.ini"),
+            "cts.https.html"
+        )
+        .unwrap(),
+        TestPath {
+            scope: TestScope::Public,
+            path: Utf8Path::new("stuff/things/cts.https.html").into(),
+            variant: None,
+        }
+    );
+}
+
+#[test]
+fn report_meta_match() {
+    macro_rules! assert_test_matches_meta {
+        ($test_run_path:expr, $rel_meta_path:expr, $test_section_header:expr) => {
+            assert_eq!(
+                TestPath::from_execution_report($test_run_path).unwrap(),
+                TestPath::from_fx_metadata_test(Path::new($rel_meta_path), $test_section_header)
+                    .unwrap()
+            )
+        };
+    }
+
+    assert_test_matches_meta!(
+        "/_mozilla/blarg/cts.https.html?stuff=things",
+        "testing/web-platform/mozilla/meta/blarg/cts.https.html.ini",
+        "cts.https.html?stuff=things"
+    );
+
+    assert_test_matches_meta!(
+        "/blarg/cts.https.html?stuff=things",
+        "testing/web-platform/meta/blarg/cts.https.html.ini",
+        "cts.https.html?stuff=things"
+    );
+}
+
+#[test]
+fn report_meta_reject() {
+    macro_rules! assert_test_rejects_meta {
+        ($test_run_path:expr, $rel_meta_path:expr, $test_section_header:expr) => {
+            assert_ne!(
+                TestPath::from_execution_report($test_run_path).unwrap(),
+                TestPath::from_fx_metadata_test(Path::new($rel_meta_path), $test_section_header)
+                    .unwrap()
+            )
+        };
+    }
+
+    assert_test_rejects_meta!(
+        "/blarg/cts.https.html?stuff=things",
+        // Wrong: the `mozilla` component shouldn't be after `web-platform`
+        "testing/web-platform/mozilla/meta/blarg/cts.https.html.ini",
+        "cts.https.html?stuff=things"
+    );
+
+    assert_test_rejects_meta!(
+        "/_mozilla/blarg/cts.https.html?stuff=things",
+        // Wrong: missing the `mozilla` component after `web-platform`
+        "testing/web-platform/meta/blarg/cts.https.html.ini",
+        "cts.https.html?stuff=things"
+    );
 }
