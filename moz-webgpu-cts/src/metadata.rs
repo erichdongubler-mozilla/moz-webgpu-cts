@@ -45,6 +45,18 @@ impl File {
 }
 
 impl<'a> metadata::File<'a> for File {
+    type Tests = Tests;
+
+    fn new(tests: Self::Tests) -> Self {
+        let Tests(tests) = tests;
+        Self { tests }
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct Tests(BTreeMap<SectionHeader, Test>);
+
+impl<'a> metadata::Tests<'a> for Tests {
     type Test = Test;
 
     fn add_test(
@@ -54,10 +66,11 @@ impl<'a> metadata::File<'a> for File {
         span: SimpleSpan,
         emitter: &mut Emitter<Rich<'a, char>>,
     ) {
-        if self.tests.get(&name).is_some() {
+        let Self(tests) = self;
+        if tests.get(&name).is_some() {
             emitter.emit(Rich::custom(span, "duplicate test {name:?}"));
         }
-        self.tests.insert(name, test);
+        tests.insert(name, test);
     }
 }
 

@@ -50,15 +50,9 @@ pub trait File<'a>
 where
     Self: Default,
 {
-    type Test: Test<'a>;
+    type Tests: Tests<'a>;
 
-    fn add_test(
-        &mut self,
-        name: SectionHeader,
-        test: Self::Test,
-        span: SimpleSpan,
-        emitter: &mut Emitter<Rich<'a, char>>,
-    );
+    fn new(tests: Self::Tests) -> Self;
 }
 
 /// Returns a parser for a single [`File`] written in the [WPT metadata format][self].
@@ -75,12 +69,12 @@ where
         .map_with(|test, e| (e.span(), test))
         .repeated()
         .collect::<Vec<_>>()
-        .validate(|tests, _e, emitter| {
-            let mut file = F::default();
-            for (span, (name, test)) in tests {
-                file.add_test(name, test, span, emitter)
+        .validate(|parsed_tests, _e, emitter| {
+            let mut tests = F::Tests::default();
+            for (span, (name, test)) in parsed_tests {
+                tests.add_test(name, test, span, emitter)
             }
-            file
+            F::new(tests)
         })
 }
 
@@ -442,6 +436,21 @@ r#"
         errs: [],
     }
     "###
+    );
+}
+
+pub trait Tests<'a>
+where
+    Self: Default,
+{
+    type Test: Test<'a>;
+
+    fn add_test(
+        &mut self,
+        name: SectionHeader,
+        test: Self::Test,
+        span: SimpleSpan,
+        emitter: &mut Emitter<Rich<'a, char>>,
     );
 }
 

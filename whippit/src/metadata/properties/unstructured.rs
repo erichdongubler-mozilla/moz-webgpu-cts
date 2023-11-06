@@ -3,7 +3,7 @@
 use chumsky::{input::Emitter, prelude::Rich, span::SimpleSpan, text::ascii::ident, Boxed, Parser};
 use indexmap::IndexMap;
 
-use crate::metadata::{File, ParseError, SectionHeader, Subtest, Subtests, Test};
+use crate::metadata::{File, ParseError, SectionHeader, Subtest, Subtests, Test, Tests};
 
 use super::{
     conditional::{self, unstructured_value},
@@ -22,6 +22,18 @@ impl<'a> UnstructuredFile<'a> {
 }
 
 impl<'a> File<'a> for UnstructuredFile<'a> {
+    type Tests = UnstructuredTests<'a>;
+
+    fn new(tests: Self::Tests) -> Self {
+        let UnstructuredTests(tests) = tests;
+        Self { tests }
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct UnstructuredTests<'a>(pub IndexMap<SectionHeader, UnstructuredTest<'a>>);
+
+impl<'a> Tests<'a> for UnstructuredTests<'a> {
     type Test = UnstructuredTest<'a>;
 
     fn add_test(
@@ -31,10 +43,11 @@ impl<'a> File<'a> for UnstructuredFile<'a> {
         span: SimpleSpan,
         emitter: &mut Emitter<Rich<'a, char>>,
     ) {
-        if self.tests.get(&name).is_some() {
+        let Self(tests) = self;
+        if tests.get(&name).is_some() {
             emitter.emit(Rich::custom(span, format!("duplicate test {name:?}")))
         }
-        self.tests.insert(name, test);
+        tests.insert(name, test);
     }
 }
 
