@@ -1240,7 +1240,7 @@ struct AlreadyReportedToCommandline;
 fn write_to_file(path: &Path, contents: impl Display) -> Result<(), AlreadyReportedToCommandline> {
     let mut out = match fs::File::create(path)
         .map_err(Report::msg)
-        .wrap_err_with(|| format!("error while reading file `{}`", path.display()))
+        .wrap_err_with(|| format!("error while creating new file at `{}`", path.display()))
     {
         Ok(f) => BufWriter::new(f),
         Err(e) => {
