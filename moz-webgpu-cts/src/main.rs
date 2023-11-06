@@ -1242,6 +1242,17 @@ fn write_to_file(path: &Path, contents: impl Display) -> Result<(), AlreadyRepor
         log::error!("{e}");
         AlreadyReportedToCommandline
     };
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(Report::msg)
+            .wrap_err_with(|| {
+                format!(
+                    "error while ensuring parent directories exist for `{}`",
+                    path.display()
+                )
+            })
+            .map_err(report_to_cmd_line)?;
+    }
     let mut out = fs::File::create(path)
         .map(BufWriter::new)
         .map_err(Report::msg)
