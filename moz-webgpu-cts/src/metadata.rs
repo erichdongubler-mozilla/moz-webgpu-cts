@@ -1,5 +1,6 @@
 use std::{
     collections::BTreeMap,
+    convert::Infallible,
     fmt::{self, Display},
     hash::Hash,
 };
@@ -21,7 +22,7 @@ use whippit::{
     reexport::chumsky::{
         input::Emitter,
         prelude::Rich,
-        primitive::{choice, just},
+        primitive::{choice, custom, just},
         span::SimpleSpan,
         text::{inline_whitespace, keyword},
         Boxed, IterParser, Parser,
@@ -35,6 +36,7 @@ use {insta::assert_debug_snapshot, whippit::reexport::chumsky::text::newline};
 
 #[derive(Clone, Debug, Default)]
 pub struct File {
+    pub properties: FileProps,
     pub tests: BTreeMap<SectionHeader, Test>,
 }
 
@@ -45,11 +47,40 @@ impl File {
 }
 
 impl<'a> metadata::File<'a> for File {
+    type Properties = FileProps;
     type Tests = Tests;
 
-    fn new(tests: Self::Tests) -> Self {
+    fn new(properties: Self::Properties, tests: Self::Tests) -> Self {
         let Tests(tests) = tests;
-        Self { tests }
+        Self { properties, tests }
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct FileProps {}
+
+impl<'a> Properties<'a> for FileProps {
+    type ParsedProperty = Infallible;
+
+    fn property_parser(
+        _helper: &mut PropertiesParseHelper<'a>,
+    ) -> Boxed<'a, 'a, &'a str, Self::ParsedProperty, ParseError<'a>> {
+        custom(|input| {
+            let point = input.offset();
+            Err(Rich::custom(
+                input.span(point..point),
+                "files currently do not support properties",
+            ))
+        })
+        .boxed()
+    }
+
+    fn add_property(
+        &mut self,
+        _prop: Self::ParsedProperty,
+        _emitter: &mut Emitter<Rich<'a, char>>,
+    ) {
+        panic!("attempted to add property");
     }
 }
 
@@ -136,7 +167,10 @@ impl<'a> metadata::Subtest<'a> for Subtest {
 
 pub fn format_file(file: &File) -> impl Display + '_ {
     lazy_format!(|f| {
-        let File { tests } = file;
+        let File {
+            properties: FileProps {},
+            tests,
+        } = file;
         write!(
             f,
             "{}",
@@ -709,6 +743,7 @@ r#"
     ParseResult {
         output: Some(
             File {
+                properties: FileProps,
                 tests: {
                     "asdf": Test {
                         properties: TestProps {
@@ -736,6 +771,7 @@ r#"
     ParseResult {
         output: Some(
             File {
+                properties: FileProps,
                 tests: {
                     "asdf": Test {
                         properties: TestProps {
@@ -771,6 +807,7 @@ r#"
     ParseResult {
         output: Some(
             File {
+                properties: FileProps,
                 tests: {
                     "asdf": Test {
                         properties: TestProps {

@@ -12,6 +12,7 @@ use super::{
 
 #[derive(Clone, Debug, Default)]
 pub struct UnstructuredFile<'a> {
+    pub properties: UnstructuredProperties<'a>,
     pub tests: IndexMap<SectionHeader, UnstructuredTest<'a>>,
 }
 
@@ -22,11 +23,12 @@ impl<'a> UnstructuredFile<'a> {
 }
 
 impl<'a> File<'a> for UnstructuredFile<'a> {
+    type Properties = UnstructuredProperties<'a>;
     type Tests = UnstructuredTests<'a>;
 
-    fn new(tests: Self::Tests) -> Self {
+    fn new(properties: Self::Properties, tests: Self::Tests) -> Self {
         let UnstructuredTests(tests) = tests;
-        Self { tests }
+        Self { properties, tests }
     }
 }
 

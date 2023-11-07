@@ -5,7 +5,8 @@ mod shared;
 
 use self::{
     metadata::{
-        BuildProfile, File, Platform, Subtest, SubtestOutcome, Test, TestOutcome, TestProps,
+        BuildProfile, File, FileProps, Platform, Subtest, SubtestOutcome, Test, TestOutcome,
+        TestProps,
     },
     process_reports::{MaybeDisabled, OutcomesForComparison, TestOutcomes},
     report::{
@@ -326,7 +327,11 @@ fn run(cli: Cli) -> ExitCode {
 
             log::info!("loading metadata for comparison to reports…");
             for (path, file) in meta_files_by_path {
-                let File { tests } = file;
+                let File {
+                    properties: FileProps {},
+                    tests,
+                } = file;
+
                 for (SectionHeader(name), test) in tests {
                     let Test {
                         properties:
@@ -709,7 +714,10 @@ fn run(cli: Cli) -> ExitCode {
                         match chumsky::Parser::parse(&metadata::File::parser(), file_contents)
                             .into_result()
                         {
-                            Ok(File { tests }) => Some(tests.into_iter().map(|(name, inner)| {
+                            Ok(File {
+                                properties: FileProps {},
+                                tests,
+                            }) => Some(tests.into_iter().map(|(name, inner)| {
                                 let SectionHeader(name) = &name;
                                 (
                                     SectionHeader(
