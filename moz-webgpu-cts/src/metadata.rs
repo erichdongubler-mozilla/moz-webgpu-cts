@@ -470,8 +470,8 @@ where
                                 e.span(),
                                 format!(
                                     concat!(
-                                        "{:?} is not a variable evaluatable ",
-                                        "for WebGPU's purposes, discarding"
+                                        "{:?} is not a variable evaluatable with ",
+                                        "tests and subtests for WebGPU's purposes, discarding"
                                     ),
                                     e.slice()
                                 ),
