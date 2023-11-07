@@ -616,7 +616,6 @@ name = "moz-webgpu-cts"
 version = "0.5.0"
 dependencies = [
  "camino",
- "chumsky",
  "clap",
  "enumset",
  "env_logger",

@@ -12,7 +12,7 @@ default = ["unstructured-properties"]
 unstructured-properties = ["dep:indexmap"]
 
 [dependencies]
-chumsky = { workspace = true }
+chumsky = { version = "1.0.0-alpha.6", features = ["label", "pratt"] }
 format = { workspace = true }
 indexmap = { workspace = true, optional = true }
 

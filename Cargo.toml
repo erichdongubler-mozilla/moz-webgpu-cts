@@ -6,7 +6,6 @@ members = [
 resolver = "2"
 
 [workspace.dependencies]
-chumsky = { version = "1.0.0-alpha.6", features = ["label", "pratt"] }
 format = "0.2.4"
 indexmap = "2.0.0"
 insta = "1.33.0"

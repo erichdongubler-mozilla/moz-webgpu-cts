@@ -35,7 +35,10 @@ use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 use regex::Regex;
 use strum::IntoEnumIterator;
 use wax::Glob;
-use whippit::{metadata::SectionHeader, reexport::chumsky::prelude::Rich};
+use whippit::{
+    metadata::SectionHeader,
+    reexport::chumsky::{self, prelude::Rich},
+};
 
 #[derive(Debug, Parser)]
 #[command(about, version)]

@@ -4,31 +4,34 @@ use std::{
     hash::Hash,
 };
 
-use chumsky::{
-    input::Emitter,
-    prelude::Rich,
-    primitive::{choice, just},
-    span::SimpleSpan,
-    text::{inline_whitespace, keyword},
-    Boxed, IterParser, Parser,
-};
 use enumset::EnumSetType;
 use format::lazy_format;
 use joinery::JoinableIterator;
 use serde::Deserialize;
 use strum::{EnumIter, IntoEnumIterator};
-use whippit::metadata::{
-    self, file_parser,
-    properties::{
-        ConditionalValue, Expr, Literal, Properties, PropertiesParseHelper, PropertyValue, Value,
+use whippit::{
+    metadata::{
+        self, file_parser,
+        properties::{
+            ConditionalValue, Expr, Literal, Properties, PropertiesParseHelper, PropertyValue,
+            Value,
+        },
+        ParseError, SectionHeader,
     },
-    ParseError, SectionHeader,
+    reexport::chumsky::{
+        input::Emitter,
+        prelude::Rich,
+        primitive::{choice, just},
+        span::SimpleSpan,
+        text::{inline_whitespace, keyword},
+        Boxed, IterParser, Parser,
+    },
 };
 
 use crate::shared::{Expectation, MaybeCollapsed, NormalizedExpectationPropertyValue};
 
 #[cfg(test)]
-use {chumsky::text::newline, insta::assert_debug_snapshot};
+use {insta::assert_debug_snapshot, whippit::reexport::chumsky::text::newline};
 
 #[derive(Clone, Debug, Default)]
 pub struct File {
