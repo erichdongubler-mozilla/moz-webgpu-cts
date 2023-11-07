@@ -159,7 +159,7 @@ fn format_test<'a>(name: &'a SectionHeader, test: &'a Test) -> impl Display + 'a
             f,
             "[{}]\n{}{}",
             name.escaped(),
-            format_properties(1, properties),
+            format_test_properties(1, properties),
             subtests
                 .iter()
                 .map(|(name, subtest)| {
@@ -168,7 +168,7 @@ fn format_test<'a>(name: &'a SectionHeader, test: &'a Test) -> impl Display + 'a
                         f,
                         "  [{}]\n{}",
                         name.escaped(),
-                        format_properties(2, properties)
+                        format_test_properties(2, properties)
                     ))
                 })
                 .join_with('\n')
@@ -176,7 +176,7 @@ fn format_test<'a>(name: &'a SectionHeader, test: &'a Test) -> impl Display + 'a
     })
 }
 
-fn format_properties<Out>(indentation: u8, property: &TestProps<Out>) -> impl Display + '_
+fn format_test_properties<Out>(indentation: u8, property: &TestProps<Out>) -> impl Display + '_
 where
     Out: Default + Display + EnumSetType + Eq + PartialEq,
 {
