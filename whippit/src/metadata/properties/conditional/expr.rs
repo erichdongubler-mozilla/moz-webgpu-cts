@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 #[cfg(test)]
 use insta::assert_debug_snapshot;
 
@@ -15,7 +17,7 @@ use crate::metadata::ParseError;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Literal<'a> {
     /// At time of writing, no escaping is used for string values in this implementation.
-    String(&'a str),
+    String(Cow<'a, str>),
 }
 
 impl<'a> Literal<'a> {
@@ -26,8 +28,14 @@ impl<'a> Literal<'a> {
             .repeated()
             .to_slice()
             .delimited_by(just('"'), just('"'))
-            .map(Literal::String)
+            .map(|s: &str| Literal::String(s.into()))
             .labelled("string literal")
+    }
+
+    pub fn to_static(&self) -> Literal<'static> {
+        match self {
+            Self::String(s) => Literal::String(s.clone().into_owned().into()),
+        }
     }
 }
 
@@ -35,7 +43,7 @@ impl<'a> Literal<'a> {
 /// properties](crate::metadata::properties). Usually the terminal of a [`Expr`] expression.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Value<'a> {
-    Variable(&'a str),
+    Variable(Cow<'a, str>),
     Literal(Literal<'a>),
 }
 
@@ -43,9 +51,16 @@ impl<'a> Value<'a> {
     /// Retrieve a parser for [`Self`]. Often used as input to [`Expr::parser`].
     pub fn parser() -> impl Clone + Parser<'a, &'a str, Value<'a>, ParseError<'a>> {
         choice((
-            ident().map(Value::Variable),
+            ident().map(|i: &str| Value::Variable(i.into())),
             Literal::parser().map(Value::Literal),
         ))
+    }
+
+    pub fn to_static(&self) -> Value<'static> {
+        match self {
+            Value::Variable(var) => Value::Variable(var.clone().into_owned().into()),
+            Value::Literal(lit) => Value::Literal(lit.to_static()),
+        }
     }
 }
 

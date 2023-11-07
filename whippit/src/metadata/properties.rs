@@ -168,8 +168,8 @@ impl<'a> PropertiesParseHelper<'a> {
     ///             conditions: vec![
     ///                 (
     ///                     Expr::Eq(
-    ///                         Box::new(Expr::Value(Value::Variable("os"))),
-    ///                         Box::new(Expr::Value(Value::Literal(Literal::String("win")))),
+    ///                         Box::new(Expr::Value(Value::Variable("os".into()))),
+    ///                         Box::new(Expr::Value(Value::Literal(Literal::String("win".into())))),
     ///                     ),
     ///                     "FAIL",
     ///                 ),

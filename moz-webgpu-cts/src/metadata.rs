@@ -452,7 +452,7 @@ where
             let try_match_var =
                 |acc: &mut Applicability, val: &_, inverted: bool, emitter: &mut Emitter<_>| {
                     match val {
-                        Value::Variable("debug") => {
+                        Value::Variable(var_name) if var_name == "debug" => {
                             let build_profile = if inverted {
                                 BuildProfile::Optimized
                             } else {
@@ -485,10 +485,10 @@ where
                     lhs, rhs,
                 ) {
                     (
-                        Expr::Value(Value::Variable("os")),
+                        Expr::Value(Value::Variable(var)),
                         Expr::Value(Value::Literal(Literal::String(lit))),
-                    ) => {
-                        let platform = match *lit {
+                    ) if var == "os" => {
+                        let platform = match &**lit {
                             "mac" => Some(Platform::MacOs),
                             "linux" => Some(Platform::Linux),
                             "win" => Some(Platform::Windows),
