@@ -38,7 +38,7 @@ where
                     .to_slice(),
             ),
         )
-        .then_ignore(just(':'))
+        .then_ignore(group((just(':').to(()), just(' ').or_not().to(()))))
         .then(value_parser.nested_in(unstructured_value()))
         .then_ignore(newline().or(end()))
         .labelled("conditional value rule")
@@ -72,7 +72,7 @@ fn test_conditional_rule() {
                         ),
                     ),
                 ),
-                " woot",
+                "woot",
             ),
         ),
         errs: [],
@@ -97,7 +97,7 @@ fn test_conditional_rule() {
                         ),
                     ),
                 ),
-                " woot",
+                "woot",
             ),
         ),
         errs: [],
@@ -128,7 +128,7 @@ fn test_conditional_rule() {
                         ),
                     ),
                 ),
-                " woot",
+                "woot",
             ),
         ),
         errs: [],
@@ -148,7 +148,7 @@ fn test_conditional_rule() {
                         "debug",
                     ),
                 ),
-                " ohnoes",
+                "ohnoes",
             ),
         ),
         errs: [],
@@ -360,7 +360,7 @@ fn test_conditional_value() {
                                 ),
                             ),
                         ),
-                        " great",
+                        "great",
                     ),
                 ],
                 fallback: None,
@@ -399,7 +399,7 @@ TIMEOUT
                                 ),
                             ),
                         ),
-                        " PASS",
+                        "PASS",
                     ),
                     (
                         Eq(
@@ -416,7 +416,7 @@ TIMEOUT
                                 ),
                             ),
                         ),
-                        " FAIL",
+                        "FAIL",
                     ),
                 ],
                 fallback: Some(
@@ -453,7 +453,7 @@ if os == "mac": PASS
                                 ),
                             ),
                         ),
-                        " PASS",
+                        "PASS",
                     ),
                 ],
                 fallback: None,
@@ -489,7 +489,7 @@ if os == "linux": FAIL
                                 ),
                             ),
                         ),
-                        " PASS",
+                        "PASS",
                     ),
                     (
                         Eq(
@@ -506,7 +506,7 @@ if os == "linux": FAIL
                                 ),
                             ),
                         ),
-                        " FAIL",
+                        "FAIL",
                     ),
                 ],
                 fallback: None,
@@ -542,7 +542,7 @@ if os == "linux": FAIL
                                 ),
                             ),
                         ),
-                        " PASS",
+                        "PASS",
                     ),
                     (
                         Eq(
@@ -559,7 +559,7 @@ if os == "linux": FAIL
                                 ),
                             ),
                         ),
-                        " FAIL",
+                        "FAIL",
                     ),
                 ],
                 fallback: None,
@@ -596,7 +596,7 @@ if os == "linux": FAIL
                                 ),
                             ),
                         ),
-                        " PASS",
+                        "PASS",
                     ),
                     (
                         Eq(
@@ -613,7 +613,7 @@ if os == "linux": FAIL
                                 ),
                             ),
                         ),
-                        " FAIL",
+                        "FAIL",
                     ),
                 ],
                 fallback: Some(
