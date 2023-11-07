@@ -289,11 +289,7 @@ impl<'a, Out> AnalyzeableProps<Out>
 where
     Out: Clone + Default + EnumSetType + Eq + PartialEq + Hash,
 {
-    fn insert(
-        &mut self,
-        prop: AnalyzeableProp<Out>,
-        emitter: &mut chumsky::input::Emitter<Rich<'a, char>>,
-    ) {
+    fn insert(&mut self, prop: AnalyzeableProp<Out>, emitter: &mut Emitter<Rich<'a, char>>) {
         let Self {
             is_disabled,
             expectations,
@@ -615,11 +611,7 @@ impl<'a> Properties<'a> for AnalyzeableProps<TestOutcome> {
         .boxed()
     }
 
-    fn add_property(
-        &mut self,
-        prop: Self::ParsedProperty,
-        emitter: &mut chumsky::input::Emitter<Rich<'a, char>>,
-    ) {
+    fn add_property(&mut self, prop: Self::ParsedProperty, emitter: &mut Emitter<Rich<'a, char>>) {
         self.insert(prop, emitter)
     }
 }
@@ -674,11 +666,7 @@ impl<'a> Properties<'a> for AnalyzeableProps<SubtestOutcome> {
         .boxed()
     }
 
-    fn add_property(
-        &mut self,
-        prop: Self::ParsedProperty,
-        emitter: &mut chumsky::input::Emitter<Rich<'a, char>>,
-    ) {
+    fn add_property(&mut self, prop: Self::ParsedProperty, emitter: &mut Emitter<Rich<'a, char>>) {
         self.insert(prop, emitter)
     }
 }
