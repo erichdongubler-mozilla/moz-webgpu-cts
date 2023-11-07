@@ -40,6 +40,15 @@ pub enum PropertyValue<C, V> {
     Conditional(ConditionalValue<C, V>),
 }
 
+impl<C, V> Default for PropertyValue<C, V>
+where
+    V: Default,
+{
+    fn default() -> Self {
+        Self::Unconditional(Default::default())
+    }
+}
+
 /// The core abstraction of strong property typing for [`File`]s, [`Test`]s, and [`Subtest`]s.
 ///
 /// It is used to initialize and accumulate into the implementing data structure to represent
