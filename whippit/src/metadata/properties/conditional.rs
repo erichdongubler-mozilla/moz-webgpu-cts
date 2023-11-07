@@ -10,7 +10,7 @@ use {
 
 use chumsky::{
     prelude::Rich,
-    primitive::{any, choice, end, group, just},
+    primitive::{any, end, group, just},
     text::{ascii::keyword, newline},
     IterParser, Parser,
 };
@@ -28,11 +28,18 @@ where
     Pc: Parser<'a, &'a str, C, ParseError<'a>>,
     Pv: Parser<'a, &'a str, V, ParseError<'a>>,
 {
-    let unstructured_value = unstructured_value();
     group((indent(indentation), keyword("if"), just(' ')))
-        .ignore_then(condition_parser.nested_in(unstructured_value.clone()))
-        .then_ignore(just(':'))
-        .then(value_parser.nested_in(unstructured_value))
+        .ignore_then(
+            condition_parser.nested_in(
+                any()
+                    .and_is(newline().or(just(':').to(())).not())
+                    .repeated()
+                    .at_least(1)
+                    .to_slice(),
+            ),
+        )
+        .then_ignore(group((just(':').to(()), just(' ').or_not().to(()))))
+        .then(value_parser.nested_in(unstructured_value()))
         .then_ignore(newline().or(end()))
         .labelled("conditional value rule")
 }
@@ -65,7 +72,7 @@ fn test_conditional_rule() {
                         ),
                     ),
                 ),
-                " woot",
+                "woot",
             ),
         ),
         errs: [],
@@ -90,7 +97,7 @@ fn test_conditional_rule() {
                         ),
                     ),
                 ),
-                " woot",
+                "woot",
             ),
         ),
         errs: [],
@@ -121,7 +128,7 @@ fn test_conditional_rule() {
                         ),
                     ),
                 ),
-                " woot",
+                "woot",
             ),
         ),
         errs: [],
@@ -141,7 +148,7 @@ fn test_conditional_rule() {
                         "debug",
                     ),
                 ),
-                " ohnoes",
+                "ohnoes",
             ),
         ),
         errs: [],
@@ -302,7 +309,7 @@ impl<C, V> ConditionalValue<C, V> {
 pub(crate) fn unstructured_value<'a>() -> impl Clone + Parser<'a, &'a str, &'a str, ParseError<'a>>
 {
     any()
-        .and_is(choice((newline(), just(":").to(()))).not())
+        .and_is(newline().not())
         .repeated()
         .at_least(1)
         .to_slice()
@@ -353,7 +360,7 @@ fn test_conditional_value() {
                                 ),
                             ),
                         ),
-                        " great",
+                        "great",
                     ),
                 ],
                 fallback: None,
@@ -392,7 +399,7 @@ TIMEOUT
                                 ),
                             ),
                         ),
-                        " PASS",
+                        "PASS",
                     ),
                     (
                         Eq(
@@ -409,7 +416,7 @@ TIMEOUT
                                 ),
                             ),
                         ),
-                        " FAIL",
+                        "FAIL",
                     ),
                 ],
                 fallback: Some(
@@ -446,7 +453,7 @@ if os == "mac": PASS
                                 ),
                             ),
                         ),
-                        " PASS",
+                        "PASS",
                     ),
                 ],
                 fallback: None,
@@ -482,7 +489,7 @@ if os == "linux": FAIL
                                 ),
                             ),
                         ),
-                        " PASS",
+                        "PASS",
                     ),
                     (
                         Eq(
@@ -499,7 +506,7 @@ if os == "linux": FAIL
                                 ),
                             ),
                         ),
-                        " FAIL",
+                        "FAIL",
                     ),
                 ],
                 fallback: None,
@@ -535,7 +542,7 @@ if os == "linux": FAIL
                                 ),
                             ),
                         ),
-                        " PASS",
+                        "PASS",
                     ),
                     (
                         Eq(
@@ -552,7 +559,7 @@ if os == "linux": FAIL
                                 ),
                             ),
                         ),
-                        " FAIL",
+                        "FAIL",
                     ),
                 ],
                 fallback: None,
@@ -589,7 +596,7 @@ if os == "linux": FAIL
                                 ),
                             ),
                         ),
-                        " PASS",
+                        "PASS",
                     ),
                     (
                         Eq(
@@ -606,7 +613,7 @@ if os == "linux": FAIL
                                 ),
                             ),
                         ),
-                        " FAIL",
+                        "FAIL",
                     ),
                 ],
                 fallback: Some(

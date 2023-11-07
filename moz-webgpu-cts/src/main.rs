@@ -35,7 +35,10 @@ use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 use regex::Regex;
 use strum::IntoEnumIterator;
 use wax::Glob;
-use whippit::{metadata::SectionHeader, reexport::chumsky::prelude::Rich};
+use whippit::{
+    metadata::SectionHeader,
+    reexport::chumsky::{self, prelude::Rich},
+};
 
 #[derive(Debug, Parser)]
 #[command(about, version)]
@@ -1238,27 +1241,29 @@ fn search_for_moz_central_ckt() -> Result<PathBuf, AlreadyReportedToCommandline>
 struct AlreadyReportedToCommandline;
 
 fn write_to_file(path: &Path, contents: impl Display) -> Result<(), AlreadyReportedToCommandline> {
-    let mut out = match fs::File::create(path)
-        .map_err(Report::msg)
-        .wrap_err_with(|| format!("error while reading file `{}`", path.display()))
-    {
-        Ok(f) => BufWriter::new(f),
-        Err(e) => {
-            log::error!("{e}");
-            return Err(AlreadyReportedToCommandline);
-        }
+    let report_to_cmd_line = |e| {
+        log::error!("{e}");
+        AlreadyReportedToCommandline
     };
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(Report::msg)
+            .wrap_err_with(|| {
+                format!(
+                    "error while ensuring parent directories exist for `{}`",
+                    path.display()
+                )
+            })
+            .map_err(report_to_cmd_line)?;
+    }
+    let mut out = fs::File::create(path)
+        .map(BufWriter::new)
+        .map_err(Report::msg)
+        .wrap_err_with(|| format!("error while creating new file at `{}`", path.display()))
+        .map_err(report_to_cmd_line)?;
     use io::Write;
-    match write!(&mut out, "{contents}")
+    write!(&mut out, "{contents}")
         .map_err(Report::msg)
         .wrap_err_with(|| format!("error while writing to `{}`", path.display()))
-    {
-        Ok(()) => (),
-        Err(e) => {
-            log::error!("{e}");
-            return Err(AlreadyReportedToCommandline);
-        }
-    }
-
-    Ok(())
+        .map_err(report_to_cmd_line)
 }
