@@ -5,7 +5,7 @@ mod shared;
 
 use self::{
     metadata::{
-        AnalyzeableProps, BuildProfile, File, Platform, Subtest, SubtestOutcome, Test, TestOutcome,
+        BuildProfile, File, Platform, Subtest, SubtestOutcome, Test, TestOutcome, TestProps,
     },
     process_reports::{MaybeDisabled, OutcomesForComparison, TestOutcomes},
     report::{
@@ -330,7 +330,7 @@ fn run(cli: Cli) -> ExitCode {
                 for (SectionHeader(name), test) in tests {
                     let Test {
                         properties:
-                            AnalyzeableProps {
+                            TestProps {
                                 is_disabled,
                                 expectations,
                             },
@@ -374,7 +374,7 @@ fn run(cli: Cli) -> ExitCode {
                     for (SectionHeader(subtest_name), subtest) in subtests {
                         let Subtest {
                             properties:
-                                AnalyzeableProps {
+                                TestProps {
                                     is_disabled,
                                     expectations,
                                 },
@@ -524,7 +524,7 @@ fn run(cli: Cli) -> ExitCode {
                         fn reconcile<Out>(
                             outcomes: OutcomesForComparison<Out>,
                             preset: ReportProcessingPreset,
-                        ) -> AnalyzeableProps<Out>
+                        ) -> TestProps<Out>
                         where
                             Out: Debug + Default + EnumSetType,
                         {
@@ -578,11 +578,11 @@ fn run(cli: Cli) -> ExitCode {
                             });
 
                             match reconciled_expectations {
-                                MaybeDisabled::Disabled => AnalyzeableProps {
+                                MaybeDisabled::Disabled => TestProps {
                                     is_disabled: true,
                                     expectations: Default::default(),
                                 },
-                                MaybeDisabled::Enabled(expectations) => AnalyzeableProps {
+                                MaybeDisabled::Enabled(expectations) => TestProps {
                                     is_disabled: false,
                                     expectations: Some(expectations),
                                 },
@@ -820,7 +820,7 @@ fn run(cli: Cli) -> ExitCode {
                     subtests,
                 } = test;
 
-                let AnalyzeableProps {
+                let TestProps {
                     is_disabled,
                     expectations,
                 } = properties;
@@ -926,7 +926,7 @@ fn run(cli: Cli) -> ExitCode {
                     let subtest_name = Arc::new(subtest_name);
 
                     let Subtest { properties } = subtest;
-                    let AnalyzeableProps {
+                    let TestProps {
                         is_disabled,
                         expectations,
                     } = properties;

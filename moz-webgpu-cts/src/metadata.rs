@@ -76,7 +76,7 @@ impl<'a> metadata::Tests<'a> for Tests {
 
 #[derive(Clone, Debug, Default)]
 pub struct Test {
-    pub properties: AnalyzeableProps<TestOutcome>,
+    pub properties: TestProps<TestOutcome>,
     pub subtests: BTreeMap<SectionHeader, Subtest>,
 }
 
@@ -88,7 +88,7 @@ impl Test {
 }
 
 impl<'a> metadata::Test<'a> for Test {
-    type Properties = AnalyzeableProps<TestOutcome>;
+    type Properties = TestProps<TestOutcome>;
     type Subtests = Subtests;
 
     fn new(_span: SimpleSpan, properties: Self::Properties, subtests: Self::Subtests) -> Self {
@@ -123,11 +123,11 @@ impl<'a> metadata::Subtests<'a> for Subtests {
 
 #[derive(Clone, Debug, Default)]
 pub struct Subtest {
-    pub properties: AnalyzeableProps<SubtestOutcome>,
+    pub properties: TestProps<SubtestOutcome>,
 }
 
 impl<'a> metadata::Subtest<'a> for Subtest {
-    type Properties = AnalyzeableProps<SubtestOutcome>;
+    type Properties = TestProps<SubtestOutcome>;
 
     fn new(_span: SimpleSpan, properties: Self::Properties) -> Self {
         Self { properties }
@@ -176,7 +176,7 @@ fn format_test<'a>(name: &'a SectionHeader, test: &'a Test) -> impl Display + 'a
     })
 }
 
-fn format_properties<Out>(indentation: u8, property: &AnalyzeableProps<Out>) -> impl Display + '_
+fn format_properties<Out>(indentation: u8, property: &TestProps<Out>) -> impl Display + '_
 where
     Out: Default + Display + EnumSetType + Eq + PartialEq,
 {
@@ -188,7 +188,7 @@ where
                 .into_iter()
                 .join_with("  ")
         ));
-        let AnalyzeableProps {
+        let TestProps {
             is_disabled,
             expectations,
         } = property;
@@ -281,7 +281,7 @@ pub enum BuildProfile {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct AnalyzeableProps<Out>
+pub struct TestProps<Out>
 where
     Out: EnumSetType,
 {
@@ -289,7 +289,7 @@ where
     pub expectations: Option<NormalizedExpectationPropertyValue<Out>>,
 }
 
-impl<Out> Default for AnalyzeableProps<Out>
+impl<Out> Default for TestProps<Out>
 where
     Out: EnumSetType,
 {
@@ -301,20 +301,20 @@ where
     }
 }
 
-impl<'a, Out> AnalyzeableProps<Out>
+impl<'a, Out> TestProps<Out>
 where
     Out: Clone + Default + EnumSetType + Eq + PartialEq + Hash,
 {
-    fn insert(&mut self, prop: AnalyzeableProp<Out>, emitter: &mut Emitter<Rich<'a, char>>) {
+    fn insert(&mut self, prop: TestProp<Out>, emitter: &mut Emitter<Rich<'a, char>>) {
         let Self {
             is_disabled,
             expectations,
         } = self;
 
-        let AnalyzeableProp { kind, span } = prop;
+        let TestProp { kind, span } = prop;
 
         match kind {
-            AnalyzeablePropKind::Expected(val) => {
+            TestPropKind::Expected(val) => {
                 if expectations.is_some() {
                     emitter.emit(Rich::custom(span, "duplicate `expected` key detected"));
                     return;
@@ -367,7 +367,7 @@ where
                     }
                 });
             }
-            AnalyzeablePropKind::Disabled => {
+            TestPropKind::Disabled => {
                 if *is_disabled {
                     emitter.emit(Rich::custom(span, "duplicate `disabled` key detected"))
                 }
@@ -384,16 +384,16 @@ pub struct Applicability {
 }
 
 #[derive(Clone, Debug)]
-pub struct AnalyzeableProp<Out>
+pub struct TestProp<Out>
 where
     Out: EnumSetType,
 {
     span: SimpleSpan,
-    kind: AnalyzeablePropKind<Out>,
+    kind: TestPropKind<Out>,
 }
 
 #[derive(Clone, Debug)]
-enum AnalyzeablePropKind<Out>
+enum TestPropKind<Out>
 where
     Out: EnumSetType,
 {
@@ -401,14 +401,14 @@ where
     Disabled,
 }
 
-impl<Out> AnalyzeableProp<Out>
+impl<Out> TestProp<Out>
 where
     Out: EnumSetType,
 {
     fn property_parser<'a, P>(
         helper: &mut PropertiesParseHelper<'a>,
         outcome_parser: P,
-    ) -> impl Parser<'a, &'a str, AnalyzeableProp<Out>, ParseError<'a>>
+    ) -> impl Parser<'a, &'a str, TestProp<Out>, ParseError<'a>>
     where
         Out: Eq + Hash + PartialEq,
         P: Clone + Parser<'a, &'a str, Out, ParseError<'a>>,
@@ -548,9 +548,9 @@ where
                     ))
                     .padded_by(inline_whitespace()),
                 )
-                .map_with(|((), val), e| AnalyzeableProp {
+                .map_with(|((), val), e| TestProp {
                     span: e.span(),
-                    kind: AnalyzeablePropKind::Expected(val),
+                    kind: TestPropKind::Expected(val),
                 }),
             helper
                 .parser(
@@ -568,9 +568,9 @@ where
                             ));
                         }
                     }
-                    AnalyzeableProp {
+                    TestProp {
                         span: e.span(),
-                        kind: AnalyzeablePropKind::Disabled,
+                        kind: TestPropKind::Disabled,
                     }
                 }),
         ))
@@ -609,12 +609,12 @@ impl Display for TestOutcome {
     }
 }
 
-impl<'a> Properties<'a> for AnalyzeableProps<TestOutcome> {
-    type ParsedProperty = AnalyzeableProp<TestOutcome>;
+impl<'a> Properties<'a> for TestProps<TestOutcome> {
+    type ParsedProperty = TestProp<TestOutcome>;
     fn property_parser(
         helper: &mut PropertiesParseHelper<'a>,
     ) -> Boxed<'a, 'a, &'a str, Self::ParsedProperty, ParseError<'a>> {
-        AnalyzeableProp::property_parser(
+        TestProp::property_parser(
             helper,
             choice((
                 keyword("OK").to(TestOutcome::Ok),
@@ -664,12 +664,12 @@ impl Display for SubtestOutcome {
     }
 }
 
-impl<'a> Properties<'a> for AnalyzeableProps<SubtestOutcome> {
-    type ParsedProperty = AnalyzeableProp<SubtestOutcome>;
+impl<'a> Properties<'a> for TestProps<SubtestOutcome> {
+    type ParsedProperty = TestProp<SubtestOutcome>;
     fn property_parser(
         helper: &mut PropertiesParseHelper<'a>,
     ) -> Boxed<'a, 'a, &'a str, Self::ParsedProperty, ParseError<'a>> {
-        AnalyzeableProp::property_parser(
+        TestProp::property_parser(
             helper,
             choice((
                 keyword("PASS").to(SubtestOutcome::Pass),
@@ -711,7 +711,7 @@ r#"
             File {
                 tests: {
                     "asdf": Test {
-                        properties: AnalyzeableProps {
+                        properties: TestProps {
                             is_disabled: false,
                             expectations: None,
                         },
@@ -738,13 +738,13 @@ r#"
             File {
                 tests: {
                     "asdf": Test {
-                        properties: AnalyzeableProps {
+                        properties: TestProps {
                             is_disabled: false,
                             expectations: None,
                         },
                         subtests: {
                             "blarg": Subtest {
-                                properties: AnalyzeableProps {
+                                properties: TestProps {
                                     is_disabled: false,
                                     expectations: None,
                                 },
@@ -773,13 +773,13 @@ r#"
             File {
                 tests: {
                     "asdf": Test {
-                        properties: AnalyzeableProps {
+                        properties: TestProps {
                             is_disabled: false,
                             expectations: None,
                         },
                         subtests: {
                             "blarg": Subtest {
-                                properties: AnalyzeableProps {
+                                properties: TestProps {
                                     is_disabled: false,
                                     expectations: Some(
                                         NormalizedExpectationPropertyValue(
@@ -838,13 +838,13 @@ r#"
             (
                 "asdf",
                 Test {
-                    properties: AnalyzeableProps {
+                    properties: TestProps {
                         is_disabled: false,
                         expectations: None,
                     },
                     subtests: {
                         "blarg": Subtest {
-                            properties: AnalyzeableProps {
+                            properties: TestProps {
                                 is_disabled: false,
                                 expectations: Some(
                                     NormalizedExpectationPropertyValue(
@@ -884,7 +884,7 @@ r#"
             (
                 "asdf",
                 Test {
-                    properties: AnalyzeableProps {
+                    properties: TestProps {
                         is_disabled: false,
                         expectations: Some(
                             NormalizedExpectationPropertyValue(
@@ -900,7 +900,7 @@ r#"
                     },
                     subtests: {
                         "blarg": Subtest {
-                            properties: AnalyzeableProps {
+                            properties: TestProps {
                                 is_disabled: false,
                                 expectations: Some(
                                     NormalizedExpectationPropertyValue(
@@ -939,13 +939,13 @@ r#"
             (
                 "asdf",
                 Test {
-                    properties: AnalyzeableProps {
+                    properties: TestProps {
                         is_disabled: false,
                         expectations: None,
                     },
                     subtests: {
                         "blarg": Subtest {
-                            properties: AnalyzeableProps {
+                            properties: TestProps {
                                 is_disabled: false,
                                 expectations: Some(
                                     NormalizedExpectationPropertyValue(
@@ -987,13 +987,13 @@ r#"
             (
                 "asdf",
                 Test {
-                    properties: AnalyzeableProps {
+                    properties: TestProps {
                         is_disabled: false,
                         expectations: None,
                     },
                     subtests: {
                         "blarg": Subtest {
-                            properties: AnalyzeableProps {
+                            properties: TestProps {
                                 is_disabled: false,
                                 expectations: Some(
                                     NormalizedExpectationPropertyValue(
@@ -1043,13 +1043,13 @@ r#"
             (
                 "cts.https.html?q=webgpu:api,validation,buffer,destroy:twice:*",
                 Test {
-                    properties: AnalyzeableProps {
+                    properties: TestProps {
                         is_disabled: false,
                         expectations: None,
                     },
                     subtests: {
                         ":": Subtest {
-                            properties: AnalyzeableProps {
+                            properties: TestProps {
                                 is_disabled: false,
                                 expectations: Some(
                                     NormalizedExpectationPropertyValue(
