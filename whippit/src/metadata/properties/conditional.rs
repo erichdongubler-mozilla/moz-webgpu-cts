@@ -10,7 +10,7 @@ use {
 
 use chumsky::{
     prelude::Rich,
-    primitive::{any, choice, end, group, just},
+    primitive::{any, end, group, just},
     text::{ascii::keyword, newline},
     IterParser, Parser,
 };
@@ -28,11 +28,18 @@ where
     Pc: Parser<'a, &'a str, C, ParseError<'a>>,
     Pv: Parser<'a, &'a str, V, ParseError<'a>>,
 {
-    let unstructured_value = unstructured_value();
     group((indent(indentation), keyword("if"), just(' ')))
-        .ignore_then(condition_parser.nested_in(unstructured_value.clone()))
+        .ignore_then(
+            condition_parser.nested_in(
+                any()
+                    .and_is(newline().or(just(':').to(())).not())
+                    .repeated()
+                    .at_least(1)
+                    .to_slice(),
+            ),
+        )
         .then_ignore(just(':'))
-        .then(value_parser.nested_in(unstructured_value))
+        .then(value_parser.nested_in(unstructured_value()))
         .then_ignore(newline().or(end()))
         .labelled("conditional value rule")
 }
@@ -302,7 +309,7 @@ impl<C, V> ConditionalValue<C, V> {
 pub(crate) fn unstructured_value<'a>() -> impl Clone + Parser<'a, &'a str, &'a str, ParseError<'a>>
 {
     any()
-        .and_is(choice((newline(), just(":").to(()))).not())
+        .and_is(newline().not())
         .repeated()
         .at_least(1)
         .to_slice()
