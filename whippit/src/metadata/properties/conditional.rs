@@ -272,6 +272,15 @@ pub struct ConditionalValue<C, V> {
     pub fallback: Option<V>,
 }
 
+impl<C, V> Default for ConditionalValue<C, V> {
+    fn default() -> Self {
+        Self {
+            conditions: Default::default(),
+            fallback: Default::default(),
+        }
+    }
+}
+
 impl<C, V> ConditionalValue<C, V> {
     pub(super) fn parser<'a, Pc, Pv>(
         indentation: u8,
