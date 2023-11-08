@@ -140,17 +140,8 @@ fn run(cli: Cli) -> ExitCode {
     };
 
     let read_metadata = || -> Result<_, AlreadyReportedToCommandline> {
-        let webgpu_cts_meta_parent_dir = {
-            path!(
-                &gecko_checkout
-                    | "testing"
-                    | "web-platform"
-                    | "mozilla"
-                    | "meta"
-                    | "webgpu"
-                    | "chunked"
-            )
-        };
+        let webgpu_cts_meta_parent_dir =
+            { path!(&gecko_checkout | "testing" | "web-platform" | "mozilla" | "meta" | "webgpu") };
 
         let mut found_err = false;
         let collected =
@@ -1206,15 +1197,7 @@ fn run(cli: Cli) -> ExitCode {
         }
         Subcommand::ReadTestVariants => {
             let webgpu_cts_test_parent_dir = {
-                path!(
-                    &gecko_checkout
-                        | "testing"
-                        | "web-platform"
-                        | "mozilla"
-                        | "tests"
-                        | "webgpu"
-                        | "chunked"
-                )
+                path!(&gecko_checkout | "testing" | "web-platform" | "mozilla" | "tests" | "webgpu")
             };
 
             let tests_by_path = match read_gecko_files_at(
