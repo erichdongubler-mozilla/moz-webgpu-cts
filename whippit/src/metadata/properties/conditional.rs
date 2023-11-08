@@ -634,4 +634,60 @@ if os == "linux": FAIL
     }
     "###
     );
+
+    assert_debug_snapshot!(
+        conditional_value(1).parse(r#"
+  if os == "mac": [dom.webgpu.enabled:true, dom.webgpu.workers.enabled:true, dom.webgpu.testing.assert-hardware-adapter:true]
+  if os == "windows": [dom.webgpu.enabled:true, dom.webgpu.workers.enabled:true, dom.webgpu.testing.assert-hardware-adapter:true]
+  [dom.webgpu.enabled:true, dom.webgpu.workers.enabled:true]
+"#),
+        @r###"
+    ParseResult {
+        output: Some(
+            ConditionalValue {
+                conditions: [
+                    (
+                        Eq(
+                            Value(
+                                Variable(
+                                    "os",
+                                ),
+                            ),
+                            Value(
+                                Literal(
+                                    String(
+                                        "mac",
+                                    ),
+                                ),
+                            ),
+                        ),
+                        "[dom.webgpu.enabled:true, dom.webgpu.workers.enabled:true, dom.webgpu.testing.assert-hardware-adapter:true]",
+                    ),
+                    (
+                        Eq(
+                            Value(
+                                Variable(
+                                    "os",
+                                ),
+                            ),
+                            Value(
+                                Literal(
+                                    String(
+                                        "windows",
+                                    ),
+                                ),
+                            ),
+                        ),
+                        "[dom.webgpu.enabled:true, dom.webgpu.workers.enabled:true, dom.webgpu.testing.assert-hardware-adapter:true]",
+                    ),
+                ],
+                fallback: Some(
+                    "[dom.webgpu.enabled:true, dom.webgpu.workers.enabled:true]",
+                ),
+            },
+        ),
+        errs: [],
+    }
+    "###
+    );
 }

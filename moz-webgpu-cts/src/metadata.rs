@@ -1,7 +1,6 @@
 use std::{
     collections::BTreeMap,
-    convert::Infallible,
-    fmt::{self, Display},
+    fmt::{self, Display, Formatter},
     hash::Hash,
 };
 
@@ -22,9 +21,9 @@ use whippit::{
     reexport::chumsky::{
         input::Emitter,
         prelude::Rich,
-        primitive::{choice, custom, just},
+        primitive::{any, choice, end, group, just, one_of},
         span::SimpleSpan,
-        text::{inline_whitespace, keyword},
+        text::{ascii, inline_whitespace, keyword, newline},
         Boxed, IterParser, Parser,
     },
 };
@@ -32,7 +31,7 @@ use whippit::{
 use crate::shared::{Expectation, MaybeCollapsed, NormalizedExpectationPropertyValue};
 
 #[cfg(test)]
-use {insta::assert_debug_snapshot, whippit::reexport::chumsky::text::newline};
+use insta::assert_debug_snapshot;
 
 #[derive(Clone, Debug, Default)]
 pub struct File {
@@ -57,31 +56,399 @@ impl<'a> metadata::File<'a> for File {
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct FileProps {}
+pub struct FileProps {
+    pub is_disabled: Option<PropertyValue<Expr<Value<'static>>, String>>,
+    #[allow(clippy::type_complexity)]
+    pub prefs: Option<PropertyValue<Expr<Value<'static>>, Vec<(String, String)>>>,
+    pub tags: Option<PropertyValue<Expr<Value<'static>>, Vec<String>>>,
+}
 
 impl<'a> Properties<'a> for FileProps {
-    type ParsedProperty = Infallible;
+    type ParsedProperty = (SimpleSpan, FileProp);
 
     fn property_parser(
-        _helper: &mut PropertiesParseHelper<'a>,
+        helper: &mut PropertiesParseHelper<'a>,
     ) -> Boxed<'a, 'a, &'a str, Self::ParsedProperty, ParseError<'a>> {
-        custom(|input| {
-            let point = input.offset();
-            Err(Rich::custom(
-                input.span(point..point),
-                "files currently do not support properties",
-            ))
-        })
-        .boxed()
+        let conditional_term = Expr::parser(Value::parser().map(|expr| expr.to_static()));
+
+        let prefs = helper
+            .parser(
+                just("prefs").to(()),
+                conditional_term.clone(),
+                group((
+                    ascii::ident()
+                        .or(one_of("_-").to_slice())
+                        .repeated()
+                        .at_least(1)
+                        .separated_by(just('.'))
+                        .to_slice()
+                        .map(|s: &str| s.to_owned()),
+                    just(':').to(()),
+                    any()
+                        .and_is(
+                            choice((newline().to(()), end().to(()), one_of(",[]").to(()))).not(),
+                        )
+                        .repeated()
+                        .at_least(1)
+                        .to_slice()
+                        .map(|s: &str| s.to_owned())
+                        .labelled("pref. value"),
+                ))
+                .map(|(key, (), val)| (key, val))
+                .separated_by(just(',').padded_by(inline_whitespace()))
+                .collect()
+                .delimited_by(
+                    just('[').padded_by(inline_whitespace()),
+                    just(']').padded_by(inline_whitespace()),
+                ),
+            )
+            .map(|((), prefs)| FileProp::Prefs(prefs));
+
+        let tags = helper
+            .parser(
+                keyword("tags").to(()),
+                conditional_term.clone(),
+                ascii::ident()
+                    .map(|i: &str| i.to_owned())
+                    .separated_by(just(',').padded_by(inline_whitespace()))
+                    .collect()
+                    .delimited_by(
+                        just('[').padded_by(inline_whitespace()),
+                        just(']').padded_by(inline_whitespace()),
+                    )
+                    .validate(|idents: Vec<_>, e, emitter| {
+                        if idents.is_empty() {
+                            emitter.emit(Rich::custom(e.span(), "no tags specified"));
+                        }
+                        idents
+                    }),
+            )
+            .map(|((), tags)| FileProp::Tags(tags));
+
+        let disabled = helper
+            .parser(
+                keyword("disabled").to(()),
+                conditional_term,
+                any()
+                    .and_is(newline().or(end()).not())
+                    .repeated()
+                    .at_least(1)
+                    .to_slice()
+                    .map(|s: &str| s.to_owned()),
+            )
+            .map(|((), is_disabled)| FileProp::Disabled(is_disabled));
+
+        choice((prefs, tags, disabled))
+            .map_with(|prop, e| (e.span(), prop))
+            .boxed()
     }
 
-    fn add_property(
-        &mut self,
-        _prop: Self::ParsedProperty,
-        _emitter: &mut Emitter<Rich<'a, char>>,
-    ) {
-        panic!("attempted to add property");
+    fn add_property(&mut self, prop: Self::ParsedProperty, emitter: &mut Emitter<Rich<'a, char>>) {
+        let (span, prop) = prop;
+        let Self {
+            is_disabled,
+            prefs,
+            tags,
+        } = self;
+        macro_rules! check_dupe_then_insert {
+            ($new:expr, $old:expr, $prop_name:literal) => {{
+                if $old.replace($new).is_some() {
+                    emitter.emit(Rich::custom(
+                        span,
+                        concat!(
+                            "duplicate `",
+                            $prop_name,
+                            "` property detected; discarding oldest"
+                        ),
+                    ));
+                }
+            }};
+        }
+        match prop {
+            FileProp::Prefs(new_prefs) => check_dupe_then_insert!(new_prefs, prefs, "prefs"),
+            FileProp::Tags(new_tags) => check_dupe_then_insert!(new_tags, tags, "tags"),
+            FileProp::Disabled(new_is_disabled) => {
+                check_dupe_then_insert!(new_is_disabled, is_disabled, "disabled")
+            }
+        }
     }
+}
+
+#[test]
+fn file_props() {
+    let parser = FileProps::property_parser(&mut PropertiesParseHelper::new(0));
+
+    insta::assert_debug_snapshot!(
+        parser.parse("prefs: []"),
+        @r###"
+    ParseResult {
+        output: Some(
+            (
+                0..9,
+                Prefs(
+                    Unconditional(
+                        [],
+                    ),
+                ),
+            ),
+        ),
+        errs: [],
+    }
+    "###
+    );
+
+    insta::assert_debug_snapshot!(
+        parser.parse("prefs: [dom.webgpu.enabled:true]"),
+        @r###"
+    ParseResult {
+        output: Some(
+            (
+                0..32,
+                Prefs(
+                    Unconditional(
+                        [
+                            (
+                                "dom.webgpu.enabled",
+                                "true",
+                            ),
+                        ],
+                    ),
+                ),
+            ),
+        ),
+        errs: [],
+    }
+    "###
+    );
+
+    insta::assert_debug_snapshot!(
+        parser.parse("prefs: [dom.webgpu.enabled:[notvalidyet]]"),
+        @r###"
+    ParseResult {
+        output: None,
+        errs: [
+            found ''d'' at 8..9 expected "property value",
+        ],
+    }
+    "###
+    );
+
+    insta::assert_debug_snapshot!(
+        parser.parse("prefs: [dom.webgpu.enabled:true, dom.webgpu.workers.enabled:true, dom.webgpu.testing.assert-hardware-adapter:true]"),
+        @r###"
+    ParseResult {
+        output: Some(
+            (
+                0..114,
+                Prefs(
+                    Unconditional(
+                        [
+                            (
+                                "dom.webgpu.enabled",
+                                "true",
+                            ),
+                            (
+                                "dom.webgpu.workers.enabled",
+                                "true",
+                            ),
+                            (
+                                "dom.webgpu.testing.assert-hardware-adapter",
+                                "true",
+                            ),
+                        ],
+                    ),
+                ),
+            ),
+        ),
+        errs: [],
+    }
+    "###
+    );
+
+    insta::assert_debug_snapshot!(
+        parser.parse("tags: []"),
+        @r###"
+    ParseResult {
+        output: Some(
+            (
+                0..8,
+                Tags(
+                    Unconditional(
+                        [],
+                    ),
+                ),
+            ),
+        ),
+        errs: [
+            no tags specified at 6..8,
+        ],
+    }
+    "###
+    );
+
+    insta::assert_debug_snapshot!(
+        parser.parse("tags: [webgpu]"),
+        @r###"
+    ParseResult {
+        output: Some(
+            (
+                0..14,
+                Tags(
+                    Unconditional(
+                        [
+                            "webgpu",
+                        ],
+                    ),
+                ),
+            ),
+        ),
+        errs: [],
+    }
+    "###
+    );
+
+    insta::assert_debug_snapshot!(
+        parser.parse("tags: [INVAL!D]"),
+        @r###"
+    ParseResult {
+        output: None,
+        errs: [
+            found ''!'' at 12..13 expected '']'',
+        ],
+    }
+    "###
+    );
+
+    let parser = parser.padded();
+
+    insta::assert_debug_snapshot!(
+        parser.parse(
+        r###"
+prefs:
+  if os == "mac": [dom.webgpu.enabled:true, dom.webgpu.workers.enabled:true, dom.webgpu.testing.assert-hardware-adapter:true]
+  if os == "windows": [dom.webgpu.enabled:true, dom.webgpu.workers.enabled:true, dom.webgpu.testing.assert-hardware-adapter:true]
+  [dom.webgpu.enabled:true, dom.webgpu.workers.enabled:true]
+tags: [webgpu]
+disabled:
+  if release_or_beta: https://mozilla-hub.atlassian.net/browse/FFXP-223
+"###
+    ),
+    @r###"
+    ParseResult {
+        output: None,
+        errs: [
+            found ''\n'' at 324..325 expected end of input,
+        ],
+    }
+    "###
+        );
+}
+
+#[derive(Clone, Debug)]
+pub enum FileProp {
+    Prefs(PropertyValue<Expr<Value<'static>>, Vec<(String, String)>>),
+    Tags(PropertyValue<Expr<Value<'static>>, Vec<String>>),
+    Disabled(PropertyValue<Expr<Value<'static>>, String>),
+}
+
+fn format_file_properties(props: &FileProps) -> impl Display + '_ {
+    fn write_prop_val<'a, V>(
+        prop_name: &'a str,
+        val: &'a PropertyValue<Expr<Value>, V>,
+        disp_rhs: impl Fn(&V, &mut Formatter<'_>) -> fmt::Result + 'a,
+        f: &mut Formatter<'_>,
+    ) -> fmt::Result {
+        fn disp_condition(cond: &Expr<Value<'_>>, f: &mut Formatter<'_>) -> fmt::Result {
+            match cond {
+                Expr::Value(val) => match val {
+                    Value::Variable(var) => write!(f, "{var}"),
+                    Value::Literal(lit) => match lit {
+                        Literal::String(s) => write!(f, "{s:?}"),
+                    },
+                },
+                Expr::And(lhs, rhs) => {
+                    disp_condition(lhs, f)?;
+                    write!(f, " and ")?;
+                    disp_condition(rhs, f)
+                }
+                Expr::Not(cond) => {
+                    write!(f, "not ")?;
+                    disp_condition(cond, f)
+                }
+                // TODO: almost certainly not gonna be correct with precedence rules. Eek!
+                Expr::Eq(rhs, lhs) => {
+                    disp_condition(rhs, f)?;
+                    write!(f, " == ")?;
+                    disp_condition(lhs, f)
+                }
+            }
+        }
+
+        write!(f, "{prop_name}:")?;
+        match val {
+            PropertyValue::Unconditional(val) => {
+                write!(f, " ")?;
+                disp_rhs(val, f)?;
+                writeln!(f)?;
+            }
+            PropertyValue::Conditional(ConditionalValue {
+                conditions,
+                fallback,
+            }) => {
+                writeln!(f)?;
+                for (condition, rhs) in conditions {
+                    write!(f, "  if ")?;
+                    disp_condition(condition, f)?;
+                    write!(f, ": ")?;
+                    disp_rhs(rhs, f)?;
+                    writeln!(f)?;
+                }
+                if let Some(fallback) = fallback {
+                    write!(f, "  ")?;
+                    disp_rhs(fallback, f)?;
+                    writeln!(f)?;
+                }
+            }
+        }
+        Ok(())
+    }
+    lazy_format!(|f| {
+        let FileProps {
+            is_disabled,
+            prefs,
+            tags,
+        } = props;
+
+        if let Some(prefs) = prefs {
+            write_prop_val(
+                "prefs",
+                prefs,
+                |prefs: &Vec<_>, f| {
+                    let inner = prefs
+                        .iter()
+                        .map(|(key, val)| lazy_format!("{key}:{val}"))
+                        .join_with(", ");
+                    write!(f, "[{inner}]")
+                },
+                f,
+            )?;
+        }
+
+        if let Some(tags) = tags {
+            write_prop_val(
+                "tags",
+                tags,
+                |tags: &Vec<_>, f| write!(f, "[{}]", tags.iter().join_with(", ")),
+                f,
+            )?;
+        }
+
+        if let Some(is_disabled) = is_disabled {
+            write_prop_val("disabled", is_disabled, Display::fmt, f)?;
+        }
+
+        Ok(())
+    })
 }
 
 #[derive(Debug, Default)]
@@ -167,18 +534,13 @@ impl<'a> metadata::Subtest<'a> for Subtest {
 
 pub fn format_file(file: &File) -> impl Display + '_ {
     lazy_format!(|f| {
-        let File {
-            properties: FileProps {},
-            tests,
-        } = file;
-        write!(
-            f,
-            "{}",
-            tests
-                .iter()
-                .map(|(name, test)| format_test(name, test))
-                .join_with("\n\n")
-        )
+        let File { properties, tests } = file;
+        let properties = format_file_properties(properties);
+        let tests = tests
+            .iter()
+            .map(|(name, test)| format_test(name, test))
+            .join_with("\n\n");
+        write!(f, "{properties}{tests}")
     })
 }
 
@@ -743,7 +1105,11 @@ r#"
     ParseResult {
         output: Some(
             File {
-                properties: FileProps,
+                properties: FileProps {
+                    is_disabled: None,
+                    prefs: None,
+                    tags: None,
+                },
                 tests: {
                     "asdf": Test {
                         properties: TestProps {
@@ -771,7 +1137,11 @@ r#"
     ParseResult {
         output: Some(
             File {
-                properties: FileProps,
+                properties: FileProps {
+                    is_disabled: None,
+                    prefs: None,
+                    tags: None,
+                },
                 tests: {
                     "asdf": Test {
                         properties: TestProps {
@@ -807,7 +1177,11 @@ r#"
     ParseResult {
         output: Some(
             File {
-                properties: FileProps,
+                properties: FileProps {
+                    is_disabled: None,
+                    prefs: None,
+                    tags: None,
+                },
                 tests: {
                     "asdf": Test {
                         properties: TestProps {

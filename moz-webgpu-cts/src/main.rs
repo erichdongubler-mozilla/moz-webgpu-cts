@@ -727,7 +727,7 @@ fn run(cli: Cli) -> ExitCode {
                             .into_result()
                         {
                             Ok(File {
-                                properties: FileProps {},
+                                properties: _,
                                 tests,
                             }) => Some(tests.into_iter().map(|(name, inner)| {
                                 let SectionHeader(name) = &name;
