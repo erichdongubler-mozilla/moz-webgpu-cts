@@ -50,15 +50,10 @@ pub trait File<'a>
 where
     Self: Default,
 {
-    type Test: Test<'a>;
+    type Properties: Properties<'a>;
+    type Tests: Tests<'a>;
 
-    fn add_test(
-        &mut self,
-        name: SectionHeader,
-        test: Self::Test,
-        span: SimpleSpan,
-        emitter: &mut Emitter<Rich<'a, char>>,
-    );
+    fn new(properties: Self::Properties, tests: Self::Tests) -> Self;
 }
 
 /// Returns a parser for a single [`File`] written in the [WPT metadata format][self].
@@ -69,18 +64,29 @@ pub fn file_parser<'a, F>() -> impl Parser<'a, &'a str, F, ParseError<'a>>
 where
     F: File<'a>,
 {
+    enum Item<T, P> {
+        Property(P),
+        Test(T),
+    }
     filler()
-        .ignore_then(test_parser())
+        .ignore_then(choice((
+            test_parser().map(Item::Test),
+            F::Properties::property_parser(&mut PropertiesParseHelper::new(0)).map(Item::Property),
+        )))
         .then_ignore(filler())
         .map_with(|test, e| (e.span(), test))
         .repeated()
         .collect::<Vec<_>>()
-        .validate(|tests, _e, emitter| {
-            let mut file = F::default();
-            for (span, (name, test)) in tests {
-                file.add_test(name, test, span, emitter)
+        .validate(|parsed_tests, _e, emitter| {
+            let mut properties = F::Properties::default();
+            let mut tests = F::Tests::default();
+            for (span, item) in parsed_tests {
+                match item {
+                    Item::Test((name, test)) => tests.add_test(name, test, span, emitter),
+                    Item::Property(prop) => properties.add_property(prop, emitter),
+                }
             }
-            file
+            F::new(properties, tests)
         })
 }
 
@@ -98,6 +104,7 @@ fn smoke_parser() {
     ParseResult {
         output: Some(
             UnstructuredFile {
+                properties: {},
                 tests: {},
             },
         ),
@@ -110,6 +117,7 @@ fn smoke_parser() {
     ParseResult {
         output: Some(
             UnstructuredFile {
+                properties: {},
                 tests: {
                     "hoot": UnstructuredTest {
                         properties: {},
@@ -127,6 +135,7 @@ fn smoke_parser() {
     ParseResult {
         output: Some(
             UnstructuredFile {
+                properties: {},
                 tests: {
                     "blarg": UnstructuredTest {
                         properties: {},
@@ -144,6 +153,7 @@ fn smoke_parser() {
     ParseResult {
         output: Some(
             UnstructuredFile {
+                properties: {},
                 tests: {
                     "blarg": UnstructuredTest {
                         properties: {},
@@ -166,6 +176,7 @@ fn smoke_parser() {
     ParseResult {
         output: Some(
             UnstructuredFile {
+                properties: {},
                 tests: {
                     "blarg": UnstructuredTest {
                         properties: {},
@@ -188,6 +199,7 @@ fn smoke_parser() {
     ParseResult {
         output: Some(
             UnstructuredFile {
+                properties: {},
                 tests: {
                     "blarg": UnstructuredTest {
                         properties: {},
@@ -210,6 +222,7 @@ fn smoke_parser() {
     ParseResult {
         output: Some(
             UnstructuredFile {
+                properties: {},
                 tests: {
                     "blarg": UnstructuredTest {
                         properties: {
@@ -242,6 +255,7 @@ fn smoke_parser() {
     ParseResult {
         output: Some(
             UnstructuredFile {
+                properties: {},
                 tests: {
                     "blarg": UnstructuredTest {
                         properties: {
@@ -276,7 +290,7 @@ fn smoke_parser() {
     ParseResult {
         output: None,
         errs: [
-            found '' '' at 66..67 expected "test section header",
+            found '' '' at 66..67 expected "test section header", or "indentation at the proper level",
         ],
     }
     "###);
@@ -292,6 +306,7 @@ fn smoke_parser() {
     ParseResult {
         output: Some(
             UnstructuredFile {
+                properties: {},
                 tests: {
                     "blarg": UnstructuredTest {
                         properties: {
@@ -331,6 +346,7 @@ r#"
     ParseResult {
         output: Some(
             UnstructuredFile {
+                properties: {},
                 tests: {
                     "asdf": UnstructuredTest {
                         properties: {},
@@ -388,6 +404,7 @@ r#"
     ParseResult {
         output: Some(
             UnstructuredFile {
+                properties: {},
                 tests: {
                     "asdf": UnstructuredTest {
                         properties: {
@@ -426,6 +443,7 @@ r#"
     ParseResult {
         output: Some(
             UnstructuredFile {
+                properties: {},
                 tests: {
                     "asdf": UnstructuredTest {
                         properties: {
@@ -442,6 +460,21 @@ r#"
         errs: [],
     }
     "###
+    );
+}
+
+pub trait Tests<'a>
+where
+    Self: Default,
+{
+    type Test: Test<'a>;
+
+    fn add_test(
+        &mut self,
+        name: SectionHeader,
+        test: Self::Test,
+        span: SimpleSpan,
+        emitter: &mut Emitter<Rich<'a, char>>,
     );
 }
 
@@ -686,6 +719,7 @@ fn smoke_test() {
     ParseResult {
         output: Some(
             UnstructuredFile {
+                properties: {},
                 tests: {
                     "stuff and things": UnstructuredTest {
                         properties: {},
@@ -706,6 +740,7 @@ fn smoke_test() {
     ParseResult {
         output: Some(
             UnstructuredFile {
+                properties: {},
                 tests: {
                     "stuff and things": UnstructuredTest {
                         properties: {
@@ -735,6 +770,7 @@ fn smoke_test() {
     ParseResult {
         output: Some(
             UnstructuredFile {
+                properties: {},
                 tests: {
                     "stuff and things": UnstructuredTest {
                         properties: {
@@ -764,6 +800,7 @@ fn smoke_test() {
     ParseResult {
         output: Some(
             UnstructuredFile {
+                properties: {},
                 tests: {
                     "stuff and things": UnstructuredTest {
                         properties: {
@@ -809,6 +846,7 @@ fn smoke_test() {
     ParseResult {
         output: Some(
             UnstructuredFile {
+                properties: {},
                 tests: {
                     "cts.https.html?q=webgpu:api,operation,adapter,requestAdapter:requestAdapter_no_parameters:*": UnstructuredTest {
                         properties: {},

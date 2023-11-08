@@ -185,7 +185,7 @@ where
     }
 }
 
-/// A normalized representation of [`Expectation`]s in [`AnalyzeableProps`], which collapses
+/// A normalized representation of [`Expectation`]s in [`TestProps`], which collapses
 /// backwards along the following branching factors:
 ///
 /// * [`Platform`]
@@ -193,7 +193,7 @@ where
 ///
 /// Yes, the type is _gnarly_. Sorry about that. This is some complex domain, okay? 😆😭
 ///
-/// [`AnalyzeableProps`]: crate::metadata::AnalyzeableProps
+/// [`TestProps`]: crate::metadata::TestProps
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NormalizedExpectationPropertyValue<Out>(NormalizedExpectationPropertyValueData<Out>)
 where

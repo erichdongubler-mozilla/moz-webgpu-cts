@@ -5,7 +5,8 @@ mod shared;
 
 use self::{
     metadata::{
-        AnalyzeableProps, BuildProfile, File, Platform, Subtest, SubtestOutcome, Test, TestOutcome,
+        BuildProfile, File, FileProps, Platform, Subtest, SubtestOutcome, Test, TestOutcome,
+        TestProps,
     },
     process_reports::{MaybeDisabled, OutcomesForComparison, TestOutcomes},
     report::{
@@ -326,11 +327,15 @@ fn run(cli: Cli) -> ExitCode {
 
             log::info!("loading metadata for comparison to reports…");
             for (path, file) in meta_files_by_path {
-                let File { tests } = file;
+                let File {
+                    properties: FileProps {},
+                    tests,
+                } = file;
+
                 for (SectionHeader(name), test) in tests {
                     let Test {
                         properties:
-                            AnalyzeableProps {
+                            TestProps {
                                 is_disabled,
                                 expectations,
                             },
@@ -374,7 +379,7 @@ fn run(cli: Cli) -> ExitCode {
                     for (SectionHeader(subtest_name), subtest) in subtests {
                         let Subtest {
                             properties:
-                                AnalyzeableProps {
+                                TestProps {
                                     is_disabled,
                                     expectations,
                                 },
@@ -524,7 +529,7 @@ fn run(cli: Cli) -> ExitCode {
                         fn reconcile<Out>(
                             outcomes: OutcomesForComparison<Out>,
                             preset: ReportProcessingPreset,
-                        ) -> AnalyzeableProps<Out>
+                        ) -> TestProps<Out>
                         where
                             Out: Debug + Default + EnumSetType,
                         {
@@ -578,11 +583,11 @@ fn run(cli: Cli) -> ExitCode {
                             });
 
                             match reconciled_expectations {
-                                MaybeDisabled::Disabled => AnalyzeableProps {
+                                MaybeDisabled::Disabled => TestProps {
                                     is_disabled: true,
                                     expectations: Default::default(),
                                 },
-                                MaybeDisabled::Enabled(expectations) => AnalyzeableProps {
+                                MaybeDisabled::Enabled(expectations) => TestProps {
                                     is_disabled: false,
                                     expectations: Some(expectations),
                                 },
@@ -709,7 +714,10 @@ fn run(cli: Cli) -> ExitCode {
                         match chumsky::Parser::parse(&metadata::File::parser(), file_contents)
                             .into_result()
                         {
-                            Ok(File { tests }) => Some(tests.into_iter().map(|(name, inner)| {
+                            Ok(File {
+                                properties: FileProps {},
+                                tests,
+                            }) => Some(tests.into_iter().map(|(name, inner)| {
                                 let SectionHeader(name) = &name;
                                 (
                                     SectionHeader(
@@ -820,7 +828,7 @@ fn run(cli: Cli) -> ExitCode {
                     subtests,
                 } = test;
 
-                let AnalyzeableProps {
+                let TestProps {
                     is_disabled,
                     expectations,
                 } = properties;
@@ -926,7 +934,7 @@ fn run(cli: Cli) -> ExitCode {
                     let subtest_name = Arc::new(subtest_name);
 
                     let Subtest { properties } = subtest;
-                    let AnalyzeableProps {
+                    let TestProps {
                         is_disabled,
                         expectations,
                     } = properties;
