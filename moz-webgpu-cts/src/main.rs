@@ -17,7 +17,7 @@ use self::{
 
 use std::{
     collections::{BTreeMap, BTreeSet},
-    fmt::{Debug, Display},
+    fmt::{self, Debug, Display, Formatter},
     fs,
     hash::Hash,
     io::{self, BufReader, BufWriter},
@@ -753,10 +753,26 @@ fn run(cli: Cli) -> ExitCode {
                 "from metadata files, analyzing results…"
             ));
 
-            #[derive(Clone, Debug, Default)]
+            #[derive(Clone, Default)]
             struct PermaAndIntermittent<T> {
                 perma: T,
                 intermittent: T,
+            }
+
+            impl<T> Debug for PermaAndIntermittent<T>
+            where
+                T: Debug,
+            {
+                fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+                    let Self {
+                        perma,
+                        intermittent,
+                    } = self;
+                    f.debug_struct("") // the name is distracting, blank it out plz
+                        .field("perma", perma)
+                        .field("intermittent", intermittent)
+                        .finish()
+                }
             }
 
             impl<T> PermaAndIntermittent<T> {
