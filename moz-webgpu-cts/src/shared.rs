@@ -80,10 +80,6 @@ where
         self.is_permanent().then(|| self.iter().next().unwrap())
     }
 
-    pub fn into_iter(self) -> impl Iterator<Item = Out> {
-        self.inner().into_iter()
-    }
-
     pub fn iter(&self) -> impl Iterator<Item = Out> {
         self.inner().iter()
     }

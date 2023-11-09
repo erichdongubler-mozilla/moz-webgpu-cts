@@ -753,8 +753,39 @@ fn run(cli: Cli) -> ExitCode {
                 "from metadata files, analyzing results…"
             ));
 
-            type TestSet = BTreeSet<Arc<SectionHeader>>;
-            type SubtestByTestSet = BTreeMap<Arc<SectionHeader>, IndexSet<Arc<SectionHeader>>>;
+            #[derive(Clone, Debug, Default)]
+            struct PermaAndIntermittent<T> {
+                perma: T,
+                intermittent: T,
+            }
+
+            impl<T> PermaAndIntermittent<T> {
+                pub fn as_ref(&self) -> PermaAndIntermittent<&T> {
+                    let Self {
+                        perma,
+                        intermittent,
+                    } = self;
+                    PermaAndIntermittent {
+                        perma,
+                        intermittent,
+                    }
+                }
+
+                pub fn map<U>(self, f: impl Fn(T) -> U) -> PermaAndIntermittent<U> {
+                    let Self {
+                        perma,
+                        intermittent,
+                    } = self;
+                    PermaAndIntermittent {
+                        perma: f(perma),
+                        intermittent: f(intermittent),
+                    }
+                }
+            }
+
+            type TestSet = PermaAndIntermittent<BTreeSet<Arc<SectionHeader>>>;
+            type SubtestByTestSet =
+                PermaAndIntermittent<BTreeMap<Arc<SectionHeader>, IndexSet<Arc<SectionHeader>>>>;
 
             #[derive(Clone, Debug, Default)]
             struct PerPlatformAnalysis {
@@ -844,57 +875,101 @@ fn run(cli: Cli) -> ExitCode {
                     analysis.for_each_platform_mut(|analysis| {
                         analysis
                             .tests_with_disabled_or_skip
+                            .perma
                             .insert(test_name.clone());
                     })
                 }
 
-                fn apply_expectation<Out, F>(expectation: Expectation<Out>, f: F)
-                where
-                    F: FnMut(Out),
-                    Out: EnumSetType,
+                fn insert_in_test_set<Out>(
+                    poi: &mut TestSet,
+                    test_name: &Arc<SectionHeader>,
+                    expectation: Expectation<Out>,
+                    outcome: Out,
+                ) where
+                    Out: Debug + Default + EnumSetType,
                 {
-                    expectation.into_iter().for_each(f)
+                    if expectation.is_superset(&Expectation::permanent(outcome)) {
+                        if expectation.is_permanent() {
+                            &mut poi.perma
+                        } else {
+                            &mut poi.intermittent
+                        }
+                        .insert(test_name.clone());
+                    }
                 }
+
+                fn insert_in_subtest_by_test_set<Out>(
+                    poi: &mut SubtestByTestSet,
+                    test_name: &Arc<SectionHeader>,
+                    subtest_name: &Arc<SectionHeader>,
+                    expectation: Expectation<Out>,
+                    outcome: Out,
+                ) where
+                    Out: Debug + Default + EnumSetType,
+                {
+                    if expectation.is_superset(&Expectation::permanent(outcome)) {
+                        if expectation.is_permanent() {
+                            &mut poi.perma
+                        } else {
+                            &mut poi.intermittent
+                        }
+                        .entry(test_name.clone())
+                        .or_default()
+                        .insert(subtest_name.clone());
+                    }
+                }
+
                 if let Some(expectations) = expectations {
                     fn analyze_test_outcome<F>(
                         test_name: &Arc<SectionHeader>,
-                        outcome: TestOutcome,
+                        expectation: Expectation<TestOutcome>,
                         mut receiver: F,
                     ) where
                         F: FnMut(&mut dyn FnMut(&mut PerPlatformAnalysis)),
                     {
-                        match outcome {
-                            TestOutcome::Ok => (),
-                            // We skip this because this test _should_ contain subtests with
-                            // `TIMEOUT` and `NOTRUN`, so we shouldn't actually miss anything.
-                            TestOutcome::Timeout => (),
-                            TestOutcome::Crash => receiver(&mut |analysis| {
-                                analysis.tests_with_crashes.insert(test_name.clone());
-                            }),
-                            TestOutcome::Error => receiver(&mut |analysis| {
-                                analysis.tests_with_runner_errors.insert(test_name.clone());
-                            }),
-                            TestOutcome::Skip => receiver(&mut |analysis| {
-                                analysis
-                                    .tests_with_disabled_or_skip
-                                    .insert(test_name.clone());
-                            }),
+                        for outcome in expectation.iter() {
+                            match outcome {
+                                TestOutcome::Ok => (),
+                                // We skip this because this test _should_ contain subtests with
+                                // `TIMEOUT` and `NOTRUN`, so we shouldn't actually miss anything.
+                                TestOutcome::Timeout => (),
+                                TestOutcome::Crash => receiver(&mut |analysis| {
+                                    insert_in_test_set(
+                                        &mut analysis.tests_with_crashes,
+                                        test_name,
+                                        expectation,
+                                        outcome,
+                                    )
+                                }),
+                                TestOutcome::Error => receiver(&mut |analysis| {
+                                    insert_in_test_set(
+                                        &mut analysis.tests_with_runner_errors,
+                                        test_name,
+                                        expectation,
+                                        outcome,
+                                    )
+                                }),
+                                TestOutcome::Skip => receiver(&mut |analysis| {
+                                    insert_in_test_set(
+                                        &mut analysis.tests_with_disabled_or_skip,
+                                        test_name,
+                                        expectation,
+                                        outcome,
+                                    )
+                                }),
+                            }
                         }
                     }
 
                     let apply_to_all_platforms = |analysis: &mut Analysis, expectation| {
-                        apply_expectation(expectation, |outcome| {
-                            analyze_test_outcome(&test_name, outcome, |f| {
-                                analysis.for_each_platform_mut(f)
-                            })
+                        analyze_test_outcome(&test_name, expectation, |f| {
+                            analysis.for_each_platform_mut(f)
                         })
                     };
                     let apply_to_specific_platforms =
                         |analysis: &mut Analysis, platform, expectation| {
-                            apply_expectation(expectation, |outcome| {
-                                analyze_test_outcome(&test_name, outcome, |f| {
-                                    analysis.for_platform_mut(platform, f)
-                                })
+                            analyze_test_outcome(&test_name, expectation, |f| {
+                                analysis.for_platform_mut(platform, f)
                             })
                         };
 
@@ -944,6 +1019,7 @@ fn run(cli: Cli) -> ExitCode {
                         analysis
                             .windows
                             .tests_with_disabled_or_skip
+                            .perma
                             .insert(test_name.clone());
                     }
 
@@ -951,52 +1027,59 @@ fn run(cli: Cli) -> ExitCode {
                         fn analyze_subtest_outcome<Fo>(
                             test_name: &Arc<SectionHeader>,
                             subtest_name: &Arc<SectionHeader>,
-                            outcome: SubtestOutcome,
+                            expectation: Expectation<SubtestOutcome>,
                             mut receiver: Fo,
                         ) where
                             Fo: FnMut(&mut dyn FnMut(&mut PerPlatformAnalysis)),
                         {
-                            match outcome {
-                                SubtestOutcome::Pass => (),
-                                SubtestOutcome::Timeout | SubtestOutcome::NotRun => {
-                                    receiver(&mut |analysis| {
-                                        analysis
-                                            .subtests_with_timeouts_by_test
-                                            .entry(test_name.clone())
-                                            .or_default()
-                                            .insert(subtest_name.clone());
-                                    })
+                            for outcome in expectation.iter() {
+                                match outcome {
+                                    SubtestOutcome::Pass => (),
+                                    SubtestOutcome::Timeout | SubtestOutcome::NotRun => {
+                                        receiver(&mut |analysis| {
+                                            insert_in_subtest_by_test_set(
+                                                &mut analysis.subtests_with_timeouts_by_test,
+                                                test_name,
+                                                subtest_name,
+                                                expectation,
+                                                outcome,
+                                            )
+                                        })
+                                    }
+                                    SubtestOutcome::Crash => receiver(&mut |analysis| {
+                                        insert_in_test_set(
+                                            &mut analysis.tests_with_crashes,
+                                            test_name,
+                                            expectation,
+                                            outcome,
+                                        )
+                                    }),
+                                    SubtestOutcome::Fail => receiver(&mut |analysis| {
+                                        insert_in_subtest_by_test_set(
+                                            &mut analysis.subtests_with_failures_by_test,
+                                            test_name,
+                                            subtest_name,
+                                            expectation,
+                                            outcome,
+                                        )
+                                    }),
                                 }
-                                SubtestOutcome::Crash => receiver(&mut |analysis| {
-                                    analysis.tests_with_crashes.insert(test_name.clone());
-                                }),
-                                SubtestOutcome::Fail => receiver(&mut |analysis| {
-                                    analysis
-                                        .subtests_with_failures_by_test
-                                        .entry(test_name.clone())
-                                        .or_default()
-                                        .insert(subtest_name.clone());
-                                }),
                             }
                         }
 
                         let apply_to_all_platforms = |analysis: &mut Analysis, expectation| {
-                            apply_expectation(expectation, |outcome| {
-                                analyze_subtest_outcome(&test_name, &subtest_name, outcome, |f| {
-                                    analysis.for_each_platform_mut(f)
-                                })
+                            analyze_subtest_outcome(&test_name, &subtest_name, expectation, |f| {
+                                analysis.for_each_platform_mut(f)
                             })
                         };
                         let apply_to_specific_platforms =
                             |analysis: &mut Analysis, platform, expectation| {
-                                apply_expectation(expectation, |outcome| {
-                                    analyze_subtest_outcome(
-                                        &test_name,
-                                        &subtest_name,
-                                        outcome,
-                                        |f| analysis.for_platform_mut(platform, f),
-                                    )
-                                })
+                                analyze_subtest_outcome(
+                                    &test_name,
+                                    &subtest_name,
+                                    expectation,
+                                    |f| analysis.for_platform_mut(platform, f),
+                                )
                             };
 
                         match expectations.into_inner() {
@@ -1047,29 +1130,75 @@ fn run(cli: Cli) -> ExitCode {
                     subtests_with_timeouts_by_test,
                 } = analysis;
 
-                let num_tests_with_runner_errors = tests_with_runner_errors.len();
-                let num_tests_with_disabled = tests_with_disabled_or_skip.len();
-                let num_tests_with_crashes = tests_with_crashes.len();
-                let num_tests_with_failures_somewhere = subtests_with_failures_by_test.len();
-                let num_subtests_with_failures_somewhere = subtests_with_failures_by_test
-                    .iter()
-                    .flat_map(|(_name, subtests)| subtests.iter())
-                    .count();
-                let num_tests_with_timeouts_somewhere = subtests_with_timeouts_by_test.len();
-                let num_subtests_with_timeouts_somewhere = subtests_with_timeouts_by_test
-                    .iter()
-                    .flat_map(|(_name, subtests)| subtests.iter())
-                    .count();
+                let PermaAndIntermittent {
+                    perma: num_tests_with_perma_runner_errors,
+                    intermittent: num_tests_with_intermittent_runner_errors,
+                } = tests_with_runner_errors.as_ref().map(|tests| tests.len());
+
+                let PermaAndIntermittent {
+                    perma: num_tests_with_disabled,
+                    intermittent: num_tests_with_intermittent_disabled,
+                } = tests_with_disabled_or_skip
+                    .as_ref()
+                    .map(|tests| tests.len());
+                let PermaAndIntermittent {
+                    perma: num_tests_with_perma_crashes,
+                    intermittent: num_tests_with_intermittent_crashes,
+                } = tests_with_crashes.as_ref().map(|tests| tests.len());
+                let PermaAndIntermittent {
+                    perma: num_tests_with_perma_failures_somewhere,
+                    intermittent: num_tests_with_intermittent_failures_somewhere,
+                } = subtests_with_failures_by_test
+                    .as_ref()
+                    .map(|tests| tests.len());
+                let PermaAndIntermittent {
+                    perma: num_subtests_with_perma_failures_somewhere,
+                    intermittent: num_subtests_with_intermittent_failures_somewhere,
+                } = subtests_with_failures_by_test.as_ref().map(|tests| {
+                    tests
+                        .iter()
+                        .flat_map(|(_name, subtests)| subtests.iter())
+                        .count()
+                });
+                let PermaAndIntermittent {
+                    perma: num_tests_with_perma_timeouts_somewhere,
+                    intermittent: num_tests_with_intermittent_timeouts_somewhere,
+                } = subtests_with_timeouts_by_test
+                    .as_ref()
+                    .map(|tests| tests.len());
+                let PermaAndIntermittent {
+                    perma: num_subtests_with_perma_timeouts_somewhere,
+                    intermittent: num_subtests_with_intermittent_timeouts_somewhere,
+                } = subtests_with_timeouts_by_test.as_ref().map(|tests| {
+                    tests
+                        .iter()
+                        .flat_map(|(_name, subtests)| subtests.iter())
+                        .count()
+                });
+
+                if num_tests_with_intermittent_disabled > 0 {
+                    log::warn!(
+                        concat!("found {} intermittent `SKIP` outcomes, which we don't understand yet; figure it out! The tests: {:#?}"),
+                        num_tests_with_intermittent_disabled,
+                        tests_with_disabled_or_skip,
+                    )
+                }
+
                 println!(
                     "\
 {platform:?}:
   HIGH PRIORITY:
-    {num_tests_with_runner_errors} test(s) with execution reporting `ERROR`
+    {num_tests_with_perma_runner_errors} test(s) with execution reporting permanent `ERROR`
     {num_tests_with_disabled} test(s) with some portion marked as `disabled`
-    {num_tests_with_crashes} test(s) with some portion expecting `CRASH`
+    {num_tests_with_perma_crashes} test(s) with some portion expecting permanent `CRASH`
   MEDIUM PRIORITY:
-    {num_tests_with_failures_somewhere} test(s) with some portion `FAIL`ing, {num_subtests_with_failures_somewhere} subtests total
-    {num_tests_with_timeouts_somewhere} test(s) with some portion returning `TIMEOUT`/`NOTRUN`, {num_subtests_with_timeouts_somewhere} subtests total
+    {num_tests_with_perma_failures_somewhere} test(s) with some portion perma-`FAIL`ing, {num_subtests_with_perma_failures_somewhere} subtests total
+    {num_tests_with_perma_timeouts_somewhere} test(s) with some portion returning permanent `TIMEOUT`/`NOTRUN`, {num_subtests_with_perma_timeouts_somewhere} subtests total
+    {num_tests_with_intermittent_crashes} tests(s) with some portion expecting intermittent `CRASH`
+    {num_tests_with_intermittent_runner_errors} test(s) with execution reporting intermittent `ERROR`
+  LOW PRIORITY:
+    {num_tests_with_intermittent_timeouts_somewhere} test(s) with some portion intermittently returning `TIMEOUT`/`NOTRUN`, {num_subtests_with_intermittent_timeouts_somewhere} subtest(s) total
+    {num_tests_with_intermittent_failures_somewhere} test(s) with some portion intermittently `FAIL`ing, {num_subtests_with_intermittent_failures_somewhere} subtests total
 "
                 );
             });
