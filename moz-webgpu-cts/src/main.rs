@@ -1137,16 +1137,39 @@ fn run(cli: Cli) -> ExitCode {
                     intermittent: num_tests_with_intermittent_runner_errors,
                 } = tests_with_runner_errors.as_ref().map(|tests| tests.len());
 
+                let tests_with_perma_runner_errors = lazy_format!(
+                    "{} test(s) with execution reporting permanent `ERROR`",
+                    num_tests_with_perma_runner_errors,
+                );
+
+                let tests_with_intermittent_runner_errors = lazy_format!(
+                    "{} test(s) with execution reporting intermittent `ERROR`",
+                    num_tests_with_intermittent_runner_errors
+                );
+
                 let PermaAndIntermittent {
                     perma: num_tests_with_disabled,
                     intermittent: num_tests_with_intermittent_disabled,
                 } = tests_with_disabled_or_skip
                     .as_ref()
                     .map(|tests| tests.len());
+                let tests_with_disabled = lazy_format!(
+                    "{num_tests_with_disabled} test(s) with some portion marked as `disabled`"
+                );
+
                 let PermaAndIntermittent {
                     perma: num_tests_with_perma_crashes,
                     intermittent: num_tests_with_intermittent_crashes,
                 } = tests_with_crashes.as_ref().map(|tests| tests.len());
+                let tests_with_perma_crashes = lazy_format!(
+                    "{} test(s) with some portion expecting permanent `CRASH`",
+                    num_tests_with_perma_crashes
+                );
+                let tests_with_intermittent_crashes = lazy_format!(
+                    "{} tests(s) with some portion expecting intermittent `CRASH`",
+                    num_tests_with_intermittent_crashes
+                );
+
                 let PermaAndIntermittent {
                     perma: num_tests_with_perma_failures_somewhere,
                     intermittent: num_tests_with_intermittent_failures_somewhere,
@@ -1162,6 +1185,23 @@ fn run(cli: Cli) -> ExitCode {
                         .flat_map(|(_name, subtests)| subtests.iter())
                         .count()
                 });
+                let tests_with_perma_failures = lazy_format!(
+                    "{} test(s) with some portion perma-`FAIL`ing, {} subtests total",
+                    num_tests_with_perma_failures_somewhere,
+                    num_subtests_with_perma_failures_somewhere,
+                );
+                let tests_with_intermittent_failures = lazy_format!(|f| {
+                    write!(
+                        f,
+                        concat!(
+                            "{} test(s) with some portion intermittently `FAIL`ing, ",
+                            "{} subtests total"
+                        ),
+                        num_tests_with_intermittent_failures_somewhere,
+                        num_subtests_with_intermittent_failures_somewhere
+                    )
+                });
+
                 let PermaAndIntermittent {
                     perma: num_tests_with_perma_timeouts_somewhere,
                     intermittent: num_tests_with_intermittent_timeouts_somewhere,
@@ -1176,6 +1216,28 @@ fn run(cli: Cli) -> ExitCode {
                         .iter()
                         .flat_map(|(_name, subtests)| subtests.iter())
                         .count()
+                });
+                let tests_with_perma_timeouts_somewhere = lazy_format!(|f| {
+                    write!(
+                        f,
+                        concat!(
+                            "{} test(s) with some portion returning permanent ",
+                            "`TIMEOUT`/`NOTRUN`, {} subtests total"
+                        ),
+                        num_tests_with_perma_timeouts_somewhere,
+                        num_subtests_with_perma_timeouts_somewhere
+                    )
+                });
+                let tests_with_intermittent_timeouts_somewhere = lazy_format!(|f| {
+                    write!(
+                        f,
+                        concat!(
+                            "{} test(s) with some portion intermittently returning ",
+                            "`TIMEOUT`/`NOTRUN`, {} subtest(s) total",
+                        ),
+                        num_tests_with_intermittent_timeouts_somewhere,
+                        num_subtests_with_intermittent_timeouts_somewhere
+                    )
                 });
 
                 if num_tests_with_intermittent_disabled > 0 {
@@ -1193,17 +1255,17 @@ fn run(cli: Cli) -> ExitCode {
                     "\
 {platform:?}:
   HIGH PRIORITY:
-    {num_tests_with_perma_runner_errors} test(s) with execution reporting permanent `ERROR`
-    {num_tests_with_disabled} test(s) with some portion marked as `disabled`
-    {num_tests_with_perma_crashes} test(s) with some portion expecting permanent `CRASH`
+    {tests_with_perma_runner_errors}
+    {tests_with_disabled}
+    {tests_with_perma_crashes}
   MEDIUM PRIORITY:
-    {num_tests_with_perma_failures_somewhere} test(s) with some portion perma-`FAIL`ing, {num_subtests_with_perma_failures_somewhere} subtests total
-    {num_tests_with_perma_timeouts_somewhere} test(s) with some portion returning permanent `TIMEOUT`/`NOTRUN`, {num_subtests_with_perma_timeouts_somewhere} subtests total
-    {num_tests_with_intermittent_crashes} tests(s) with some portion expecting intermittent `CRASH`
-    {num_tests_with_intermittent_runner_errors} test(s) with execution reporting intermittent `ERROR`
+    {tests_with_perma_failures}
+    {tests_with_perma_timeouts_somewhere}
+    {tests_with_intermittent_crashes}
+    {tests_with_intermittent_runner_errors}
   LOW PRIORITY:
-    {num_tests_with_intermittent_timeouts_somewhere} test(s) with some portion intermittently returning `TIMEOUT`/`NOTRUN`, {num_subtests_with_intermittent_timeouts_somewhere} subtest(s) total
-    {num_tests_with_intermittent_failures_somewhere} test(s) with some portion intermittently `FAIL`ing, {num_subtests_with_intermittent_failures_somewhere} subtests total
+    {tests_with_intermittent_timeouts_somewhere}
+    {tests_with_intermittent_failures}
 "
                 );
             });
