@@ -753,15 +753,16 @@ fn run(cli: Cli) -> ExitCode {
                 "from metadata files, analyzing results…"
             ));
 
+            type TestSet = BTreeSet<Arc<SectionHeader>>;
+            type SubtestByTestSet = BTreeMap<Arc<SectionHeader>, IndexSet<Arc<SectionHeader>>>;
+
             #[derive(Clone, Debug, Default)]
             struct PerPlatformAnalysis {
-                tests_with_runner_errors: BTreeSet<Arc<SectionHeader>>,
-                tests_with_disabled_or_skip: BTreeSet<Arc<SectionHeader>>,
-                tests_with_crashes: BTreeSet<Arc<SectionHeader>>,
-                subtests_with_failures_by_test:
-                    BTreeMap<Arc<SectionHeader>, IndexSet<Arc<SectionHeader>>>,
-                subtests_with_timeouts_by_test:
-                    BTreeMap<Arc<SectionHeader>, IndexSet<Arc<SectionHeader>>>,
+                tests_with_runner_errors: TestSet,
+                tests_with_disabled_or_skip: TestSet,
+                tests_with_crashes: TestSet,
+                subtests_with_failures_by_test: SubtestByTestSet,
+                subtests_with_timeouts_by_test: SubtestByTestSet,
             }
 
             #[derive(Clone, Debug, Default)]
@@ -1063,12 +1064,12 @@ fn run(cli: Cli) -> ExitCode {
                     "\
 {platform:?}:
   HIGH PRIORITY:
-    {num_tests_with_runner_errors} test with execution reporting `ERROR`
-    {num_tests_with_disabled} tests with some portion marked as `disabled`
-    {num_tests_with_crashes} tests with some portion expecting `CRASH`
+    {num_tests_with_runner_errors} test(s) with execution reporting `ERROR`
+    {num_tests_with_disabled} test(s) with some portion marked as `disabled`
+    {num_tests_with_crashes} test(s) with some portion expecting `CRASH`
   MEDIUM PRIORITY:
-    {num_tests_with_failures_somewhere} tests with some portion `FAIL`ing, {num_subtests_with_failures_somewhere} subtests total
-    {num_tests_with_timeouts_somewhere} tests with some portion returning `TIMEOUT`/`NOTRUN`, {num_subtests_with_timeouts_somewhere} subtests total
+    {num_tests_with_failures_somewhere} test(s) with some portion `FAIL`ing, {num_subtests_with_failures_somewhere} subtests total
+    {num_tests_with_timeouts_somewhere} test(s) with some portion returning `TIMEOUT`/`NOTRUN`, {num_subtests_with_timeouts_somewhere} subtests total
 "
                 );
             });
