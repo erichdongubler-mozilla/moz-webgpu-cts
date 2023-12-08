@@ -8,7 +8,7 @@ use self::{
         BuildProfile, File, FileProps, Platform, Subtest, SubtestOutcome, Test, TestOutcome,
         TestProps,
     },
-    process_reports::{MaybeDisabled, OutcomesForComparison, TestOutcomes},
+    process_reports::{Entry, MaybeDisabled, TestEntry},
     report::{
         ExecutionReport, RunInfo, SubtestExecutionResult, TestExecutionEntry, TestExecutionResult,
     },
@@ -325,7 +325,7 @@ fn run(cli: Cli) -> ExitCode {
             };
 
             let mut file_props_by_file = IndexMap::<Utf8PathBuf, FileProps>::default();
-            let mut outcomes_by_test = IndexMap::<TestPath<'_>, TestOutcomes>::default();
+            let mut entries_by_test = IndexMap::<TestPath<'_>, TestEntry>::default();
 
             log::info!("loading metadata for comparison to reports…");
             for (path, file) in meta_files_by_path {
@@ -354,10 +354,10 @@ fn run(cli: Cli) -> ExitCode {
                         log::error!("hoo boy, not sure what to do yet: {what}")
                     };
 
-                    let TestOutcomes {
-                        test_outcomes: recorded_test_outcomes,
-                        subtests: recorded_subtests,
-                    } = outcomes_by_test
+                    let TestEntry {
+                        entry: test_entry,
+                        subtests: subtest_entries,
+                    } = entries_by_test
                         .entry(test_path.clone().into_owned())
                         .or_default();
 
@@ -369,7 +369,7 @@ fn run(cli: Cli) -> ExitCode {
                     } else {
                         MaybeDisabled::Enabled(expectations)
                     };
-                    if let Some(_old) = recorded_test_outcomes.metadata.replace(maybe_disabled) {
+                    if let Some(_old) = test_entry.metadata.replace(maybe_disabled) {
                         freak_out_do_nothing(
                             &lazy_format!(
                                 "duplicate entry for {test_path:?}, discarding previous entries with this and further dupes"
@@ -386,16 +386,14 @@ fn run(cli: Cli) -> ExitCode {
                                     expectations,
                                 },
                         } = subtest;
-                        let recorded_subtest_outcomes =
-                            recorded_subtests.entry(subtest_name.clone()).or_default();
+                        let subtest_entry =
+                            subtest_entries.entry(subtest_name.clone()).or_default();
                         let maybe_disabled = if is_disabled {
                             MaybeDisabled::Disabled
                         } else {
                             MaybeDisabled::Enabled(expectations)
                         };
-                        if let Some(_old) =
-                            recorded_subtest_outcomes.metadata.replace(maybe_disabled)
-                        {
+                        if let Some(_old) = subtest_entry.metadata.replace(maybe_disabled) {
                             if !reported_dupe_already {
                                 freak_out_do_nothing(&lazy_format!(
                                     "duplicate subtest in {test_path:?} named {subtest_name:?}, discarding previous entries with this and further dupes"
@@ -454,10 +452,10 @@ fn run(cli: Cli) -> ExitCode {
                     let TestExecutionEntry { test_name, result } = entry;
 
                     let test_path = TestPath::from_execution_report(&test_name).unwrap();
-                    let TestOutcomes {
-                        test_outcomes: recorded_test_outcomes,
-                        subtests: recorded_subtests,
-                    } = outcomes_by_test
+                    let TestEntry {
+                        entry: test_entry,
+                        subtests: subtest_entries,
+                    } = entries_by_test
                         .entry(test_path.clone().into_owned())
                         .or_default();
 
@@ -496,7 +494,7 @@ fn run(cli: Cli) -> ExitCode {
                         }
                     }
                     accumulate(
-                        &mut recorded_test_outcomes.reported,
+                        &mut test_entry.reported,
                         platform,
                         build_profile,
                         reported_outcome,
@@ -504,18 +502,18 @@ fn run(cli: Cli) -> ExitCode {
 
                     for reported_subtest in reported_subtests {
                         let SubtestExecutionResult {
-                            subtest_name: reported_subtest_name,
-                            outcome: reported_outcome,
+                            subtest_name,
+                            outcome,
                         } = reported_subtest;
 
                         accumulate(
-                            &mut recorded_subtests
-                                .entry(reported_subtest_name.clone())
+                            &mut subtest_entries
+                                .entry(subtest_name.clone())
                                 .or_default()
                                 .reported,
                             platform,
                             build_profile,
-                            reported_outcome,
+                            outcome,
                         );
                     }
                 }
@@ -525,17 +523,17 @@ fn run(cli: Cli) -> ExitCode {
 
             let mut found_reconciliation_err = false;
             let recombined_tests_iter =
-                outcomes_by_test
+                entries_by_test
                     .into_iter()
-                    .filter_map(|(test_path, outcomes)| {
+                    .filter_map(|(test_path, test_entry)| {
                         fn reconcile<Out>(
-                            outcomes: OutcomesForComparison<Out>,
+                            entry: Entry<Out>,
                             preset: ReportProcessingPreset,
                         ) -> TestProps<Out>
                         where
                             Out: Debug + Default + EnumSetType,
                         {
-                            let OutcomesForComparison { metadata, reported } = outcomes;
+                            let Entry { metadata, reported } = entry;
 
                             let metadata = metadata
                                 .map(|maybe_disabled| {
@@ -596,15 +594,15 @@ fn run(cli: Cli) -> ExitCode {
                             }
                         }
 
-                        let TestOutcomes {
-                            test_outcomes,
-                            subtests: recorded_subtests,
-                        } = outcomes;
+                        let TestEntry {
+                            entry: test_entry,
+                            subtests: subtest_entries,
+                        } = test_entry;
 
-                        let properties = reconcile(test_outcomes, preset);
+                        let properties = reconcile(test_entry, preset);
 
                         let mut subtests = BTreeMap::new();
-                        for (subtest_name, subtest) in recorded_subtests {
+                        for (subtest_name, subtest) in subtest_entries {
                             let subtest_name = SectionHeader(subtest_name);
                             if subtests.get(&subtest_name).is_some() {
                                 found_reconciliation_err = true;

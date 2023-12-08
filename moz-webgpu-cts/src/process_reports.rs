@@ -8,7 +8,7 @@ use crate::{
 };
 
 #[derive(Debug)]
-pub(crate) struct OutcomesForComparison<Out>
+pub(crate) struct Entry<Out>
 where
     Out: EnumSetType,
 {
@@ -16,7 +16,7 @@ where
     pub reported: BTreeMap<Platform, BTreeMap<BuildProfile, Expectation<Out>>>,
 }
 
-impl<Out> Default for OutcomesForComparison<Out>
+impl<Out> Default for Entry<Out>
 where
     Out: EnumSetType,
 {
@@ -56,7 +56,7 @@ impl<T> MaybeDisabled<T> {
 }
 
 #[derive(Debug, Default)]
-pub(crate) struct TestOutcomes {
-    pub test_outcomes: OutcomesForComparison<TestOutcome>,
-    pub subtests: BTreeMap<String, OutcomesForComparison<SubtestOutcome>>,
+pub(crate) struct TestEntry {
+    pub entry: Entry<TestOutcome>,
+    pub subtests: BTreeMap<String, Entry<SubtestOutcome>>,
 }
