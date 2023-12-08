@@ -325,7 +325,7 @@ fn run(cli: Cli) -> ExitCode {
             };
 
             let mut file_props_by_file = IndexMap::<Utf8PathBuf, FileProps>::default();
-            let mut outcomes_by_test = IndexMap::<TestPath, TestOutcomes>::default();
+            let mut outcomes_by_test = IndexMap::<TestPath<'_>, TestOutcomes>::default();
 
             log::info!("loading metadata for comparison to reports…");
             for (path, file) in meta_files_by_path {
