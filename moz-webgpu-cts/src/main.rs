@@ -8,7 +8,7 @@ use self::{
         BuildProfile, File, FileProps, Platform, Subtest, SubtestOutcome, Test, TestOutcome,
         TestProps,
     },
-    process_reports::{MaybeDisabled, OutcomesForComparison, TestOutcomes},
+    process_reports::{Entry, TestEntry},
     report::{
         ExecutionReport, RunInfo, SubtestExecutionResult, TestExecutionEntry, TestExecutionResult,
     },
@@ -26,6 +26,7 @@ use std::{
     sync::{mpsc::channel, Arc},
 };
 
+use camino::Utf8PathBuf;
 use clap::{Parser, ValueEnum};
 use enumset::EnumSetType;
 use format::lazy_format;
@@ -139,17 +140,8 @@ fn run(cli: Cli) -> ExitCode {
     };
 
     let read_metadata = || -> Result<_, AlreadyReportedToCommandline> {
-        let webgpu_cts_meta_parent_dir = {
-            path!(
-                &gecko_checkout
-                    | "testing"
-                    | "web-platform"
-                    | "mozilla"
-                    | "meta"
-                    | "webgpu"
-                    | "chunked"
-            )
-        };
+        let webgpu_cts_meta_parent_dir =
+            { path!(&gecko_checkout | "testing" | "web-platform" | "mozilla" | "meta" | "webgpu") };
 
         let mut found_err = false;
         let collected =
@@ -323,51 +315,43 @@ fn run(cli: Cli) -> ExitCode {
                 files
             };
 
-            let mut outcomes_by_test = IndexMap::<TestPath, TestOutcomes>::default();
+            let mut file_props_by_file = IndexMap::<Utf8PathBuf, FileProps>::default();
+            let mut entries_by_test = IndexMap::<TestPath<'_>, TestEntry>::default();
 
             log::info!("loading metadata for comparison to reports…");
             for (path, file) in meta_files_by_path {
-                let File {
-                    properties: FileProps {},
-                    tests,
-                } = file;
+                let File { properties, tests } = file;
+
+                let file_rel_path = path.strip_prefix(&gecko_checkout).unwrap();
+
+                file_props_by_file.insert(
+                    Utf8PathBuf::from(file_rel_path.to_str().unwrap()),
+                    properties,
+                );
 
                 for (SectionHeader(name), test) in tests {
                     let Test {
-                        properties:
-                            TestProps {
-                                is_disabled,
-                                expectations,
-                            },
+                        properties,
                         subtests,
                     } = test;
 
-                    let test_path = TestPath::from_fx_metadata_test(
-                        path.strip_prefix(&gecko_checkout).unwrap(),
-                        &name,
-                    )
-                    .unwrap();
+                    let test_path = TestPath::from_fx_metadata_test(file_rel_path, &name).unwrap();
 
                     let freak_out_do_nothing = |what: &dyn Display| {
                         log::error!("hoo boy, not sure what to do yet: {what}")
                     };
 
-                    let TestOutcomes {
-                        test_outcomes: recorded_test_outcomes,
-                        subtests: recorded_subtests,
-                    } = outcomes_by_test
+                    let TestEntry {
+                        entry: test_entry,
+                        subtests: subtest_entries,
+                    } = entries_by_test
                         .entry(test_path.clone().into_owned())
                         .or_default();
 
                     let test_path = &test_path;
                     let mut reported_dupe_already = false;
 
-                    let maybe_disabled = if is_disabled {
-                        MaybeDisabled::Disabled
-                    } else {
-                        MaybeDisabled::Enabled(expectations)
-                    };
-                    if let Some(_old) = recorded_test_outcomes.metadata.replace(maybe_disabled) {
+                    if let Some(_old) = test_entry.meta_props.replace(properties) {
                         freak_out_do_nothing(
                             &lazy_format!(
                                 "duplicate entry for {test_path:?}, discarding previous entries with this and further dupes"
@@ -377,23 +361,10 @@ fn run(cli: Cli) -> ExitCode {
                     }
 
                     for (SectionHeader(subtest_name), subtest) in subtests {
-                        let Subtest {
-                            properties:
-                                TestProps {
-                                    is_disabled,
-                                    expectations,
-                                },
-                        } = subtest;
-                        let recorded_subtest_outcomes =
-                            recorded_subtests.entry(subtest_name.clone()).or_default();
-                        let maybe_disabled = if is_disabled {
-                            MaybeDisabled::Disabled
-                        } else {
-                            MaybeDisabled::Enabled(expectations)
-                        };
-                        if let Some(_old) =
-                            recorded_subtest_outcomes.metadata.replace(maybe_disabled)
-                        {
+                        let Subtest { properties } = subtest;
+                        let subtest_entry =
+                            subtest_entries.entry(subtest_name.clone()).or_default();
+                        if let Some(_old) = subtest_entry.meta_props.replace(properties) {
                             if !reported_dupe_already {
                                 freak_out_do_nothing(&lazy_format!(
                                     "duplicate subtest in {test_path:?} named {subtest_name:?}, discarding previous entries with this and further dupes"
@@ -452,10 +423,10 @@ fn run(cli: Cli) -> ExitCode {
                     let TestExecutionEntry { test_name, result } = entry;
 
                     let test_path = TestPath::from_execution_report(&test_name).unwrap();
-                    let TestOutcomes {
-                        test_outcomes: recorded_test_outcomes,
-                        subtests: recorded_subtests,
-                    } = outcomes_by_test
+                    let TestEntry {
+                        entry: test_entry,
+                        subtests: subtest_entries,
+                    } = entries_by_test
                         .entry(test_path.clone().into_owned())
                         .or_default();
 
@@ -494,7 +465,7 @@ fn run(cli: Cli) -> ExitCode {
                         }
                     }
                     accumulate(
-                        &mut recorded_test_outcomes.reported,
+                        &mut test_entry.reported,
                         platform,
                         build_profile,
                         reported_outcome,
@@ -502,18 +473,18 @@ fn run(cli: Cli) -> ExitCode {
 
                     for reported_subtest in reported_subtests {
                         let SubtestExecutionResult {
-                            subtest_name: reported_subtest_name,
-                            outcome: reported_outcome,
+                            subtest_name,
+                            outcome,
                         } = reported_subtest;
 
                         accumulate(
-                            &mut recorded_subtests
-                                .entry(reported_subtest_name.clone())
+                            &mut subtest_entries
+                                .entry(subtest_name.clone())
                                 .or_default()
                                 .reported,
                             platform,
                             build_profile,
-                            reported_outcome,
+                            outcome,
                         );
                     }
                 }
@@ -523,29 +494,28 @@ fn run(cli: Cli) -> ExitCode {
 
             let mut found_reconciliation_err = false;
             let recombined_tests_iter =
-                outcomes_by_test
+                entries_by_test
                     .into_iter()
-                    .filter_map(|(test_path, outcomes)| {
+                    .filter_map(|(test_path, test_entry)| {
                         fn reconcile<Out>(
-                            outcomes: OutcomesForComparison<Out>,
+                            entry: Entry<Out>,
                             preset: ReportProcessingPreset,
                         ) -> TestProps<Out>
                         where
                             Out: Debug + Default + EnumSetType,
                         {
-                            let OutcomesForComparison { metadata, reported } = outcomes;
-
-                            let metadata = metadata
-                                .map(|maybe_disabled| {
-                                    maybe_disabled.map_enabled(|opt| opt.unwrap_or_default())
-                                })
-                                .unwrap_or_default();
-
+                            let Entry {
+                                meta_props,
+                                reported,
+                            } = entry;
                             let normalize = NormalizedExpectationPropertyValue::from_fully_expanded;
 
-                            let reconciled_expectations = metadata.map_enabled(|metadata| {
+                            let mut meta_props = meta_props.unwrap_or_default();
+                            meta_props.expectations = Some('resolve: {
                                 let resolve = match preset {
-                                    ReportProcessingPreset::ResetAll => return normalize(reported),
+                                    ReportProcessingPreset::ResetAll => {
+                                        break 'resolve normalize(reported);
+                                    }
                                     ReportProcessingPreset::ResetContradictory => {
                                         |meta: Expectation<_>, rep: Option<Expectation<_>>| {
                                             rep.filter(|rep| !meta.is_superset(rep)).unwrap_or(meta)
@@ -565,7 +535,11 @@ fn run(cli: Cli) -> ExitCode {
                                                     (
                                                         build_profile,
                                                         resolve(
-                                                            metadata.get(platform, build_profile),
+                                                            meta_props
+                                                                .expectations
+                                                                .as_ref()
+                                                                .unwrap_or(&Default::default())
+                                                                .get(platform, build_profile),
                                                             reported
                                                                 .get(&platform)
                                                                 .and_then(|rep| {
@@ -581,28 +555,18 @@ fn run(cli: Cli) -> ExitCode {
                                         .collect(),
                                 )
                             });
-
-                            match reconciled_expectations {
-                                MaybeDisabled::Disabled => TestProps {
-                                    is_disabled: true,
-                                    expectations: Default::default(),
-                                },
-                                MaybeDisabled::Enabled(expectations) => TestProps {
-                                    is_disabled: false,
-                                    expectations: Some(expectations),
-                                },
-                            }
+                            meta_props
                         }
 
-                        let TestOutcomes {
-                            test_outcomes,
-                            subtests: recorded_subtests,
-                        } = outcomes;
+                        let TestEntry {
+                            entry: test_entry,
+                            subtests: subtest_entries,
+                        } = test_entry;
 
-                        let properties = reconcile(test_outcomes, preset);
+                        let properties = reconcile(test_entry, preset);
 
                         let mut subtests = BTreeMap::new();
-                        for (subtest_name, subtest) in recorded_subtests {
+                        for (subtest_name, subtest) in subtest_entries {
                             let subtest_name = SectionHeader(subtest_name);
                             if subtests.get(&subtest_name).is_some() {
                                 found_reconciliation_err = true;
@@ -630,8 +594,18 @@ fn run(cli: Cli) -> ExitCode {
             let mut files = BTreeMap::<PathBuf, File>::new();
             for (test_path, (properties, subtests)) in recombined_tests_iter {
                 let name = test_path.test_name().to_string();
-                let path = gecko_checkout.join(test_path.rel_metadata_path_fx().to_string());
-                let file = files.entry(path).or_default();
+                let rel_path = Utf8PathBuf::from(test_path.rel_metadata_path_fx().to_string());
+                let path = gecko_checkout.join(&rel_path);
+                let file = files.entry(path).or_insert_with(|| File {
+                    properties: file_props_by_file
+                        .get(&rel_path)
+                        .cloned()
+                        .unwrap_or_else(|| {
+                            log::warn!("creating new metadata file for `{rel_path}`");
+                            Default::default()
+                        }),
+                    tests: Default::default(),
+                });
                 file.tests.insert(
                     SectionHeader(name),
                     Test {
@@ -715,7 +689,7 @@ fn run(cli: Cli) -> ExitCode {
                             .into_result()
                         {
                             Ok(File {
-                                properties: FileProps {},
+                                properties: _,
                                 tests,
                             }) => Some(tests.into_iter().map(|(name, inner)| {
                                 let SectionHeader(name) = &name;
@@ -1223,15 +1197,7 @@ fn run(cli: Cli) -> ExitCode {
         }
         Subcommand::ReadTestVariants => {
             let webgpu_cts_test_parent_dir = {
-                path!(
-                    &gecko_checkout
-                        | "testing"
-                        | "web-platform"
-                        | "mozilla"
-                        | "tests"
-                        | "webgpu"
-                        | "chunked"
-                )
+                path!(&gecko_checkout | "testing" | "web-platform" | "mozilla" | "tests" | "webgpu")
             };
 
             let tests_by_path = match read_gecko_files_at(
