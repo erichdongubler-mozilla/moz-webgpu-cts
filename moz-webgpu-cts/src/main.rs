@@ -26,6 +26,7 @@ use std::{
     sync::{mpsc::channel, Arc},
 };
 
+use camino::Utf8PathBuf;
 use clap::{Parser, ValueEnum};
 use enumset::EnumSetType;
 use format::lazy_format;
@@ -323,14 +324,19 @@ fn run(cli: Cli) -> ExitCode {
                 files
             };
 
+            let mut file_props_by_file = IndexMap::<Utf8PathBuf, FileProps>::default();
             let mut outcomes_by_test = IndexMap::<TestPath, TestOutcomes>::default();
 
             log::info!("loading metadata for comparison to reports…");
             for (path, file) in meta_files_by_path {
-                let File {
-                    properties: FileProps {},
-                    tests,
-                } = file;
+                let File { properties, tests } = file;
+
+                let file_rel_path = path.strip_prefix(&gecko_checkout).unwrap();
+
+                file_props_by_file.insert(
+                    Utf8PathBuf::from(file_rel_path.to_str().unwrap()),
+                    properties,
+                );
 
                 for (SectionHeader(name), test) in tests {
                     let Test {
@@ -342,11 +348,7 @@ fn run(cli: Cli) -> ExitCode {
                         subtests,
                     } = test;
 
-                    let test_path = TestPath::from_fx_metadata_test(
-                        path.strip_prefix(&gecko_checkout).unwrap(),
-                        &name,
-                    )
-                    .unwrap();
+                    let test_path = TestPath::from_fx_metadata_test(file_rel_path, &name).unwrap();
 
                     let freak_out_do_nothing = |what: &dyn Display| {
                         log::error!("hoo boy, not sure what to do yet: {what}")
@@ -630,8 +632,18 @@ fn run(cli: Cli) -> ExitCode {
             let mut files = BTreeMap::<PathBuf, File>::new();
             for (test_path, (properties, subtests)) in recombined_tests_iter {
                 let name = test_path.test_name().to_string();
-                let path = gecko_checkout.join(test_path.rel_metadata_path_fx().to_string());
-                let file = files.entry(path).or_default();
+                let rel_path = Utf8PathBuf::from(test_path.rel_metadata_path_fx().to_string());
+                let path = gecko_checkout.join(&rel_path);
+                let file = files.entry(path).or_insert_with(|| File {
+                    properties: file_props_by_file
+                        .get(&rel_path)
+                        .cloned()
+                        .unwrap_or_else(|| {
+                            log::warn!("creating new metadata file for `{rel_path}`");
+                            Default::default()
+                        }),
+                    tests: Default::default(),
+                });
                 file.tests.insert(
                     SectionHeader(name),
                     Test {
