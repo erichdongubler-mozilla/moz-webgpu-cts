@@ -8,7 +8,7 @@ use self::{
         BuildProfile, File, FileProps, Platform, Subtest, SubtestOutcome, Test, TestOutcome,
         TestProps,
     },
-    process_reports::{Entry, MaybeDisabled, TestEntry},
+    process_reports::{Entry, TestEntry},
     report::{
         ExecutionReport, RunInfo, SubtestExecutionResult, TestExecutionEntry, TestExecutionResult,
     },
@@ -340,11 +340,7 @@ fn run(cli: Cli) -> ExitCode {
 
                 for (SectionHeader(name), test) in tests {
                     let Test {
-                        properties:
-                            TestProps {
-                                is_disabled,
-                                expectations,
-                            },
+                        properties,
                         subtests,
                     } = test;
 
@@ -364,12 +360,7 @@ fn run(cli: Cli) -> ExitCode {
                     let test_path = &test_path;
                     let mut reported_dupe_already = false;
 
-                    let maybe_disabled = if is_disabled {
-                        MaybeDisabled::Disabled
-                    } else {
-                        MaybeDisabled::Enabled(expectations)
-                    };
-                    if let Some(_old) = test_entry.metadata.replace(maybe_disabled) {
+                    if let Some(_old) = test_entry.meta_props.replace(properties) {
                         freak_out_do_nothing(
                             &lazy_format!(
                                 "duplicate entry for {test_path:?}, discarding previous entries with this and further dupes"
@@ -379,21 +370,10 @@ fn run(cli: Cli) -> ExitCode {
                     }
 
                     for (SectionHeader(subtest_name), subtest) in subtests {
-                        let Subtest {
-                            properties:
-                                TestProps {
-                                    is_disabled,
-                                    expectations,
-                                },
-                        } = subtest;
+                        let Subtest { properties } = subtest;
                         let subtest_entry =
                             subtest_entries.entry(subtest_name.clone()).or_default();
-                        let maybe_disabled = if is_disabled {
-                            MaybeDisabled::Disabled
-                        } else {
-                            MaybeDisabled::Enabled(expectations)
-                        };
-                        if let Some(_old) = subtest_entry.metadata.replace(maybe_disabled) {
+                        if let Some(_old) = subtest_entry.meta_props.replace(properties) {
                             if !reported_dupe_already {
                                 freak_out_do_nothing(&lazy_format!(
                                     "duplicate subtest in {test_path:?} named {subtest_name:?}, discarding previous entries with this and further dupes"
@@ -533,19 +513,18 @@ fn run(cli: Cli) -> ExitCode {
                         where
                             Out: Debug + Default + EnumSetType,
                         {
-                            let Entry { metadata, reported } = entry;
-
-                            let metadata = metadata
-                                .map(|maybe_disabled| {
-                                    maybe_disabled.map_enabled(|opt| opt.unwrap_or_default())
-                                })
-                                .unwrap_or_default();
-
+                            let Entry {
+                                meta_props,
+                                reported,
+                            } = entry;
                             let normalize = NormalizedExpectationPropertyValue::from_fully_expanded;
 
-                            let reconciled_expectations = metadata.map_enabled(|metadata| {
+                            let mut meta_props = meta_props.unwrap_or_default();
+                            meta_props.expectations = Some('resolve: {
                                 let resolve = match preset {
-                                    ReportProcessingPreset::ResetAll => return normalize(reported),
+                                    ReportProcessingPreset::ResetAll => {
+                                        break 'resolve normalize(reported);
+                                    }
                                     ReportProcessingPreset::ResetContradictory => {
                                         |meta: Expectation<_>, rep: Option<Expectation<_>>| {
                                             rep.filter(|rep| !meta.is_superset(rep)).unwrap_or(meta)
@@ -565,7 +544,11 @@ fn run(cli: Cli) -> ExitCode {
                                                     (
                                                         build_profile,
                                                         resolve(
-                                                            metadata.get(platform, build_profile),
+                                                            meta_props
+                                                                .expectations
+                                                                .as_ref()
+                                                                .unwrap_or(&Default::default())
+                                                                .get(platform, build_profile),
                                                             reported
                                                                 .get(&platform)
                                                                 .and_then(|rep| {
@@ -581,17 +564,7 @@ fn run(cli: Cli) -> ExitCode {
                                         .collect(),
                                 )
                             });
-
-                            match reconciled_expectations {
-                                MaybeDisabled::Disabled => TestProps {
-                                    is_disabled: true,
-                                    expectations: Default::default(),
-                                },
-                                MaybeDisabled::Enabled(expectations) => TestProps {
-                                    is_disabled: false,
-                                    expectations: Some(expectations),
-                                },
-                            }
+                            meta_props
                         }
 
                         let TestEntry {
