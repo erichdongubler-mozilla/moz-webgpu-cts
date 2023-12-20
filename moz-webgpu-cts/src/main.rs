@@ -352,11 +352,14 @@ fn run(cli: Cli) -> ExitCode {
                     let mut reported_dupe_already = false;
 
                     if let Some(_old) = test_entry.meta_props.replace(properties) {
-                        freak_out_do_nothing(
-                            &lazy_format!(
-                                "duplicate entry for {test_path:?}, discarding previous entries with this and further dupes"
-                            )
-                        );
+                        freak_out_do_nothing(&format_args!(
+                            concat!(
+                                "duplicate entry for {:?}",
+                                "discarding previous entries with ",
+                                "this and further dupes"
+                            ),
+                            test_path
+                        ));
                         reported_dupe_already = true;
                     }
 
@@ -366,8 +369,13 @@ fn run(cli: Cli) -> ExitCode {
                             subtest_entries.entry(subtest_name.clone()).or_default();
                         if let Some(_old) = subtest_entry.meta_props.replace(properties) {
                             if !reported_dupe_already {
-                                freak_out_do_nothing(&lazy_format!(
-                                    "duplicate subtest in {test_path:?} named {subtest_name:?}, discarding previous entries with this and further dupes"
+                                freak_out_do_nothing(&format_args!(
+                                    concat!(
+                                        "duplicate subtest in {:?} named {:?}, ",
+                                        "discarding previous entries with ",
+                                        "this and further dupes"
+                                    ),
+                                    test_path, subtest_name
                                 ));
                             }
                         }
