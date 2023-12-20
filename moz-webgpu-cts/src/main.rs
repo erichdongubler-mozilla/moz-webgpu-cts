@@ -1156,6 +1156,16 @@ fn run(cli: Cli) -> ExitCode {
                 let tests_with_disabled = lazy_format!(
                     "{num_tests_with_disabled} test(s) with some portion marked as `disabled`"
                 );
+                if num_tests_with_intermittent_disabled > 0 {
+                    log::warn!(
+                        concat!(
+                            "found {} intermittent `SKIP` outcomes, which we don't understand ",
+                            "yet; figure it out! The tests: {:#?}"
+                        ),
+                        num_tests_with_intermittent_disabled,
+                        tests_with_disabled_or_skip,
+                    )
+                }
 
                 let PermaAndIntermittent {
                     perma: num_tests_with_perma_crashes,
@@ -1239,17 +1249,6 @@ fn run(cli: Cli) -> ExitCode {
                         num_subtests_with_intermittent_timeouts_somewhere
                     )
                 });
-
-                if num_tests_with_intermittent_disabled > 0 {
-                    log::warn!(
-                        concat!(
-                            "found {} intermittent `SKIP` outcomes, which we don't understand ",
-                            "yet; figure it out! The tests: {:#?}"
-                        ),
-                        num_tests_with_intermittent_disabled,
-                        tests_with_disabled_or_skip,
-                    )
-                }
 
                 println!(
                     "\
