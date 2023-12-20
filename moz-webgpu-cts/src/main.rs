@@ -1168,7 +1168,10 @@ fn run(cli: Cli) -> ExitCode {
 
                 if num_tests_with_intermittent_disabled > 0 {
                     log::warn!(
-                        concat!("found {} intermittent `SKIP` outcomes, which we don't understand yet; figure it out! The tests: {:#?}"),
+                        concat!(
+                            "found {} intermittent `SKIP` outcomes, which we don't understand ",
+                            "yet; figure it out! The tests: {:#?}"
+                        ),
                         num_tests_with_intermittent_disabled,
                         tests_with_disabled_or_skip,
                     )
