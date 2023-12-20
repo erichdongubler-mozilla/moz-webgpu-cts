@@ -31,6 +31,7 @@ use clap::{Parser, ValueEnum};
 use enumset::EnumSetType;
 use format::lazy_format;
 use indexmap::{IndexMap, IndexSet};
+use joinery::JoinableIterator;
 use miette::{miette, Diagnostic, IntoDiagnostic, NamedSource, Report, SourceSpan, WrapErr};
 use path_dsl::path;
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
@@ -106,7 +107,10 @@ enum Subcommand {
     },
     #[clap(name = "fmt")]
     Format,
-    Triage,
+    Triage {
+        #[clap(value_enum, long, default_value_t = Default::default())]
+        on_zero_item: OnZeroItem,
+    },
     ReadTestVariants,
 }
 
@@ -115,6 +119,13 @@ enum ReportProcessingPreset {
     Merge,
     ResetContradictory,
     ResetAll,
+}
+
+#[derive(Clone, Copy, Debug, Default, ValueEnum)]
+enum OnZeroItem {
+    Show,
+    #[default]
+    Hide,
 }
 
 fn main() -> ExitCode {
@@ -677,7 +688,7 @@ fn run(cli: Cli) -> ExitCode {
                 ExitCode::SUCCESS
             }
         }
-        Subcommand::Triage => {
+        Subcommand::Triage { on_zero_item } => {
             #[derive(Debug)]
             struct TaggedTest {
                 #[allow(unused)]
@@ -1124,6 +1135,10 @@ fn run(cli: Cli) -> ExitCode {
             }
             log::info!("finished analysis, printing to `stdout`…");
             analysis.for_each_platform(|platform, analysis| {
+                let show_zero_count_item = match on_zero_item {
+                    OnZeroItem::Show => true,
+                    OnZeroItem::Hide => false,
+                };
                 let PerPlatformAnalysis {
                     tests_with_runner_errors,
                     tests_with_disabled_or_skip,
@@ -1137,15 +1152,19 @@ fn run(cli: Cli) -> ExitCode {
                     intermittent: num_tests_with_intermittent_runner_errors,
                 } = tests_with_runner_errors.as_ref().map(|tests| tests.len());
 
-                let tests_with_perma_runner_errors = lazy_format!(
-                    "{} test(s) with execution reporting permanent `ERROR`",
-                    num_tests_with_perma_runner_errors,
-                );
+                let tests_with_perma_runner_errors = (show_zero_count_item
+                    || num_tests_with_perma_runner_errors > 0)
+                    .then_some(lazy_format!(
+                        "{} test(s) with execution reporting permanent `ERROR`",
+                        num_tests_with_perma_runner_errors,
+                    ));
 
-                let tests_with_intermittent_runner_errors = lazy_format!(
-                    "{} test(s) with execution reporting intermittent `ERROR`",
-                    num_tests_with_intermittent_runner_errors
-                );
+                let tests_with_intermittent_runner_errors = (show_zero_count_item
+                    || num_tests_with_intermittent_runner_errors > 0)
+                    .then_some(lazy_format!(
+                        "{} test(s) with execution reporting intermittent `ERROR`",
+                        num_tests_with_intermittent_runner_errors
+                    ));
 
                 let PermaAndIntermittent {
                     perma: num_tests_with_disabled,
@@ -1153,9 +1172,10 @@ fn run(cli: Cli) -> ExitCode {
                 } = tests_with_disabled_or_skip
                     .as_ref()
                     .map(|tests| tests.len());
-                let tests_with_disabled = lazy_format!(
-                    "{num_tests_with_disabled} test(s) with some portion marked as `disabled`"
-                );
+                let tests_with_disabled = (show_zero_count_item || num_tests_with_disabled > 0)
+                    .then_some(lazy_format!(
+                        "{num_tests_with_disabled} test(s) with some portion marked as `disabled`"
+                    ));
                 if num_tests_with_intermittent_disabled > 0 {
                     log::warn!(
                         concat!(
@@ -1171,14 +1191,18 @@ fn run(cli: Cli) -> ExitCode {
                     perma: num_tests_with_perma_crashes,
                     intermittent: num_tests_with_intermittent_crashes,
                 } = tests_with_crashes.as_ref().map(|tests| tests.len());
-                let tests_with_perma_crashes = lazy_format!(
-                    "{} test(s) with some portion expecting permanent `CRASH`",
-                    num_tests_with_perma_crashes
-                );
-                let tests_with_intermittent_crashes = lazy_format!(
-                    "{} tests(s) with some portion expecting intermittent `CRASH`",
-                    num_tests_with_intermittent_crashes
-                );
+                let tests_with_perma_crashes = (show_zero_count_item
+                    || num_tests_with_perma_crashes > 0)
+                    .then_some(lazy_format!(
+                        "{} test(s) with some portion expecting permanent `CRASH`",
+                        num_tests_with_perma_crashes
+                    ));
+                let tests_with_intermittent_crashes = (show_zero_count_item
+                    || num_tests_with_intermittent_crashes > 0)
+                    .then_some(lazy_format!(
+                        "{} tests(s) with some portion expecting intermittent `CRASH`",
+                        num_tests_with_intermittent_crashes
+                    ));
 
                 let PermaAndIntermittent {
                     perma: num_tests_with_perma_failures_somewhere,
@@ -1195,22 +1219,28 @@ fn run(cli: Cli) -> ExitCode {
                         .flat_map(|(_name, subtests)| subtests.iter())
                         .count()
                 });
-                let tests_with_perma_failures = lazy_format!(
-                    "{} test(s) with some portion perma-`FAIL`ing, {} subtests total",
-                    num_tests_with_perma_failures_somewhere,
-                    num_subtests_with_perma_failures_somewhere,
-                );
-                let tests_with_intermittent_failures = lazy_format!(|f| {
-                    write!(
-                        f,
-                        concat!(
-                            "{} test(s) with some portion intermittently `FAIL`ing, ",
-                            "{} subtests total"
-                        ),
-                        num_tests_with_intermittent_failures_somewhere,
-                        num_subtests_with_intermittent_failures_somewhere
-                    )
-                });
+                let tests_with_perma_failures = (show_zero_count_item
+                    || num_tests_with_perma_failures_somewhere > 0
+                    || num_subtests_with_perma_failures_somewhere > 0)
+                    .then_some(lazy_format!(
+                        "{} test(s) with some portion perma-`FAIL`ing, {} subtests total",
+                        num_tests_with_perma_failures_somewhere,
+                        num_subtests_with_perma_failures_somewhere,
+                    ));
+                let tests_with_intermittent_failures = (show_zero_count_item
+                    || num_tests_with_intermittent_failures_somewhere > 0
+                    || num_subtests_with_intermittent_failures_somewhere > 0)
+                    .then_some(lazy_format!(|f| {
+                        write!(
+                            f,
+                            concat!(
+                                "{} test(s) with some portion intermittently `FAIL`ing, ",
+                                "{} subtests total"
+                            ),
+                            num_tests_with_intermittent_failures_somewhere,
+                            num_subtests_with_intermittent_failures_somewhere
+                        )
+                    }));
 
                 let PermaAndIntermittent {
                     perma: num_tests_with_perma_timeouts_somewhere,
@@ -1227,46 +1257,82 @@ fn run(cli: Cli) -> ExitCode {
                         .flat_map(|(_name, subtests)| subtests.iter())
                         .count()
                 });
-                let tests_with_perma_timeouts_somewhere = lazy_format!(|f| {
-                    write!(
-                        f,
-                        concat!(
-                            "{} test(s) with some portion returning permanent ",
-                            "`TIMEOUT`/`NOTRUN`, {} subtests total"
-                        ),
-                        num_tests_with_perma_timeouts_somewhere,
-                        num_subtests_with_perma_timeouts_somewhere
-                    )
-                });
-                let tests_with_intermittent_timeouts_somewhere = lazy_format!(|f| {
-                    write!(
-                        f,
-                        concat!(
-                            "{} test(s) with some portion intermittently returning ",
-                            "`TIMEOUT`/`NOTRUN`, {} subtest(s) total",
-                        ),
-                        num_tests_with_intermittent_timeouts_somewhere,
-                        num_subtests_with_intermittent_timeouts_somewhere
-                    )
-                });
+                let tests_with_perma_timeouts_somewhere = (show_zero_count_item
+                    || num_tests_with_perma_timeouts_somewhere > 0)
+                    .then_some(lazy_format!(|f| {
+                        write!(
+                            f,
+                            concat!(
+                                "{} test(s) with some portion returning permanent ",
+                                "`TIMEOUT`/`NOTRUN`, {} subtests total"
+                            ),
+                            num_tests_with_perma_timeouts_somewhere,
+                            num_subtests_with_perma_timeouts_somewhere
+                        )
+                    }));
+                let tests_with_intermittent_timeouts_somewhere = (show_zero_count_item
+                    || num_tests_with_intermittent_timeouts_somewhere > 0)
+                    .then_some(lazy_format!(|f| {
+                        write!(
+                            f,
+                            concat!(
+                                "{} test(s) with some portion intermittently returning ",
+                                "`TIMEOUT`/`NOTRUN`, {} subtest(s) total",
+                            ),
+                            num_tests_with_intermittent_timeouts_somewhere,
+                            num_subtests_with_intermittent_timeouts_somewhere
+                        )
+                    }));
 
-                println!(
-                    "\
-{platform:?}:
-  HIGH PRIORITY:
-    {tests_with_perma_runner_errors}
-    {tests_with_disabled}
-    {tests_with_perma_crashes}
-  MEDIUM PRIORITY:
-    {tests_with_perma_failures}
-    {tests_with_perma_timeouts_somewhere}
-    {tests_with_intermittent_crashes}
-    {tests_with_intermittent_runner_errors}
-  LOW PRIORITY:
-    {tests_with_intermittent_timeouts_somewhere}
-    {tests_with_intermittent_failures}
-"
-                );
+                fn priority_section<'a, const SIZE: usize>(
+                    name: &'static str,
+                    items: [Option<&'a dyn Display>; SIZE],
+                ) -> Option<Box<dyn Display + 'a>> {
+                    items.iter().any(Option::is_some).then(move || {
+                        Box::new(lazy_format!(move |f| {
+                            let items = items
+                                .iter()
+                                .filter_map(|opt| *opt)
+                                .map(|item| lazy_format!("\n    {item}"))
+                                .join_with("");
+                            write!(f, "\n  {name} PRIORITY:{items}")
+                        })) as Box<dyn Display>
+                    })
+                }
+                fn item<T>(item: Option<&T>) -> Option<&dyn Display>
+                where
+                    T: Display,
+                {
+                    item.map(|disp| disp as &dyn Display)
+                }
+                let sections = [
+                    priority_section(
+                        "HIGH",
+                        [
+                            item(tests_with_perma_runner_errors.as_ref()),
+                            item(tests_with_disabled.as_ref()),
+                            item(tests_with_perma_crashes.as_ref()),
+                        ],
+                    ),
+                    priority_section(
+                        "MEDIUM",
+                        [
+                            item(tests_with_perma_failures.as_ref()),
+                            item(tests_with_perma_timeouts_somewhere.as_ref()),
+                            item(tests_with_intermittent_crashes.as_ref()),
+                            item(tests_with_intermittent_runner_errors.as_ref()),
+                        ],
+                    ),
+                    priority_section(
+                        "LOW",
+                        [
+                            item(tests_with_intermittent_timeouts_somewhere.as_ref()),
+                            item(tests_with_intermittent_failures.as_ref()),
+                        ],
+                    ),
+                ];
+                let sections = sections.iter().filter_map(Option::as_ref).join_with("");
+                println!("{platform:?}:{sections}")
             });
             println!("Full analysis: {analysis:#?}");
             ExitCode::SUCCESS
