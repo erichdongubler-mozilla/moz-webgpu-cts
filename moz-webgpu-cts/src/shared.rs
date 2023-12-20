@@ -465,6 +465,25 @@ impl<'a> TestPath<'a> {
         })
     }
 
+    pub(crate) fn runner_url_path(&self) -> impl Display + '_ {
+        let Self {
+            path,
+            variant,
+            scope,
+        } = self;
+        lazy_format!(move |f| {
+            let scope_prefix = match scope {
+                TestScope::Public => "",
+                TestScope::FirefoxPrivate => "_mozilla/",
+            };
+            write!(f, "{scope_prefix}{}", path.components().join_with('/'))?;
+            if let Some(variant) = variant.as_ref() {
+                write!(f, "{}", variant)?;
+            }
+            Ok(())
+        })
+    }
+
     pub(crate) fn rel_metadata_path_fx(&self) -> impl Display + '_ {
         let Self {
             path,
@@ -613,5 +632,52 @@ fn report_meta_reject() {
         // Wrong: missing the `mozilla` component after `web-platform`
         "testing/web-platform/meta/blarg/cts.https.html.ini",
         "cts.https.html?stuff=things"
+    );
+}
+
+#[test]
+fn runner_url_path() {
+    assert_eq!(
+        TestPath::from_fx_metadata_test(
+            Path::new("testing/web-platform/meta/blarg/stuff.https.html.ini"),
+            "stuff.https.html"
+        )
+        .unwrap()
+        .runner_url_path()
+        .to_string(),
+        "blarg/stuff.https.html",
+    );
+
+    assert_eq!(
+        TestPath::from_fx_metadata_test(
+            Path::new("testing/web-platform/meta/blarg/stuff.https.html.ini"),
+            "stuff.https.html?win"
+        )
+        .unwrap()
+        .runner_url_path()
+        .to_string(),
+        "blarg/stuff.https.html?win",
+    );
+
+    assert_eq!(
+        TestPath::from_fx_metadata_test(
+            Path::new("testing/web-platform/mozilla/meta/blarg/stuff.https.html.ini"),
+            "stuff.https.html"
+        )
+        .unwrap()
+        .runner_url_path()
+        .to_string(),
+        "_mozilla/blarg/stuff.https.html",
+    );
+
+    assert_eq!(
+        TestPath::from_fx_metadata_test(
+            Path::new("testing/web-platform/mozilla/meta/blarg/stuff.https.html.ini"),
+            "stuff.https.html?win"
+        )
+        .unwrap()
+        .runner_url_path()
+        .to_string(),
+        "_mozilla/blarg/stuff.https.html?win",
     );
 }

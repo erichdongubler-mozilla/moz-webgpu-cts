@@ -699,15 +699,24 @@ fn run(cli: Cli) -> ExitCode {
                             Ok(File {
                                 properties: _,
                                 tests,
-                            }) => Some(tests.into_iter().map(|(name, inner)| {
-                                let SectionHeader(name) = &name;
-                                (
-                                    name.strip_prefix("cts.https.html?q=").unwrap().to_owned(),
-                                    TaggedTest {
-                                        inner,
-                                        orig_path: path.clone(),
-                                    },
-                                )
+                            }) => Some(tests.into_iter().map({
+                                let gecko_checkout = &gecko_checkout;
+                                move |(name, inner)| {
+                                    let SectionHeader(name) = &name;
+                                    let test_path = TestPath::from_fx_metadata_test(
+                                        path.strip_prefix(gecko_checkout).unwrap(),
+                                        name,
+                                    )
+                                    .unwrap();
+                                    let url_path = test_path.runner_url_path().to_string();
+                                    (
+                                        url_path,
+                                        TaggedTest {
+                                            inner,
+                                            orig_path: path.clone(),
+                                        },
+                                    )
+                                }
                             })),
                             Err(errors) => {
                                 found_parse_err = true;
@@ -779,9 +788,9 @@ fn run(cli: Cli) -> ExitCode {
                 }
             }
 
-            type TestSet = PermaAndIntermittent<BTreeSet<Arc<SectionHeader>>>;
+            type TestSet = PermaAndIntermittent<BTreeSet<Arc<String>>>;
             type SubtestByTestSet =
-                PermaAndIntermittent<BTreeMap<Arc<SectionHeader>, IndexSet<Arc<SectionHeader>>>>;
+                PermaAndIntermittent<BTreeMap<Arc<String>, IndexSet<Arc<String>>>>;
 
             #[derive(Clone, Debug, Default)]
             struct PerPlatformAnalysis {
@@ -861,11 +870,7 @@ fn run(cli: Cli) -> ExitCode {
                     expectations,
                 } = properties;
 
-                let test_name = test_name
-                    .strip_prefix("cts.https.html?q=")
-                    .map(|n| n.to_owned())
-                    .unwrap_or(test_name);
-                let test_name = Arc::new(SectionHeader(test_name));
+                let test_name = Arc::new(test_name);
 
                 if is_disabled {
                     analysis.for_each_platform_mut(|analysis| {
@@ -878,7 +883,7 @@ fn run(cli: Cli) -> ExitCode {
 
                 fn insert_in_test_set<Out>(
                     poi: &mut TestSet,
-                    test_name: &Arc<SectionHeader>,
+                    test_name: &Arc<String>,
                     expectation: Expectation<Out>,
                     outcome: Out,
                 ) where
@@ -896,8 +901,8 @@ fn run(cli: Cli) -> ExitCode {
 
                 fn insert_in_subtest_by_test_set<Out>(
                     poi: &mut SubtestByTestSet,
-                    test_name: &Arc<SectionHeader>,
-                    subtest_name: &Arc<SectionHeader>,
+                    test_name: &Arc<String>,
+                    subtest_name: &Arc<String>,
                     expectation: Expectation<Out>,
                     outcome: Out,
                 ) where
@@ -917,7 +922,7 @@ fn run(cli: Cli) -> ExitCode {
 
                 if let Some(expectations) = expectations {
                     fn analyze_test_outcome<F>(
-                        test_name: &Arc<SectionHeader>,
+                        test_name: &Arc<String>,
                         expectation: Expectation<TestOutcome>,
                         mut receiver: F,
                     ) where
@@ -1003,6 +1008,7 @@ fn run(cli: Cli) -> ExitCode {
                 }
 
                 for (subtest_name, subtest) in subtests {
+                    let SectionHeader(subtest_name) = subtest_name;
                     let subtest_name = Arc::new(subtest_name);
 
                     let Subtest { properties } = subtest;
@@ -1021,8 +1027,8 @@ fn run(cli: Cli) -> ExitCode {
 
                     if let Some(expectations) = expectations {
                         fn analyze_subtest_outcome<Fo>(
-                            test_name: &Arc<SectionHeader>,
-                            subtest_name: &Arc<SectionHeader>,
+                            test_name: &Arc<String>,
+                            subtest_name: &Arc<String>,
                             expectation: Expectation<SubtestOutcome>,
                             mut receiver: Fo,
                         ) where
