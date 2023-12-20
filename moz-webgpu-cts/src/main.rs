@@ -702,9 +702,7 @@ fn run(cli: Cli) -> ExitCode {
                             }) => Some(tests.into_iter().map(|(name, inner)| {
                                 let SectionHeader(name) = &name;
                                 (
-                                    SectionHeader(
-                                        name.strip_prefix("cts.https.html?q=").unwrap().to_owned(),
-                                    ),
+                                    name.strip_prefix("cts.https.html?q=").unwrap().to_owned(),
                                     TaggedTest {
                                         inner,
                                         orig_path: path.clone(),
@@ -847,7 +845,7 @@ fn run(cli: Cli) -> ExitCode {
             }
 
             let mut analysis = Analysis::default();
-            for (SectionHeader(test_name), test) in tests_by_name {
+            for (test_name, test) in tests_by_name {
                 let TaggedTest {
                     orig_path: _,
                     inner: test,
