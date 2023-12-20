@@ -480,28 +480,6 @@ impl<'a> TestPath<'a> {
     }
 }
 
-impl Display for TestPath<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let Self {
-            variant,
-            // These are used by our call to `rel_metadata_path_fx` below:
-            scope: _,
-            path: _,
-        } = self;
-        write!(
-            f,
-            "{}{}",
-            self.rel_metadata_path_fx(),
-            lazy_format!(|f| {
-                match variant {
-                    Some(variant) => write!(f, "{variant}"),
-                    None => Ok(()),
-                }
-            })
-        )
-    }
-}
-
 #[derive(Debug)]
 pub struct ExecutionReportPathError<'a> {
     test_url_path: &'a str,
