@@ -1244,6 +1244,12 @@ fn run(cli: Cli) -> ExitCode {
 /// `gecko_checkout` is stripped as a prefix from the absolute paths recorded into `log` entries
 /// emitted by this function.
 ///
+/// # Returns
+///
+/// An iterator over [`Result`]s containing either a Gecko file's path and contents as a UTF-8
+/// string, or the sentinel of an error encountered for the same file that is already reported to
+/// the command line.
+///
 /// # Panics
 ///
 /// This function will panick if `gecko_checkout` cannot be stripped as a prefix of `base`.
