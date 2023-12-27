@@ -77,10 +77,9 @@ jobs:
 
   clippy:
     name: Clippy
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macOS-latest]
         rust:
           - stable
           - beta
@@ -99,7 +98,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: clippy
-          args: -- -D warnings
+          args: --all-targets --all-features -- -D warnings
 
   cargo-deny:
     runs-on: ubuntu-latest
