@@ -325,7 +325,7 @@ fn run(cli: Cli) -> ExitCode {
             };
 
             let mut file_props_by_file = IndexMap::<Utf8PathBuf, FileProps>::default();
-            let mut entries_by_test = IndexMap::<TestPath<'_>, TestEntry>::default();
+            let mut other_entries_by_test = IndexMap::<TestPath<'_>, TestEntry>::default();
 
             log::info!("loading metadata for comparison to reports…");
             for (path, file) in meta_files_by_path {
@@ -353,7 +353,7 @@ fn run(cli: Cli) -> ExitCode {
                     let TestEntry {
                         entry: test_entry,
                         subtests: subtest_entries,
-                    } = entries_by_test
+                    } = other_entries_by_test
                         .entry(test_path.clone().into_owned())
                         .or_default();
 
@@ -443,7 +443,7 @@ fn run(cli: Cli) -> ExitCode {
                     let TestEntry {
                         entry: test_entry,
                         subtests: subtest_entries,
-                    } = entries_by_test
+                    } = other_entries_by_test
                         .entry(test_path.clone().into_owned())
                         .or_default();
 
@@ -511,7 +511,7 @@ fn run(cli: Cli) -> ExitCode {
 
             let mut found_reconciliation_err = false;
             let recombined_tests_iter =
-                entries_by_test
+                other_entries_by_test
                     .into_iter()
                     .filter_map(|(test_path, test_entry)| {
                         fn reconcile<Out>(
