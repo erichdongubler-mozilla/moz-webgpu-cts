@@ -35,7 +35,6 @@ use joinery::JoinableIterator;
 use miette::{miette, Diagnostic, IntoDiagnostic, NamedSource, Report, SourceSpan, WrapErr};
 use path_dsl::path;
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
-use regex::Regex;
 use strum::IntoEnumIterator;
 use wax::Glob;
 use whippit::{
@@ -111,7 +110,6 @@ enum Subcommand {
         #[clap(value_enum, long, default_value_t = Default::default())]
         on_zero_item: OnZeroItem,
     },
-    ReadTestVariants,
 }
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
@@ -1335,48 +1333,6 @@ fn run(cli: Cli) -> ExitCode {
                 println!("{platform:?}:{sections}")
             });
             println!("Full analysis: {analysis:#?}");
-            ExitCode::SUCCESS
-        }
-        Subcommand::ReadTestVariants => {
-            let webgpu_cts_test_parent_dir = {
-                path!(&gecko_checkout | "testing" | "web-platform" | "mozilla" | "tests" | "webgpu")
-            };
-
-            let tests_by_path = match read_gecko_files_at(
-                &gecko_checkout,
-                &webgpu_cts_test_parent_dir,
-                "**/cts.https.html",
-            ) {
-                Ok(paths) => {
-                    let mut found_err = false;
-                    let collected = paths
-                        .filter_map(|res| {
-                            found_err |= res.is_ok();
-                            res.ok()
-                        })
-                        .collect::<IndexMap<_, _>>();
-                    if found_err {
-                        return ExitCode::FAILURE;
-                    }
-                    collected
-                }
-                Err(AlreadyReportedToCommandline) => return ExitCode::FAILURE,
-            };
-
-            let meta_variant_re =
-                Regex::new(r"^<meta name=variant content='\?q=(?P<variant_path>.*?)'>$").unwrap();
-            let meta_variant_re = &meta_variant_re;
-            let variants = tests_by_path
-                .iter()
-                .flat_map(|(test_path, contents)| {
-                    contents.lines().filter_map(move |line| {
-                        meta_variant_re.captures(line).map(move |captures| {
-                            (captures.name("variant_path").unwrap().as_str(), test_path)
-                        })
-                    })
-                })
-                .collect::<BTreeMap<_, _>>();
-            println!("{variants:#?}");
             ExitCode::SUCCESS
         }
     }
