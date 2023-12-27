@@ -31,6 +31,7 @@ use clap::{Parser, ValueEnum};
 use enumset::EnumSetType;
 use format::lazy_format;
 use indexmap::{IndexMap, IndexSet};
+use joinery::JoinableIterator;
 use miette::{miette, Diagnostic, IntoDiagnostic, NamedSource, Report, SourceSpan, WrapErr};
 use path_dsl::path;
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
@@ -106,7 +107,10 @@ enum Subcommand {
     },
     #[clap(name = "fmt")]
     Format,
-    Triage,
+    Triage {
+        #[clap(value_enum, long, default_value_t = Default::default())]
+        on_zero_item: OnZeroItem,
+    },
     ReadTestVariants,
 }
 
@@ -115,6 +119,13 @@ enum ReportProcessingPreset {
     Merge,
     ResetContradictory,
     ResetAll,
+}
+
+#[derive(Clone, Copy, Debug, Default, ValueEnum)]
+enum OnZeroItem {
+    Show,
+    #[default]
+    Hide,
 }
 
 fn main() -> ExitCode {
@@ -352,11 +363,14 @@ fn run(cli: Cli) -> ExitCode {
                     let mut reported_dupe_already = false;
 
                     if let Some(_old) = test_entry.meta_props.replace(properties) {
-                        freak_out_do_nothing(
-                            &lazy_format!(
-                                "duplicate entry for {test_path:?}, discarding previous entries with this and further dupes"
-                            )
-                        );
+                        freak_out_do_nothing(&format_args!(
+                            concat!(
+                                "duplicate entry for {:?}",
+                                "discarding previous entries with ",
+                                "this and further dupes"
+                            ),
+                            test_path
+                        ));
                         reported_dupe_already = true;
                     }
 
@@ -366,8 +380,13 @@ fn run(cli: Cli) -> ExitCode {
                             subtest_entries.entry(subtest_name.clone()).or_default();
                         if let Some(_old) = subtest_entry.meta_props.replace(properties) {
                             if !reported_dupe_already {
-                                freak_out_do_nothing(&lazy_format!(
-                                    "duplicate subtest in {test_path:?} named {subtest_name:?}, discarding previous entries with this and further dupes"
+                                freak_out_do_nothing(&format_args!(
+                                    concat!(
+                                        "duplicate subtest in {:?} named {:?}, ",
+                                        "discarding previous entries with ",
+                                        "this and further dupes"
+                                    ),
+                                    test_path, subtest_name
                                 ));
                             }
                         }
@@ -669,7 +688,7 @@ fn run(cli: Cli) -> ExitCode {
                 ExitCode::SUCCESS
             }
         }
-        Subcommand::Triage => {
+        Subcommand::Triage { on_zero_item } => {
             #[derive(Debug)]
             struct TaggedTest {
                 #[allow(unused)]
@@ -691,17 +710,24 @@ fn run(cli: Cli) -> ExitCode {
                             Ok(File {
                                 properties: _,
                                 tests,
-                            }) => Some(tests.into_iter().map(|(name, inner)| {
-                                let SectionHeader(name) = &name;
-                                (
-                                    SectionHeader(
-                                        name.strip_prefix("cts.https.html?q=").unwrap().to_owned(),
-                                    ),
-                                    TaggedTest {
-                                        inner,
-                                        orig_path: path.clone(),
-                                    },
-                                )
+                            }) => Some(tests.into_iter().map({
+                                let gecko_checkout = &gecko_checkout;
+                                move |(name, inner)| {
+                                    let SectionHeader(name) = &name;
+                                    let test_path = TestPath::from_fx_metadata_test(
+                                        path.strip_prefix(gecko_checkout).unwrap(),
+                                        name,
+                                    )
+                                    .unwrap();
+                                    let url_path = test_path.runner_url_path().to_string();
+                                    (
+                                        url_path,
+                                        TaggedTest {
+                                            inner,
+                                            orig_path: path.clone(),
+                                        },
+                                    )
+                                }
                             })),
                             Err(errors) => {
                                 found_parse_err = true;
@@ -773,9 +799,9 @@ fn run(cli: Cli) -> ExitCode {
                 }
             }
 
-            type TestSet = PermaAndIntermittent<BTreeSet<Arc<SectionHeader>>>;
+            type TestSet = PermaAndIntermittent<BTreeSet<Arc<String>>>;
             type SubtestByTestSet =
-                PermaAndIntermittent<BTreeMap<Arc<SectionHeader>, IndexSet<Arc<SectionHeader>>>>;
+                PermaAndIntermittent<BTreeMap<Arc<String>, IndexSet<Arc<String>>>>;
 
             #[derive(Clone, Debug, Default)]
             struct PerPlatformAnalysis {
@@ -839,7 +865,7 @@ fn run(cli: Cli) -> ExitCode {
             }
 
             let mut analysis = Analysis::default();
-            for (SectionHeader(test_name), test) in tests_by_name {
+            for (test_name, test) in tests_by_name {
                 let TaggedTest {
                     orig_path: _,
                     inner: test,
@@ -855,11 +881,7 @@ fn run(cli: Cli) -> ExitCode {
                     expectations,
                 } = properties;
 
-                let test_name = test_name
-                    .strip_prefix("cts.https.html?q=")
-                    .map(|n| n.to_owned())
-                    .unwrap_or(test_name);
-                let test_name = Arc::new(SectionHeader(test_name));
+                let test_name = Arc::new(test_name);
 
                 if is_disabled {
                     analysis.for_each_platform_mut(|analysis| {
@@ -872,7 +894,7 @@ fn run(cli: Cli) -> ExitCode {
 
                 fn insert_in_test_set<Out>(
                     poi: &mut TestSet,
-                    test_name: &Arc<SectionHeader>,
+                    test_name: &Arc<String>,
                     expectation: Expectation<Out>,
                     outcome: Out,
                 ) where
@@ -890,8 +912,8 @@ fn run(cli: Cli) -> ExitCode {
 
                 fn insert_in_subtest_by_test_set<Out>(
                     poi: &mut SubtestByTestSet,
-                    test_name: &Arc<SectionHeader>,
-                    subtest_name: &Arc<SectionHeader>,
+                    test_name: &Arc<String>,
+                    subtest_name: &Arc<String>,
                     expectation: Expectation<Out>,
                     outcome: Out,
                 ) where
@@ -911,7 +933,7 @@ fn run(cli: Cli) -> ExitCode {
 
                 if let Some(expectations) = expectations {
                     fn analyze_test_outcome<F>(
-                        test_name: &Arc<SectionHeader>,
+                        test_name: &Arc<String>,
                         expectation: Expectation<TestOutcome>,
                         mut receiver: F,
                     ) where
@@ -997,6 +1019,7 @@ fn run(cli: Cli) -> ExitCode {
                 }
 
                 for (subtest_name, subtest) in subtests {
+                    let SectionHeader(subtest_name) = subtest_name;
                     let subtest_name = Arc::new(subtest_name);
 
                     let Subtest { properties } = subtest;
@@ -1015,8 +1038,8 @@ fn run(cli: Cli) -> ExitCode {
 
                     if let Some(expectations) = expectations {
                         fn analyze_subtest_outcome<Fo>(
-                            test_name: &Arc<SectionHeader>,
-                            subtest_name: &Arc<SectionHeader>,
+                            test_name: &Arc<String>,
+                            subtest_name: &Arc<String>,
                             expectation: Expectation<SubtestOutcome>,
                             mut receiver: Fo,
                         ) where
@@ -1112,6 +1135,10 @@ fn run(cli: Cli) -> ExitCode {
             }
             log::info!("finished analysis, printing to `stdout`…");
             analysis.for_each_platform(|platform, analysis| {
+                let show_zero_count_item = match on_zero_item {
+                    OnZeroItem::Show => true,
+                    OnZeroItem::Hide => false,
+                };
                 let PerPlatformAnalysis {
                     tests_with_runner_errors,
                     tests_with_disabled_or_skip,
@@ -1125,16 +1152,58 @@ fn run(cli: Cli) -> ExitCode {
                     intermittent: num_tests_with_intermittent_runner_errors,
                 } = tests_with_runner_errors.as_ref().map(|tests| tests.len());
 
+                let tests_with_perma_runner_errors = (show_zero_count_item
+                    || num_tests_with_perma_runner_errors > 0)
+                    .then_some(lazy_format!(
+                        "{} test(s) with execution reporting permanent `ERROR`",
+                        num_tests_with_perma_runner_errors,
+                    ));
+
+                let tests_with_intermittent_runner_errors = (show_zero_count_item
+                    || num_tests_with_intermittent_runner_errors > 0)
+                    .then_some(lazy_format!(
+                        "{} test(s) with execution reporting intermittent `ERROR`",
+                        num_tests_with_intermittent_runner_errors
+                    ));
+
                 let PermaAndIntermittent {
                     perma: num_tests_with_disabled,
                     intermittent: num_tests_with_intermittent_disabled,
                 } = tests_with_disabled_or_skip
                     .as_ref()
                     .map(|tests| tests.len());
+                let tests_with_disabled = (show_zero_count_item || num_tests_with_disabled > 0)
+                    .then_some(lazy_format!(
+                        "{num_tests_with_disabled} test(s) with some portion marked as `disabled`"
+                    ));
+                if num_tests_with_intermittent_disabled > 0 {
+                    log::warn!(
+                        concat!(
+                            "found {} intermittent `SKIP` outcomes, which we don't understand ",
+                            "yet; figure it out! The tests: {:#?}"
+                        ),
+                        num_tests_with_intermittent_disabled,
+                        tests_with_disabled_or_skip,
+                    )
+                }
+
                 let PermaAndIntermittent {
                     perma: num_tests_with_perma_crashes,
                     intermittent: num_tests_with_intermittent_crashes,
                 } = tests_with_crashes.as_ref().map(|tests| tests.len());
+                let tests_with_perma_crashes = (show_zero_count_item
+                    || num_tests_with_perma_crashes > 0)
+                    .then_some(lazy_format!(
+                        "{} test(s) with some portion expecting permanent `CRASH`",
+                        num_tests_with_perma_crashes
+                    ));
+                let tests_with_intermittent_crashes = (show_zero_count_item
+                    || num_tests_with_intermittent_crashes > 0)
+                    .then_some(lazy_format!(
+                        "{} tests(s) with some portion expecting intermittent `CRASH`",
+                        num_tests_with_intermittent_crashes
+                    ));
+
                 let PermaAndIntermittent {
                     perma: num_tests_with_perma_failures_somewhere,
                     intermittent: num_tests_with_intermittent_failures_somewhere,
@@ -1150,6 +1219,29 @@ fn run(cli: Cli) -> ExitCode {
                         .flat_map(|(_name, subtests)| subtests.iter())
                         .count()
                 });
+                let tests_with_perma_failures = (show_zero_count_item
+                    || num_tests_with_perma_failures_somewhere > 0
+                    || num_subtests_with_perma_failures_somewhere > 0)
+                    .then_some(lazy_format!(
+                        "{} test(s) with some portion perma-`FAIL`ing, {} subtests total",
+                        num_tests_with_perma_failures_somewhere,
+                        num_subtests_with_perma_failures_somewhere,
+                    ));
+                let tests_with_intermittent_failures = (show_zero_count_item
+                    || num_tests_with_intermittent_failures_somewhere > 0
+                    || num_subtests_with_intermittent_failures_somewhere > 0)
+                    .then_some(lazy_format!(|f| {
+                        write!(
+                            f,
+                            concat!(
+                                "{} test(s) with some portion intermittently `FAIL`ing, ",
+                                "{} subtests total"
+                            ),
+                            num_tests_with_intermittent_failures_somewhere,
+                            num_subtests_with_intermittent_failures_somewhere
+                        )
+                    }));
+
                 let PermaAndIntermittent {
                     perma: num_tests_with_perma_timeouts_somewhere,
                     intermittent: num_tests_with_intermittent_timeouts_somewhere,
@@ -1165,32 +1257,82 @@ fn run(cli: Cli) -> ExitCode {
                         .flat_map(|(_name, subtests)| subtests.iter())
                         .count()
                 });
+                let tests_with_perma_timeouts_somewhere = (show_zero_count_item
+                    || num_tests_with_perma_timeouts_somewhere > 0)
+                    .then_some(lazy_format!(|f| {
+                        write!(
+                            f,
+                            concat!(
+                                "{} test(s) with some portion returning permanent ",
+                                "`TIMEOUT`/`NOTRUN`, {} subtests total"
+                            ),
+                            num_tests_with_perma_timeouts_somewhere,
+                            num_subtests_with_perma_timeouts_somewhere
+                        )
+                    }));
+                let tests_with_intermittent_timeouts_somewhere = (show_zero_count_item
+                    || num_tests_with_intermittent_timeouts_somewhere > 0)
+                    .then_some(lazy_format!(|f| {
+                        write!(
+                            f,
+                            concat!(
+                                "{} test(s) with some portion intermittently returning ",
+                                "`TIMEOUT`/`NOTRUN`, {} subtest(s) total",
+                            ),
+                            num_tests_with_intermittent_timeouts_somewhere,
+                            num_subtests_with_intermittent_timeouts_somewhere
+                        )
+                    }));
 
-                if num_tests_with_intermittent_disabled > 0 {
-                    log::warn!(
-                        concat!("found {} intermittent `SKIP` outcomes, which we don't understand yet; figure it out! The tests: {:#?}"),
-                        num_tests_with_intermittent_disabled,
-                        tests_with_disabled_or_skip,
-                    )
+                fn priority_section<'a, const SIZE: usize>(
+                    name: &'static str,
+                    items: [Option<&'a dyn Display>; SIZE],
+                ) -> Option<Box<dyn Display + 'a>> {
+                    items.iter().any(Option::is_some).then(move || {
+                        Box::new(lazy_format!(move |f| {
+                            let items = items
+                                .iter()
+                                .filter_map(|opt| *opt)
+                                .map(|item| lazy_format!("\n    {item}"))
+                                .join_with("");
+                            write!(f, "\n  {name} PRIORITY:{items}")
+                        })) as Box<dyn Display>
+                    })
                 }
-
-                println!(
-                    "\
-{platform:?}:
-  HIGH PRIORITY:
-    {num_tests_with_perma_runner_errors} test(s) with execution reporting permanent `ERROR`
-    {num_tests_with_disabled} test(s) with some portion marked as `disabled`
-    {num_tests_with_perma_crashes} test(s) with some portion expecting permanent `CRASH`
-  MEDIUM PRIORITY:
-    {num_tests_with_perma_failures_somewhere} test(s) with some portion perma-`FAIL`ing, {num_subtests_with_perma_failures_somewhere} subtests total
-    {num_tests_with_perma_timeouts_somewhere} test(s) with some portion returning permanent `TIMEOUT`/`NOTRUN`, {num_subtests_with_perma_timeouts_somewhere} subtests total
-    {num_tests_with_intermittent_crashes} tests(s) with some portion expecting intermittent `CRASH`
-    {num_tests_with_intermittent_runner_errors} test(s) with execution reporting intermittent `ERROR`
-  LOW PRIORITY:
-    {num_tests_with_intermittent_timeouts_somewhere} test(s) with some portion intermittently returning `TIMEOUT`/`NOTRUN`, {num_subtests_with_intermittent_timeouts_somewhere} subtest(s) total
-    {num_tests_with_intermittent_failures_somewhere} test(s) with some portion intermittently `FAIL`ing, {num_subtests_with_intermittent_failures_somewhere} subtests total
-"
-                );
+                fn item<T>(item: Option<&T>) -> Option<&dyn Display>
+                where
+                    T: Display,
+                {
+                    item.map(|disp| disp as &dyn Display)
+                }
+                let sections = [
+                    priority_section(
+                        "HIGH",
+                        [
+                            item(tests_with_perma_runner_errors.as_ref()),
+                            item(tests_with_disabled.as_ref()),
+                            item(tests_with_perma_crashes.as_ref()),
+                        ],
+                    ),
+                    priority_section(
+                        "MEDIUM",
+                        [
+                            item(tests_with_perma_failures.as_ref()),
+                            item(tests_with_perma_timeouts_somewhere.as_ref()),
+                            item(tests_with_intermittent_crashes.as_ref()),
+                            item(tests_with_intermittent_runner_errors.as_ref()),
+                        ],
+                    ),
+                    priority_section(
+                        "LOW",
+                        [
+                            item(tests_with_intermittent_timeouts_somewhere.as_ref()),
+                            item(tests_with_intermittent_failures.as_ref()),
+                        ],
+                    ),
+                ];
+                let sections = sections.iter().filter_map(Option::as_ref).join_with("");
+                println!("{platform:?}:{sections}")
             });
             println!("Full analysis: {analysis:#?}");
             ExitCode::SUCCESS
@@ -1243,6 +1385,12 @@ fn run(cli: Cli) -> ExitCode {
 /// Returns a "naturally" sorted list of files found by searching for `glob_pattern` in `base`.
 /// `gecko_checkout` is stripped as a prefix from the absolute paths recorded into `log` entries
 /// emitted by this function.
+///
+/// # Returns
+///
+/// An iterator over [`Result`]s containing either a Gecko file's path and contents as a UTF-8
+/// string, or the sentinel of an error encountered for the same file that is already reported to
+/// the command line.
 ///
 /// # Panics
 ///

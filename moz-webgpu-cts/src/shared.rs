@@ -334,10 +334,10 @@ pub(crate) struct TestPath<'a> {
     pub variant: Option<Cow<'a, str>>,
 }
 
-const SCOPE_DIR_FX_PRIVATE_STR: &str = "testing/web-platform/mozilla/meta";
-const SCOPE_DIR_FX_PRIVATE_COMPONENTS: &[&str] = &["testing", "web-platform", "mozilla", "meta"];
-const SCOPE_DIR_FX_PUBLIC_STR: &str = "testing/web-platform/meta";
-const SCOPE_DIR_FX_PUBLIC_COMPONENTS: &[&str] = &["testing", "web-platform", "meta"];
+const SCOPE_DIR_FX_PRIVATE_STR: &str = "testing/web-platform/mozilla";
+const SCOPE_DIR_FX_PRIVATE_COMPONENTS: &[&str] = &["testing", "web-platform", "mozilla"];
+const SCOPE_DIR_FX_PUBLIC_STR: &str = "testing/web-platform";
+const SCOPE_DIR_FX_PUBLIC_COMPONENTS: &[&str] = &["testing", "web-platform"];
 
 impl<'a> TestPath<'a> {
     pub fn from_execution_report(
@@ -407,6 +407,9 @@ impl<'a> TestPath<'a> {
                 return Err(err());
             }
         };
+        let Ok(path) = path.strip_prefix("meta/") else {
+            return Err(err());
+        };
 
         let (base_name, variant) = Self::split_test_base_name_from_variant(test_name);
 
@@ -462,6 +465,25 @@ impl<'a> TestPath<'a> {
         })
     }
 
+    pub(crate) fn runner_url_path(&self) -> impl Display + '_ {
+        let Self {
+            path,
+            variant,
+            scope,
+        } = self;
+        lazy_format!(move |f| {
+            let scope_prefix = match scope {
+                TestScope::Public => "",
+                TestScope::FirefoxPrivate => "_mozilla/",
+            };
+            write!(f, "{scope_prefix}{}", path.components().join_with('/'))?;
+            if let Some(variant) = variant.as_ref() {
+                write!(f, "{}", variant)?;
+            }
+            Ok(())
+        })
+    }
+
     pub(crate) fn rel_metadata_path_fx(&self) -> impl Display + '_ {
         let Self {
             path,
@@ -474,31 +496,10 @@ impl<'a> TestPath<'a> {
             TestScope::FirefoxPrivate => SCOPE_DIR_FX_PRIVATE_COMPONENTS,
         }
         .iter()
+        .chain(&["meta"])
         .join_with(std::path::MAIN_SEPARATOR);
 
         lazy_format!(move |f| { write!(f, "{scope_dir}{}{path}.ini", std::path::MAIN_SEPARATOR) })
-    }
-}
-
-impl Display for TestPath<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let Self {
-            variant,
-            // These are used by our call to `rel_metadata_path_fx` below:
-            scope: _,
-            path: _,
-        } = self;
-        write!(
-            f,
-            "{}{}",
-            self.rel_metadata_path_fx(),
-            lazy_format!(|f| {
-                match variant {
-                    Some(variant) => write!(f, "{variant}"),
-                    None => Ok(()),
-                }
-            })
-        )
     }
 }
 
@@ -631,5 +632,52 @@ fn report_meta_reject() {
         // Wrong: missing the `mozilla` component after `web-platform`
         "testing/web-platform/meta/blarg/cts.https.html.ini",
         "cts.https.html?stuff=things"
+    );
+}
+
+#[test]
+fn runner_url_path() {
+    assert_eq!(
+        TestPath::from_fx_metadata_test(
+            Path::new("testing/web-platform/meta/blarg/stuff.https.html.ini"),
+            "stuff.https.html"
+        )
+        .unwrap()
+        .runner_url_path()
+        .to_string(),
+        "blarg/stuff.https.html",
+    );
+
+    assert_eq!(
+        TestPath::from_fx_metadata_test(
+            Path::new("testing/web-platform/meta/blarg/stuff.https.html.ini"),
+            "stuff.https.html?win"
+        )
+        .unwrap()
+        .runner_url_path()
+        .to_string(),
+        "blarg/stuff.https.html?win",
+    );
+
+    assert_eq!(
+        TestPath::from_fx_metadata_test(
+            Path::new("testing/web-platform/mozilla/meta/blarg/stuff.https.html.ini"),
+            "stuff.https.html"
+        )
+        .unwrap()
+        .runner_url_path()
+        .to_string(),
+        "_mozilla/blarg/stuff.https.html",
+    );
+
+    assert_eq!(
+        TestPath::from_fx_metadata_test(
+            Path::new("testing/web-platform/mozilla/meta/blarg/stuff.https.html.ini"),
+            "stuff.https.html?win"
+        )
+        .unwrap()
+        .runner_url_path()
+        .to_string(),
+        "_mozilla/blarg/stuff.https.html?win",
     );
 }
