@@ -350,6 +350,21 @@ fn run(cli: Cli) -> ExitCode {
                         log::error!("hoo boy, not sure what to do yet: {what}")
                     };
 
+                    let mut reported_dupe_already = false;
+                    let mut dupe_err = || {
+                        if !reported_dupe_already {
+                            freak_out_do_nothing(&format_args!(
+                                concat!(
+                                    "duplicate entry for {:?}",
+                                    "discarding previous entries with ",
+                                    "this and further dupes"
+                                ),
+                                test_path
+                            ))
+                        }
+                        reported_dupe_already = true;
+                    };
+
                     let TestEntry {
                         entry: test_entry,
                         subtests: subtest_entries,
@@ -358,18 +373,9 @@ fn run(cli: Cli) -> ExitCode {
                         .or_default();
 
                     let test_path = &test_path;
-                    let mut reported_dupe_already = false;
 
                     if let Some(_old) = test_entry.meta_props.replace(properties) {
-                        freak_out_do_nothing(&format_args!(
-                            concat!(
-                                "duplicate entry for {:?}",
-                                "discarding previous entries with ",
-                                "this and further dupes"
-                            ),
-                            test_path
-                        ));
-                        reported_dupe_already = true;
+                        dupe_err();
                     }
 
                     for (SectionHeader(subtest_name), subtest) in subtests {
