@@ -156,6 +156,7 @@ fn run(cli: Cli) -> ExitCode {
         let collected =
             read_gecko_files_at(&gecko_checkout, &webgpu_cts_meta_parent_dir, "**/*.ini")?
                 .filter_map(|res| match res {
+                    Ok((p, _contents)) if p.ends_with("__dir__.ini") => None,
                     Ok(ok) => Some(ok),
                     Err(AlreadyReportedToCommandline) => {
                         found_err = true;
