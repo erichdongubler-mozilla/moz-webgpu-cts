@@ -114,12 +114,12 @@ enum Subcommand {
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
 enum ReportProcessingPreset {
-    /// alias: `same-fx`
-    #[value(alias("same-fx"))]
-    Merge,
     /// alias: `new-fx`
     #[value(alias("new-fx"))]
     ResetContradictory,
+    /// alias: `same-fx`
+    #[value(alias("same-fx"))]
+    Merge,
     ResetAll,
 }
 
