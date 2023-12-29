@@ -115,6 +115,8 @@ enum Subcommand {
 #[derive(Clone, Copy, Debug, ValueEnum)]
 enum ReportProcessingPreset {
     Merge,
+    /// alias: `new-fx`
+    #[value(alias("new-fx"))]
     ResetContradictory,
     ResetAll,
 }
