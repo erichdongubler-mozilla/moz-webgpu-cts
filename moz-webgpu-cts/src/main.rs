@@ -327,6 +327,7 @@ fn run(cli: Cli) -> ExitCode {
 
             let mut file_props_by_file = IndexMap::<Utf8PathBuf, FileProps>::default();
             let mut other_entries_by_test = IndexMap::<TestPath<'_>, TestEntry>::default();
+            let old_meta_file_paths = meta_files_by_path.keys().cloned().collect::<Vec<_>>();
 
             log::info!("loading metadata for comparison to reports…");
             for (path, file) in meta_files_by_path {
@@ -658,6 +659,30 @@ fn run(cli: Cli) -> ExitCode {
                     },
                 );
             }
+
+            for old_meta_file_path in old_meta_file_paths {
+                files
+                    .entry(Arc::into_inner(old_meta_file_path).unwrap())
+                    .or_default();
+            }
+
+            files.retain(|path, file| {
+                let is_empty = file.tests.is_empty();
+                if is_empty {
+                    log::info!("removing now-empty metadata file {}", path.display());
+                    match fs::remove_file(path) {
+                        Ok(()) => (),
+                        Err(e) => match e.kind() {
+                            io::ErrorKind::NotFound => (),
+                            _ => log::error!(
+                                "failed to remove now-empty metadata file {}",
+                                path.display()
+                            ),
+                        },
+                    }
+                }
+                !is_empty
+            });
 
             log::info!("gathering of new metadata files completed, writing to file system…");
 
