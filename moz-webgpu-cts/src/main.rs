@@ -56,22 +56,22 @@ enum Subcommand {
     /// Adjust test expectations in metadata using `wptreport.json` reports from CI runs covering
     /// Firefox's implementation of WebGPU.
     ///
-    /// The general usage of this subcommand is to (1) reset expectations according to some
-    /// heuristic, and then (2) extend expectations from more reports later to accommodate any
-    /// intermittents that are found. More concretely:
+    /// As Firefox's behavior changes, one generally expects CTS test outcomes to change. When you
+    /// are testing your own changes in CI, you can use this subcommand to update expectations
+    /// automatically with the following steps:
     ///
-    /// 1. Pick a `reset-*` preset (which we'll call `RESET_PRESET`). See docs for `preset` for
-    ///    more details on making this choice.
+    /// 1. Run `moz-webgpu-cts process-reports --preset=new-fx …` against the first complete set of
+    ///    reports you gather from CI with your new Firefox build. This will adjust for new
+    ///    permanent outcomes, and may capture some (but not all) intermittent outcomes.
     ///
-    /// 2. Gather reports into path(s) of your choice.
+    /// 2. There may still exist intermittent issues that you do not discover in CI run(s) from the
+    ///    previous step. As you discover them in further CI runs on the same build of Firefox,
+    ///    adjust expected outcomes to match by running `moz-webgpu-cts process-reports
+    ///    --preset=same-fx …` against the runs' new reports. Repeat as necessary.
     ///
-    /// 3. Run `moz-webgpu-cts process-reports --preset=$RESET_PRESET …` against the reports
-    ///    you've gathered to cover all new permanent outcomes. If you are confident you picked the
-    ///    right `RESET_PRESET`, you may delete the reports you provided to this run.
-    ///
-    /// 4. As intermittent outcomes are discovered (maybe again), run `moz-webgpu-cts
-    ///    process-reports --preset=merge …` with reports. You may delete the reports after their
-    ///    outcomes have been merged in.
+    /// With both steps, you may delete the local copies of these reports after being processed
+    /// with `process-reports`. You should not need to re-process them unless you have made an
+    /// error in following these steps.
     ProcessReports {
         /// Direct paths to report files to be processed.
         report_paths: Vec<PathBuf>,
@@ -81,26 +81,8 @@ enum Subcommand {
         /// forward slashes (`/`) are the only valid path separator for these globs.
         #[clap(long = "glob", value_name = "REPORT_GLOB")]
         report_globs: Vec<String>,
-        /// A heuristic for resolving differences between current metadata and processed reports.
-        ///
-        /// When you use this subcommand, you need to use both the `merge` preset and a choice of
-        /// `reset-*` heuristic. The choice mostly depends on your taste for regressions in
-        /// intermittent outcomes:
-        ///
-        /// * Is your goal is to make changes to Firefox, and make CI pass again? If so, you
-        ///   probably want `reset-contradictory`.
-        ///
-        /// * Are you trying to run the `triage` subcommand on a minimized set of expected
-        ///   outcomes? If so, you probably want `reset-all`.
-        ///
-        /// `reset-contradictory` changes expectations to match the set of outcomes observed in the
-        /// provided `reports_*` when they are not a strict subset of expected outcomes in
-        /// metadata. This is guaranteed to cover new permanent outcomes in metadata, while
-        /// minimizing changes to current intermittent outcomes in metadata. It may, however,
-        /// result in some intermittent outcomes not being reset to new permanent outcomes.
-        ///
-        /// `reset-all` changes expectations to match reported outcomes _exactly_. Metadata is not
-        /// even considered.
+        /// The heuristic for resolving differences between current metadata and processed reports
+        /// for this report processing run.
         #[clap(long)]
         preset: ReportProcessingPreset,
     },
