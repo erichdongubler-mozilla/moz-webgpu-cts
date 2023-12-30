@@ -590,6 +590,22 @@ fn run(cli: Cli) -> ExitCode {
                             log::info!("new test entry: {test_path:?}")
                         }
 
+                        if test_entry.reported.is_empty() {
+                            match preset {
+                                ReportProcessingPreset::Merge => {
+                                    log::warn!("no entries found in reports for {test_path:?}")
+                                }
+                                ReportProcessingPreset::ResetAll
+                                | ReportProcessingPreset::ResetContradictory => {
+                                    log::warn!(
+                                        "removing entry after finding no entries in reports: {:?}",
+                                        test_path
+                                    );
+                                    return None;
+                                }
+                            }
+                        }
+
                         let properties = reconcile(test_entry, preset);
 
                         let mut subtests = BTreeMap::new();
