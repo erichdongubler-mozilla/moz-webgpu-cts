@@ -35,7 +35,6 @@ use joinery::JoinableIterator;
 use miette::{miette, Diagnostic, IntoDiagnostic, NamedSource, Report, SourceSpan, WrapErr};
 use path_dsl::path;
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
-use regex::Regex;
 use strum::IntoEnumIterator;
 use wax::Glob;
 use whippit::{
@@ -111,7 +110,6 @@ enum Subcommand {
         #[clap(value_enum, long, default_value_t = Default::default())]
         on_zero_item: OnZeroItem,
     },
-    ReadTestVariants,
 }
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
@@ -158,6 +156,7 @@ fn run(cli: Cli) -> ExitCode {
         let collected =
             read_gecko_files_at(&gecko_checkout, &webgpu_cts_meta_parent_dir, "**/*.ini")?
                 .filter_map(|res| match res {
+                    Ok((p, _contents)) if p.ends_with("__dir__.ini") => None,
                     Ok(ok) => Some(ok),
                     Err(AlreadyReportedToCommandline) => {
                         found_err = true;
@@ -327,7 +326,8 @@ fn run(cli: Cli) -> ExitCode {
             };
 
             let mut file_props_by_file = IndexMap::<Utf8PathBuf, FileProps>::default();
-            let mut entries_by_test = IndexMap::<TestPath<'_>, TestEntry>::default();
+            let mut other_entries_by_test = IndexMap::<TestPath<'_>, TestEntry>::default();
+            let old_meta_file_paths = meta_files_by_path.keys().cloned().collect::<Vec<_>>();
 
             log::info!("loading metadata for comparison to reports…");
             for (path, file) in meta_files_by_path {
@@ -352,26 +352,32 @@ fn run(cli: Cli) -> ExitCode {
                         log::error!("hoo boy, not sure what to do yet: {what}")
                     };
 
+                    let mut reported_dupe_already = false;
+                    let mut dupe_err = || {
+                        if !reported_dupe_already {
+                            freak_out_do_nothing(&format_args!(
+                                concat!(
+                                    "duplicate entry for {:?}",
+                                    "discarding previous entries with ",
+                                    "this and further dupes"
+                                ),
+                                test_path
+                            ))
+                        }
+                        reported_dupe_already = true;
+                    };
+
                     let TestEntry {
                         entry: test_entry,
                         subtests: subtest_entries,
-                    } = entries_by_test
+                    } = other_entries_by_test
                         .entry(test_path.clone().into_owned())
                         .or_default();
 
                     let test_path = &test_path;
-                    let mut reported_dupe_already = false;
 
                     if let Some(_old) = test_entry.meta_props.replace(properties) {
-                        freak_out_do_nothing(&format_args!(
-                            concat!(
-                                "duplicate entry for {:?}",
-                                "discarding previous entries with ",
-                                "this and further dupes"
-                            ),
-                            test_path
-                        ));
-                        reported_dupe_already = true;
+                        dupe_err();
                     }
 
                     for (SectionHeader(subtest_name), subtest) in subtests {
@@ -445,7 +451,7 @@ fn run(cli: Cli) -> ExitCode {
                     let TestEntry {
                         entry: test_entry,
                         subtests: subtest_entries,
-                    } = entries_by_test
+                    } = other_entries_by_test
                         .entry(test_path.clone().into_owned())
                         .or_default();
 
@@ -513,7 +519,7 @@ fn run(cli: Cli) -> ExitCode {
 
             let mut found_reconciliation_err = false;
             let recombined_tests_iter =
-                entries_by_test
+                other_entries_by_test
                     .into_iter()
                     .filter_map(|(test_path, test_entry)| {
                         fn reconcile<Out>(
@@ -582,6 +588,26 @@ fn run(cli: Cli) -> ExitCode {
                             subtests: subtest_entries,
                         } = test_entry;
 
+                        if test_entry.meta_props.is_none() {
+                            log::info!("new test entry: {test_path:?}")
+                        }
+
+                        if test_entry.reported.is_empty() {
+                            match preset {
+                                ReportProcessingPreset::Merge => {
+                                    log::warn!("no entries found in reports for {test_path:?}")
+                                }
+                                ReportProcessingPreset::ResetAll
+                                | ReportProcessingPreset::ResetContradictory => {
+                                    log::warn!(
+                                        "removing entry after finding no entries in reports: {:?}",
+                                        test_path
+                                    );
+                                    return None;
+                                }
+                            }
+                        }
+
                         let properties = reconcile(test_entry, preset);
 
                         let mut subtests = BTreeMap::new();
@@ -633,6 +659,30 @@ fn run(cli: Cli) -> ExitCode {
                     },
                 );
             }
+
+            for old_meta_file_path in old_meta_file_paths {
+                files
+                    .entry(Arc::into_inner(old_meta_file_path).unwrap())
+                    .or_default();
+            }
+
+            files.retain(|path, file| {
+                let is_empty = file.tests.is_empty();
+                if is_empty {
+                    log::info!("removing now-empty metadata file {}", path.display());
+                    match fs::remove_file(path) {
+                        Ok(()) => (),
+                        Err(e) => match e.kind() {
+                            io::ErrorKind::NotFound => (),
+                            _ => log::error!(
+                                "failed to remove now-empty metadata file {}",
+                                path.display()
+                            ),
+                        },
+                    }
+                }
+                !is_empty
+            });
 
             log::info!("gathering of new metadata files completed, writing to file system…");
 
@@ -1335,48 +1385,6 @@ fn run(cli: Cli) -> ExitCode {
                 println!("{platform:?}:{sections}")
             });
             println!("Full analysis: {analysis:#?}");
-            ExitCode::SUCCESS
-        }
-        Subcommand::ReadTestVariants => {
-            let webgpu_cts_test_parent_dir = {
-                path!(&gecko_checkout | "testing" | "web-platform" | "mozilla" | "tests" | "webgpu")
-            };
-
-            let tests_by_path = match read_gecko_files_at(
-                &gecko_checkout,
-                &webgpu_cts_test_parent_dir,
-                "**/cts.https.html",
-            ) {
-                Ok(paths) => {
-                    let mut found_err = false;
-                    let collected = paths
-                        .filter_map(|res| {
-                            found_err |= res.is_ok();
-                            res.ok()
-                        })
-                        .collect::<IndexMap<_, _>>();
-                    if found_err {
-                        return ExitCode::FAILURE;
-                    }
-                    collected
-                }
-                Err(AlreadyReportedToCommandline) => return ExitCode::FAILURE,
-            };
-
-            let meta_variant_re =
-                Regex::new(r"^<meta name=variant content='\?q=(?P<variant_path>.*?)'>$").unwrap();
-            let meta_variant_re = &meta_variant_re;
-            let variants = tests_by_path
-                .iter()
-                .flat_map(|(test_path, contents)| {
-                    contents.lines().filter_map(move |line| {
-                        meta_variant_re.captures(line).map(move |captures| {
-                            (captures.name("variant_path").unwrap().as_str(), test_path)
-                        })
-                    })
-                })
-                .collect::<BTreeMap<_, _>>();
-            println!("{variants:#?}");
             ExitCode::SUCCESS
         }
     }
