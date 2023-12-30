@@ -586,6 +586,10 @@ fn run(cli: Cli) -> ExitCode {
                             subtests: subtest_entries,
                         } = test_entry;
 
+                        if test_entry.meta_props.is_none() {
+                            log::info!("new test entry: {test_path:?}")
+                        }
+
                         let properties = reconcile(test_entry, preset);
 
                         let mut subtests = BTreeMap::new();
