@@ -518,119 +518,116 @@ fn run(cli: Cli) -> ExitCode {
             log::info!("metadata and reports gathered, now reconciling outcomes…");
 
             let mut found_reconciliation_err = false;
+            let recombined_tests_iter = other_entries_by_test.into_iter();
             let recombined_tests_iter =
-                other_entries_by_test
-                    .into_iter()
-                    .filter_map(|(test_path, test_entry)| {
-                        fn reconcile<Out>(
-                            entry: Entry<Out>,
-                            preset: ReportProcessingPreset,
-                        ) -> TestProps<Out>
-                        where
-                            Out: Debug + Default + EnumSetType,
-                        {
-                            let Entry {
-                                meta_props,
-                                reported,
-                            } = entry;
-                            let normalize = NormalizedExpectationPropertyValue::from_fully_expanded;
+                recombined_tests_iter.filter_map(|(test_path, test_entry)| {
+                    fn reconcile<Out>(
+                        entry: Entry<Out>,
+                        preset: ReportProcessingPreset,
+                    ) -> TestProps<Out>
+                    where
+                        Out: Debug + Default + EnumSetType,
+                    {
+                        let Entry {
+                            meta_props,
+                            reported,
+                        } = entry;
+                        let normalize = NormalizedExpectationPropertyValue::from_fully_expanded;
 
-                            let mut meta_props = meta_props.unwrap_or_default();
-                            meta_props.expectations = Some('resolve: {
-                                let resolve = match preset {
-                                    ReportProcessingPreset::ResetAll => {
-                                        break 'resolve normalize(reported);
-                                    }
-                                    ReportProcessingPreset::ResetContradictory => {
-                                        |meta: Expectation<_>, rep: Option<Expectation<_>>| {
-                                            rep.filter(|rep| !meta.is_superset(rep)).unwrap_or(meta)
-                                        }
-                                    }
-                                    ReportProcessingPreset::Merge => |meta, rep| match rep {
-                                        Some(rep) => meta | rep,
-                                        None => meta,
-                                    },
-                                };
-
-                                normalize(
-                                    Platform::iter()
-                                        .map(|platform| {
-                                            let build_profiles = BuildProfile::iter()
-                                                .map(|build_profile| {
-                                                    (
-                                                        build_profile,
-                                                        resolve(
-                                                            meta_props
-                                                                .expectations
-                                                                .as_ref()
-                                                                .unwrap_or(&Default::default())
-                                                                .get(platform, build_profile),
-                                                            reported
-                                                                .get(&platform)
-                                                                .and_then(|rep| {
-                                                                    rep.get(&build_profile)
-                                                                })
-                                                                .copied(),
-                                                        ),
-                                                    )
-                                                })
-                                                .collect();
-                                            (platform, build_profiles)
-                                        })
-                                        .collect(),
-                                )
-                            });
-                            meta_props
-                        }
-
-                        let TestEntry {
-                            entry: test_entry,
-                            subtests: subtest_entries,
-                        } = test_entry;
-
-                        if test_entry.meta_props.is_none() {
-                            log::info!("new test entry: {test_path:?}")
-                        }
-
-                        if test_entry.reported.is_empty() {
-                            match preset {
-                                ReportProcessingPreset::Merge => {
-                                    log::warn!("no entries found in reports for {test_path:?}")
+                        let mut meta_props = meta_props.unwrap_or_default();
+                        meta_props.expectations = Some('resolve: {
+                            let resolve = match preset {
+                                ReportProcessingPreset::ResetAll => {
+                                    break 'resolve normalize(reported);
                                 }
-                                ReportProcessingPreset::ResetAll
-                                | ReportProcessingPreset::ResetContradictory => {
-                                    log::warn!(
-                                        "removing entry after finding no entries in reports: {:?}",
-                                        test_path
-                                    );
-                                    return None;
+                                ReportProcessingPreset::ResetContradictory => {
+                                    |meta: Expectation<_>, rep: Option<Expectation<_>>| {
+                                        rep.filter(|rep| !meta.is_superset(rep)).unwrap_or(meta)
+                                    }
                                 }
-                            }
-                        }
-
-                        let properties = reconcile(test_entry, preset);
-
-                        let mut subtests = BTreeMap::new();
-                        for (subtest_name, subtest) in subtest_entries {
-                            let subtest_name = SectionHeader(subtest_name);
-                            if subtests.get(&subtest_name).is_some() {
-                                found_reconciliation_err = true;
-                                log::error!("internal error: duplicate test path {test_path:?}");
-                            }
-                            subtests.insert(
-                                subtest_name,
-                                Subtest {
-                                    properties: reconcile(subtest, preset),
+                                ReportProcessingPreset::Merge => |meta, rep| match rep {
+                                    Some(rep) => meta | rep,
+                                    None => meta,
                                 },
-                            );
-                        }
+                            };
 
-                        if subtests.is_empty() && properties == Default::default() {
-                            None
-                        } else {
-                            Some((test_path, (properties, subtests)))
+                            normalize(
+                                Platform::iter()
+                                    .map(|platform| {
+                                        let build_profiles = BuildProfile::iter()
+                                            .map(|build_profile| {
+                                                (
+                                                    build_profile,
+                                                    resolve(
+                                                        meta_props
+                                                            .expectations
+                                                            .as_ref()
+                                                            .unwrap_or(&Default::default())
+                                                            .get(platform, build_profile),
+                                                        reported
+                                                            .get(&platform)
+                                                            .and_then(|rep| rep.get(&build_profile))
+                                                            .copied(),
+                                                    ),
+                                                )
+                                            })
+                                            .collect();
+                                        (platform, build_profiles)
+                                    })
+                                    .collect(),
+                            )
+                        });
+                        meta_props
+                    }
+
+                    let TestEntry {
+                        entry: test_entry,
+                        subtests: subtest_entries,
+                    } = test_entry;
+
+                    if test_entry.meta_props.is_none() {
+                        log::info!("new test entry: {test_path:?}")
+                    }
+
+                    if test_entry.reported.is_empty() {
+                        match preset {
+                            ReportProcessingPreset::Merge => {
+                                log::warn!("no entries found in reports for {test_path:?}")
+                            }
+                            ReportProcessingPreset::ResetAll
+                            | ReportProcessingPreset::ResetContradictory => {
+                                log::warn!(
+                                    "removing entry after finding no entries in reports: {:?}",
+                                    test_path
+                                );
+                                return None;
+                            }
                         }
-                    });
+                    }
+
+                    let properties = reconcile(test_entry, preset);
+
+                    let mut subtests = BTreeMap::new();
+                    for (subtest_name, subtest) in subtest_entries {
+                        let subtest_name = SectionHeader(subtest_name);
+                        if subtests.get(&subtest_name).is_some() {
+                            found_reconciliation_err = true;
+                            log::error!("internal error: duplicate test path {test_path:?}");
+                        }
+                        subtests.insert(
+                            subtest_name,
+                            Subtest {
+                                properties: reconcile(subtest, preset),
+                            },
+                        );
+                    }
+
+                    if subtests.is_empty() && properties == Default::default() {
+                        None
+                    } else {
+                        Some((test_path, (properties, subtests)))
+                    }
+                });
 
             log::info!(
                 "outcome reconciliation complete, gathering tests back into new metadata files…"
