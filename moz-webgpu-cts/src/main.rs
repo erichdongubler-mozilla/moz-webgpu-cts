@@ -325,7 +325,24 @@ fn run(cli: Cli) -> ExitCode {
                 files
             };
 
+            #[derive(Debug, Default)]
+            struct EntryByCtsPath<'a> {
+                metadata_path: Option<TestPath<'a>>,
+                reported_path: Option<TestPath<'a>>,
+                entry: TestEntry,
+            }
+
+            fn cts_path(test_path: &TestPath<'_>) -> Option<String> {
+                test_path
+                    .variant
+                    .as_ref()
+                    .filter(|v| v.starts_with("?q=webgpu:"))
+                    .map(|v| v.strip_prefix("?q=").unwrap().to_owned())
+                    .filter(|_q| test_path.path.ends_with("cts.https.html"))
+            }
+
             let mut file_props_by_file = IndexMap::<Utf8PathBuf, FileProps>::default();
+            let mut entries_by_cts_path = IndexMap::<String, EntryByCtsPath<'_>>::default();
             let mut other_entries_by_test = IndexMap::<TestPath<'_>, TestEntry>::default();
             let old_meta_file_paths = meta_files_by_path.keys().cloned().collect::<Vec<_>>();
 
@@ -370,9 +387,19 @@ fn run(cli: Cli) -> ExitCode {
                     let TestEntry {
                         entry: test_entry,
                         subtests: subtest_entries,
-                    } = other_entries_by_test
-                        .entry(test_path.clone().into_owned())
-                        .or_default();
+                    } = if let Some(cts_path) = cts_path(&test_path) {
+                        let entry = entries_by_cts_path.entry(cts_path).or_default();
+                        if let Some(_old) =
+                            entry.metadata_path.replace(test_path.clone().into_owned())
+                        {
+                            dupe_err();
+                        }
+                        &mut entry.entry
+                    } else {
+                        other_entries_by_test
+                            .entry(test_path.clone().into_owned())
+                            .or_default()
+                    };
 
                     let test_path = &test_path;
 
@@ -451,9 +478,32 @@ fn run(cli: Cli) -> ExitCode {
                     let TestEntry {
                         entry: test_entry,
                         subtests: subtest_entries,
-                    } = other_entries_by_test
-                        .entry(test_path.clone().into_owned())
-                        .or_default();
+                    } = if let Some(cts_path) = cts_path(&test_path) {
+                        let entry = entries_by_cts_path.entry(cts_path).or_default();
+                        if let Some(old) =
+                            entry.reported_path.replace(test_path.clone().into_owned())
+                        {
+                            if old != test_path {
+                                log::warn!(
+                                    concat!(
+                                        "found test execution entry containing the same ",
+                                        "CTS test path as another, ",
+                                        "discarding previous entries with ",
+                                        "this and further dupes; entries:\n",
+                                        "older: {:#?}\n",
+                                        "newer: {:#?}\n",
+                                    ),
+                                    old,
+                                    test_path
+                                )
+                            }
+                        }
+                        &mut entry.entry
+                    } else {
+                        other_entries_by_test
+                            .entry(test_path.clone().into_owned())
+                            .or_default()
+                    };
 
                     let (reported_outcome, reported_subtests) = match result {
                         TestExecutionResult::Complete { outcome, subtests } => (outcome, subtests),
@@ -518,119 +568,150 @@ fn run(cli: Cli) -> ExitCode {
             log::info!("metadata and reports gathered, now reconciling outcomes…");
 
             let mut found_reconciliation_err = false;
-            let recombined_tests_iter =
-                other_entries_by_test
-                    .into_iter()
-                    .filter_map(|(test_path, test_entry)| {
-                        fn reconcile<Out>(
-                            entry: Entry<Out>,
-                            preset: ReportProcessingPreset,
-                        ) -> TestProps<Out>
-                        where
-                            Out: Debug + Default + EnumSetType,
-                        {
-                            let Entry {
-                                meta_props,
-                                reported,
-                            } = entry;
-                            let normalize = NormalizedExpectationPropertyValue::from_fully_expanded;
+            let entries_by_cts_path = entries_by_cts_path.into_iter().map(|(_name, entry)| {
+                let EntryByCtsPath {
+                    metadata_path,
+                    reported_path,
+                    entry,
+                } = entry;
+                let output_path = if let Some((meta, rep)) = metadata_path
+                    .as_ref()
+                    .zip(reported_path.as_ref())
+                    .filter(|(meta, rep)| meta != rep)
+                {
+                    log::info!(
+                        concat!(
+                            "metadata path for test is different from ",
+                            "reported execution; relocating…\n",
+                            "…metadata: {:#?}\n",
+                            "…reported: {:#?}\n"
+                        ),
+                        meta,
+                        rep
+                    );
+                    reported_path
+                } else {
+                    metadata_path.or(reported_path)
+                };
 
-                            let mut meta_props = meta_props.unwrap_or_default();
-                            meta_props.expectations = Some('resolve: {
-                                let resolve = match preset {
-                                    ReportProcessingPreset::ResetAll => {
-                                        break 'resolve normalize(reported);
-                                    }
-                                    ReportProcessingPreset::ResetContradictory => {
-                                        |meta: Expectation<_>, rep: Option<Expectation<_>>| {
-                                            rep.filter(|rep| !meta.is_superset(rep)).unwrap_or(meta)
-                                        }
-                                    }
-                                    ReportProcessingPreset::Merge => |meta, rep| match rep {
-                                        Some(rep) => meta | rep,
-                                        None => meta,
-                                    },
-                                };
+                (
+                    output_path.expect(concat!(
+                        "internal error: CTS path entry created without at least one ",
+                        "report or metadata path specified"
+                    )),
+                    entry,
+                )
+            });
+            let recombined_tests_iter = entries_by_cts_path
+                .chain(other_entries_by_test)
+                .filter_map(|(test_path, test_entry)| {
+                    fn reconcile<Out>(
+                        entry: Entry<Out>,
+                        preset: ReportProcessingPreset,
+                    ) -> TestProps<Out>
+                    where
+                        Out: Debug + Default + EnumSetType,
+                    {
+                        let Entry {
+                            meta_props,
+                            reported,
+                        } = entry;
+                        let normalize = NormalizedExpectationPropertyValue::from_fully_expanded;
 
-                                normalize(
-                                    Platform::iter()
-                                        .map(|platform| {
-                                            let build_profiles = BuildProfile::iter()
-                                                .map(|build_profile| {
-                                                    (
-                                                        build_profile,
-                                                        resolve(
-                                                            meta_props
-                                                                .expectations
-                                                                .as_ref()
-                                                                .unwrap_or(&Default::default())
-                                                                .get(platform, build_profile),
-                                                            reported
-                                                                .get(&platform)
-                                                                .and_then(|rep| {
-                                                                    rep.get(&build_profile)
-                                                                })
-                                                                .copied(),
-                                                        ),
-                                                    )
-                                                })
-                                                .collect();
-                                            (platform, build_profiles)
-                                        })
-                                        .collect(),
-                                )
-                            });
-                            meta_props
-                        }
-
-                        let TestEntry {
-                            entry: test_entry,
-                            subtests: subtest_entries,
-                        } = test_entry;
-
-                        if test_entry.meta_props.is_none() {
-                            log::info!("new test entry: {test_path:?}")
-                        }
-
-                        if test_entry.reported.is_empty() {
-                            match preset {
-                                ReportProcessingPreset::Merge => {
-                                    log::warn!("no entries found in reports for {test_path:?}")
+                        let mut meta_props = meta_props.unwrap_or_default();
+                        meta_props.expectations = Some('resolve: {
+                            let resolve = match preset {
+                                ReportProcessingPreset::ResetAll => {
+                                    break 'resolve normalize(reported);
                                 }
-                                ReportProcessingPreset::ResetAll
-                                | ReportProcessingPreset::ResetContradictory => {
-                                    log::warn!(
-                                        "removing entry after finding no entries in reports: {:?}",
-                                        test_path
-                                    );
-                                    return None;
+                                ReportProcessingPreset::ResetContradictory => {
+                                    |meta: Expectation<_>, rep: Option<Expectation<_>>| {
+                                        rep.filter(|rep| !meta.is_superset(rep)).unwrap_or(meta)
+                                    }
                                 }
-                            }
-                        }
-
-                        let properties = reconcile(test_entry, preset);
-
-                        let mut subtests = BTreeMap::new();
-                        for (subtest_name, subtest) in subtest_entries {
-                            let subtest_name = SectionHeader(subtest_name);
-                            if subtests.get(&subtest_name).is_some() {
-                                found_reconciliation_err = true;
-                                log::error!("internal error: duplicate test path {test_path:?}");
-                            }
-                            subtests.insert(
-                                subtest_name,
-                                Subtest {
-                                    properties: reconcile(subtest, preset),
+                                ReportProcessingPreset::Merge => |meta, rep| match rep {
+                                    Some(rep) => meta | rep,
+                                    None => meta,
                                 },
-                            );
-                        }
+                            };
 
-                        if subtests.is_empty() && properties == Default::default() {
-                            None
-                        } else {
-                            Some((test_path, (properties, subtests)))
+                            normalize(
+                                Platform::iter()
+                                    .map(|platform| {
+                                        let build_profiles = BuildProfile::iter()
+                                            .map(|build_profile| {
+                                                (
+                                                    build_profile,
+                                                    resolve(
+                                                        meta_props
+                                                            .expectations
+                                                            .as_ref()
+                                                            .unwrap_or(&Default::default())
+                                                            .get(platform, build_profile),
+                                                        reported
+                                                            .get(&platform)
+                                                            .and_then(|rep| rep.get(&build_profile))
+                                                            .copied(),
+                                                    ),
+                                                )
+                                            })
+                                            .collect();
+                                        (platform, build_profiles)
+                                    })
+                                    .collect(),
+                            )
+                        });
+                        meta_props
+                    }
+
+                    let TestEntry {
+                        entry: test_entry,
+                        subtests: subtest_entries,
+                    } = test_entry;
+
+                    if test_entry.meta_props.is_none() {
+                        log::info!("new test entry: {test_path:?}")
+                    }
+
+                    if test_entry.reported.is_empty() {
+                        match preset {
+                            ReportProcessingPreset::Merge => {
+                                log::warn!("no entries found in reports for {test_path:?}")
+                            }
+                            ReportProcessingPreset::ResetAll
+                            | ReportProcessingPreset::ResetContradictory => {
+                                log::warn!(
+                                    "removing entry after finding no entries in reports: {:?}",
+                                    test_path
+                                );
+                                return None;
+                            }
                         }
-                    });
+                    }
+
+                    let properties = reconcile(test_entry, preset);
+
+                    let mut subtests = BTreeMap::new();
+                    for (subtest_name, subtest) in subtest_entries {
+                        let subtest_name = SectionHeader(subtest_name);
+                        if subtests.get(&subtest_name).is_some() {
+                            found_reconciliation_err = true;
+                            log::error!("internal error: duplicate test path {test_path:?}");
+                        }
+                        subtests.insert(
+                            subtest_name,
+                            Subtest {
+                                properties: reconcile(subtest, preset),
+                            },
+                        );
+                    }
+
+                    if subtests.is_empty() && properties == Default::default() {
+                        None
+                    } else {
+                        Some((test_path, (properties, subtests)))
+                    }
+                });
 
             log::info!(
                 "outcome reconciliation complete, gathering tests back into new metadata files…"
