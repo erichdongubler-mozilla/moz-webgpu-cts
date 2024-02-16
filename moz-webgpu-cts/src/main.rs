@@ -932,6 +932,7 @@ fn run(cli: Cli) -> ExitCode {
                 tests_with_runner_errors: TestSet,
                 tests_with_disabled_or_skip: TestSet,
                 tests_with_crashes: TestSet,
+                tests_with_fails: TestSet,
                 subtests_with_failures_by_test: SubtestByTestSet,
                 subtests_with_timeouts_by_test: SubtestByTestSet,
             }
@@ -1069,6 +1070,14 @@ fn run(cli: Cli) -> ExitCode {
                                 // We skip this because this test _should_ contain subtests with
                                 // `TIMEOUT` and `NOTRUN`, so we shouldn't actually miss anything.
                                 TestOutcome::Timeout => (),
+                                TestOutcome::Fail => receiver(&mut |analysis| {
+                                    insert_in_test_set(
+                                        &mut analysis.tests_with_fails,
+                                        test_name,
+                                        expectation,
+                                        outcome,
+                                    )
+                                }),
                                 TestOutcome::Crash => receiver(&mut |analysis| {
                                     insert_in_test_set(
                                         &mut analysis.tests_with_crashes,
@@ -1267,6 +1276,7 @@ fn run(cli: Cli) -> ExitCode {
                     tests_with_runner_errors,
                     tests_with_disabled_or_skip,
                     tests_with_crashes,
+                    tests_with_fails,
                     subtests_with_failures_by_test,
                     subtests_with_timeouts_by_test,
                 } = analysis;
