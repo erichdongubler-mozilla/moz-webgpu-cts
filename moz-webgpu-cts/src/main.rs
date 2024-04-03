@@ -680,7 +680,7 @@ fn run(cli: Cli) -> ExitCode {
                     let mut subtests = BTreeMap::new();
                     for (subtest_name, subtest) in subtest_entries {
                         let subtest_name = SectionHeader(subtest_name);
-                        if subtests.get(&subtest_name).is_some() {
+                        if subtests.contains_key(&subtest_name) {
                             found_reconciliation_err = true;
                             log::error!("internal error: duplicate test path {test_path:?}");
                         }

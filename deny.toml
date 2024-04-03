@@ -6,3 +6,9 @@ allow = [
 	"Unicode-DFS-2016",
 	"Zlib",
 ]
+
+[sources]
+allow-git = [
+	"https://github.com/ErichDonGubler/tardar",
+	"https://github.com/ErichDonGubler/wax",
+]
