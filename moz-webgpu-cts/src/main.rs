@@ -86,6 +86,7 @@ enum Subcommand {
         #[clap(long)]
         preset: ReportProcessingPreset,
     },
+    /// Parse test metadata and re-emit it in normalized form.
     #[clap(name = "fmt")]
     Format,
     Triage {
