@@ -604,7 +604,7 @@ fn run(cli: Cli) -> ExitCode {
                         } = entry;
 
                         let mut meta_props = meta_props.unwrap_or_default();
-                        meta_props.expectations = Some('resolve: {
+                        let reconciled = 'resolve: {
                             let reported = |platform, build_profile| {
                                 reported
                                     .get(&platform)
@@ -645,7 +645,8 @@ fn run(cli: Cli) -> ExitCode {
                             } else {
                                 all_reported()
                             }
-                        });
+                        };
+                        meta_props.expectations = Some(reconciled);
                         meta_props
                     }
 
