@@ -681,12 +681,10 @@ fn run(cli: Cli) -> ExitCode {
                             found_reconciliation_err = true;
                             log::error!("internal error: duplicate test path {test_path:?}");
                         }
-                        subtests.insert(
-                            subtest_name,
-                            Subtest {
-                                properties: reconcile(subtest, preset),
-                            },
-                        );
+
+                        let mut properties = reconcile(subtest, preset);
+
+                        subtests.insert(subtest_name, Subtest { properties });
                     }
 
                     if subtests.is_empty() && properties == Default::default() {
