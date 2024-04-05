@@ -147,6 +147,28 @@ where
     }
 }
 
+impl<Out> BitOr<EnumSet<Out>> for Expectation<Out>
+where
+    Out: EnumSetType,
+{
+    type Output = Self;
+
+    fn bitor(self, rhs: EnumSet<Out>) -> Self::Output {
+        let Self(lhs) = self;
+
+        Self(lhs | rhs)
+    }
+}
+
+impl<Out> BitOrAssign<EnumSet<Out>> for Expectation<Out>
+where
+    Out: EnumSetType,
+{
+    fn bitor_assign(&mut self, rhs: EnumSet<Out>) {
+        *self = *self | rhs;
+    }
+}
+
 impl<Out> BitOr<Out> for Expectation<Out>
 where
     Out: EnumSetType,
