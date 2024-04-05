@@ -85,6 +85,10 @@ where
         self.inner().iter()
     }
 
+    pub fn is_disjoint(&self, rep: EnumSet<Out>) -> bool {
+        self.inner().is_disjoint(rep)
+    }
+
     pub fn is_superset(&self, rep: &Expectation<Out>) -> bool
     where
         Out: std::fmt::Debug + Default + EnumSetType,
