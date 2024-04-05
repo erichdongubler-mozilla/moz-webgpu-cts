@@ -272,6 +272,16 @@ where
             })
         })
     }
+
+    pub(crate) fn iter_mut(
+        &mut self,
+    ) -> impl Iterator<Item = ((Platform, BuildProfile), &mut Expectation<Out>)> + '_ {
+        self.0.iter_mut().flat_map(|(platform, exps_by_bp)| {
+            exps_by_bp
+                .iter_mut()
+                .map(move |(build_profile, expectations)| ((platform, build_profile), expectations))
+        })
+    }
 }
 
 impl<Out> FullyExpandedExpectationPropertyValue<Out>
