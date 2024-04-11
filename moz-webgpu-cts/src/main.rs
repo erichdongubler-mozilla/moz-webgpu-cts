@@ -659,16 +659,13 @@ fn run(cli: Cli) -> ExitCode {
                     }
 
                     if test_entry.reported.is_empty() {
+                        let test_path = &test_path;
+                        let msg = lazy_format!("no entries found in reports for {:?}", test_path);
                         match preset {
-                            ReportProcessingPreset::Merge => {
-                                log::warn!("no entries found in reports for {test_path:?}")
-                            }
+                            ReportProcessingPreset::Merge => log::warn!("{msg}"),
                             ReportProcessingPreset::ResetAll
                             | ReportProcessingPreset::ResetContradictory => {
-                                log::warn!(
-                                    "removing entry after finding no entries in reports: {:?}",
-                                    test_path
-                                );
+                                log::warn!("removing metadata after {msg}");
                                 return None;
                             }
                         }
