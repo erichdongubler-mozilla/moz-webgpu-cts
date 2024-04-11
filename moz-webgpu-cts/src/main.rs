@@ -85,7 +85,7 @@ enum Subcommand {
         #[clap(long = "glob", value_name = "REPORT_GLOB")]
         report_globs: Vec<String>,
         /// The heuristic for resolving differences between current metadata and processed reports.
-        #[clap(long)]
+        #[clap(long, default_value = "reset-contradictory")]
         preset: ReportProcessingPreset,
     },
     /// Parse test metadata and re-emit it in normalized form.
