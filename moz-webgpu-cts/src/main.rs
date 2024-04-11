@@ -789,7 +789,17 @@ fn run(cli: Cli) -> ExitCode {
                         fmt_err_found = true;
                         render_metadata_parse_errors(&path, &file_contents, errors);
                     }
-                    Ok(file) => {
+                    Ok(mut file) => {
+                        for test in file.tests.values_mut() {
+                            for subtest in &mut test.subtests.values_mut() {
+                                if let Some(expected) = subtest.properties.expectations.as_mut() {
+                                    for (_, expected) in expected.iter_mut() {
+                                        taint_subtest_timeouts_by_suspicion(expected);
+                                    }
+                                }
+                            }
+                        }
+
                         match write_to_file(&path, metadata::format_file(&file)) {
                             Ok(()) => (),
                             Err(AlreadyReportedToCommandline) => {
