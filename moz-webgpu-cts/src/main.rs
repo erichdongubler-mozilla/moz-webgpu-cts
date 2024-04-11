@@ -88,9 +88,9 @@ enum Subcommand {
         #[clap(long, default_value = "reset-contradictory")]
         preset: ReportProcessingPreset,
     },
-    /// Parse test metadata and re-emit it in normalized form.
-    #[clap(name = "fmt")]
-    Format,
+    /// Parse test metadata, apply automated fixups, and re-emit it in normalized form.
+    #[clap(name = "fixup", alias = "fmt")]
+    Fixup,
     Triage {
         #[clap(value_enum, long, default_value_t = Default::default())]
         on_zero_item: OnZeroItem,
@@ -787,17 +787,17 @@ fn run(cli: Cli) -> ExitCode {
 
             ExitCode::SUCCESS
         }
-        Subcommand::Format => {
+        Subcommand::Fixup => {
             let raw_test_files_by_path = match read_metadata() {
                 Ok(paths) => paths,
                 Err(AlreadyReportedToCommandline) => return ExitCode::FAILURE,
             };
             log::info!("formatting metadata in-place…");
-            let mut fmt_err_found = false;
+            let mut err_found = false;
             for (path, file_contents) in raw_test_files_by_path {
                 match chumsky::Parser::parse(&File::parser(), &*file_contents).into_result() {
                     Err(errors) => {
-                        fmt_err_found = true;
+                        err_found = true;
                         render_metadata_parse_errors(&path, &file_contents, errors);
                     }
                     Ok(mut file) => {
@@ -814,14 +814,14 @@ fn run(cli: Cli) -> ExitCode {
                         match write_to_file(&path, metadata::format_file(&file)) {
                             Ok(()) => (),
                             Err(AlreadyReportedToCommandline) => {
-                                fmt_err_found = true;
+                                err_found = true;
                             }
                         };
                     }
                 }
             }
 
-            if fmt_err_found {
+            if err_found {
                 log::error!(concat!(
                     "found one or more failures while formatting metadata, ",
                     "see above for more details"
