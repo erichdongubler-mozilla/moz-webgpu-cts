@@ -75,7 +75,8 @@ enum Subcommand {
     /// With both steps, you may delete the local copies of these reports after being processed
     /// with `process-reports`. You should not need to re-process them unless you have made an
     /// error in following these steps.
-    ProcessReports {
+    #[clap(alias = "process-reports")]
+    UpdateExpected {
         /// Direct paths to report files to be processed.
         report_paths: Vec<PathBuf>,
         /// Cross-platform `wax` globs to enumerate report files to be processed.
@@ -189,7 +190,7 @@ fn run(cli: Cli) -> ExitCode {
     }
 
     match subcommand {
-        Subcommand::ProcessReports {
+        Subcommand::UpdateExpected {
             report_globs,
             report_paths,
             preset,
