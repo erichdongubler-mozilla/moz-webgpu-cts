@@ -804,12 +804,14 @@ fn run(cli: Cli) -> ExitCode {
                         fmt_err_found = true;
                         render_metadata_parse_errors(&path, &file_contents, errors);
                     }
-                    Ok(file) => match write_to_file(&path, metadata::format_file(&file)) {
-                        Ok(()) => (),
-                        Err(AlreadyReportedToCommandline) => {
-                            fmt_err_found = true;
-                        }
-                    },
+                    Ok(file) => {
+                        match write_to_file(&path, metadata::format_file(&file)) {
+                            Ok(()) => (),
+                            Err(AlreadyReportedToCommandline) => {
+                                fmt_err_found = true;
+                            }
+                        };
+                    }
                 }
             }
 
