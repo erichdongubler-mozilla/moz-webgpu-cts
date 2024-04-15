@@ -56,8 +56,8 @@ struct Cli {
 
 #[derive(Debug, Parser)]
 enum Subcommand {
-    /// Adjust test expectations in metadata using `wptreport.json` reports from CI runs covering
-    /// Firefox's implementation of WebGPU.
+    /// Adjust test expectations in metadata, optionally using `wptreport.json` reports from CI
+    /// runs covering Firefox's implementation of WebGPU.
     ///
     /// As Firefox's behavior changes, one generally expects CTS test outcomes to change. When you
     /// are testing your own changes in CI, you can use this subcommand to update expectations
@@ -84,9 +84,8 @@ enum Subcommand {
         /// forward slashes (`/`) are the only valid path separator for these globs.
         #[clap(long = "glob", value_name = "REPORT_GLOB")]
         report_globs: Vec<String>,
-        /// The heuristic for resolving differences between current metadata and processed reports
-        /// for this report processing run.
-        #[clap(long)]
+        /// The heuristic for resolving differences between current metadata and processed reports.
+        #[clap(long, default_value = "reset-contradictory")]
         preset: ReportProcessingPreset,
     },
     /// Parse test metadata and re-emit it in normalized form.
@@ -227,12 +226,7 @@ fn run(cli: Cli) -> ExitCode {
                 globs
             };
 
-            if report_paths.is_empty() && report_globs.is_empty() {
-                log::error!("no report paths specified, bailing");
-                return ExitCode::FAILURE;
-            }
-
-            let exec_report_paths = {
+            let report_paths_from_glob = {
                 let mut found_glob_walk_err = false;
                 let files = report_globs
                     .iter()
@@ -258,7 +252,6 @@ fn run(cli: Cli) -> ExitCode {
                             })
                             .collect::<Vec<_>>() // OPT: Can we get rid of this somehow?
                     })
-                    .chain(report_paths)
                     .collect::<Vec<_>>();
 
                 if found_glob_walk_err {
@@ -272,10 +265,26 @@ fn run(cli: Cli) -> ExitCode {
                 files
             };
 
-            if exec_report_paths.is_empty() {
-                log::error!("no WPT report files found, bailing");
-                return ExitCode::FAILURE;
+            if report_paths_from_glob.is_empty() && !report_globs.is_empty() {
+                if report_paths.is_empty() {
+                    log::error!(concat!(
+                        "reports were specified exclusively via glob search, ",
+                        "but none were found; bailing"
+                    ));
+                    return ExitCode::FAILURE;
+                } else {
+                    log::warn!(concat!(
+                        "report were specified via path and glob search, ",
+                        "but none were found via glob; ",
+                        "continuing with report paths"
+                    ))
+                }
             }
+
+            let exec_report_paths = report_paths
+                .into_iter()
+                .chain(report_paths_from_glob)
+                .collect::<Vec<_>>();
 
             log::trace!("working with the following WPT report files: {exec_report_paths:#?}");
             log::info!("working with {} WPT report files", exec_report_paths.len());
@@ -418,6 +427,8 @@ fn run(cli: Cli) -> ExitCode {
             }
 
             log::info!("gathering reported test outcomes for reconciliation with metadata…");
+
+            let using_reports = !exec_report_paths.is_empty();
 
             let (exec_reports_sender, exec_reports_receiver) = channel();
             exec_report_paths
@@ -663,7 +674,7 @@ fn run(cli: Cli) -> ExitCode {
                         log::info!("new test entry: {test_path:?}")
                     }
 
-                    if test_entry.reported.is_empty() {
+                    if test_entry.reported.is_empty() && using_reports {
                         let test_path = &test_path;
                         let msg = lazy_format!("no entries found in reports for {:?}", test_path);
                         match preset {
