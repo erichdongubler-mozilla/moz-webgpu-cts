@@ -30,7 +30,7 @@ use camino::Utf8PathBuf;
 use clap::{Parser, ValueEnum};
 use enumset::EnumSetType;
 use format::lazy_format;
-use indexmap::{IndexMap, IndexSet};
+use indexmap::{Equivalent, IndexMap, IndexSet};
 use joinery::JoinableIterator;
 use miette::{miette, Diagnostic, IntoDiagnostic, NamedSource, Report, SourceSpan, WrapErr};
 use path_dsl::path;
@@ -106,6 +106,8 @@ enum ReportProcessingPreset {
     #[value(alias("same-fx"))]
     Merge,
     ResetAll,
+    /// Resets only bad->good
+    SetGood,
 }
 
 #[derive(Clone, Copy, Debug, Default, ValueEnum)]
@@ -628,6 +630,18 @@ fn run(cli: Cli) -> ExitCode {
                                     Some(rep) => meta | rep,
                                     None => meta,
                                 },
+                                ReportProcessingPreset::SetGood => {
+                                    |meta: Expectation<_>, rep: Option<Expectation<_>>| match rep {
+                                        Some(rep) => {
+                                            if rep.equivalent(&Expectation::default()) {
+                                                rep
+                                            } else {
+                                                meta
+                                            }
+                                        }
+                                        None => meta,
+                                    }
+                                }
                             };
 
                             normalize(
@@ -680,6 +694,9 @@ fn run(cli: Cli) -> ExitCode {
                                     test_path
                                 );
                                 return None;
+                            }
+                            ReportProcessingPreset::SetGood => {
+                                log::warn!("no good results in {test_path:?}")
                             }
                         }
                     }
