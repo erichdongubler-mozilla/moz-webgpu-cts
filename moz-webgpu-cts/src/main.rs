@@ -688,23 +688,8 @@ fn run(cli: Cli) -> ExitCode {
 
                         let mut properties = reconcile(subtest, preset);
 
-                        // "Taint timeouts by suspicion": Ensure that _both_ `TIMEOUT` and `NOTRUN`
-                        // are in new expected outcomes if at least one of them are present.
-                        for (_, outcome) in properties.expectations.as_mut().unwrap().iter_mut() {
-                            if !outcome
-                                .is_disjoint(SubtestOutcome::Timeout | SubtestOutcome::NotRun)
-                            {
-                                static PRINTED_WARNING: AtomicBool = AtomicBool::new(false);
-                                let already_printed_warning =
-                                    PRINTED_WARNING.swap(true, atomic::Ordering::Relaxed);
-                                if !already_printed_warning {
-                                    log::info!(concat!(
-                                        "encountered at least one case where ",
-                                        "taint-by-suspicion is being applied…"
-                                    ))
-                                }
-                                *outcome |= SubtestOutcome::Timeout | SubtestOutcome::NotRun;
-                            }
+                        for (_, expected) in properties.expectations.as_mut().unwrap().iter_mut() {
+                            taint_subtest_timeouts_by_suspicion(expected);
                         }
 
                         subtests.insert(subtest_name, Subtest { properties });
@@ -804,12 +789,24 @@ fn run(cli: Cli) -> ExitCode {
                         fmt_err_found = true;
                         render_metadata_parse_errors(&path, &file_contents, errors);
                     }
-                    Ok(file) => match write_to_file(&path, metadata::format_file(&file)) {
-                        Ok(()) => (),
-                        Err(AlreadyReportedToCommandline) => {
-                            fmt_err_found = true;
+                    Ok(mut file) => {
+                        for test in file.tests.values_mut() {
+                            for subtest in &mut test.subtests.values_mut() {
+                                if let Some(expected) = subtest.properties.expectations.as_mut() {
+                                    for (_, expected) in expected.iter_mut() {
+                                        taint_subtest_timeouts_by_suspicion(expected);
+                                    }
+                                }
+                            }
                         }
-                    },
+
+                        match write_to_file(&path, metadata::format_file(&file)) {
+                            Ok(()) => (),
+                            Err(AlreadyReportedToCommandline) => {
+                                fmt_err_found = true;
+                            }
+                        };
+                    }
                 }
             }
 
@@ -1557,4 +1554,22 @@ fn write_to_file(path: &Path, contents: impl Display) -> Result<(), AlreadyRepor
         .map_err(Report::msg)
         .wrap_err_with(|| format!("error while writing to `{}`", path.display()))
         .map_err(report_to_cmd_line)
+}
+
+/// Ensure that _both_ `TIMEOUT` and `NOTRUN` are in outcomes if at least one of them are present.
+///
+/// This transformation is desirable for reaching convergence quickly in tests where it may require
+/// a high number of test runs to empirically observe all places where `TIMEOUT`s may occur. The
+/// motivating example in Firefox's test runs are tests with a large matrix of subtests that are
+/// deterministic if executed, but consistently exceed the timeout window offered by the test
+/// runner.
+fn taint_subtest_timeouts_by_suspicion(expected: &mut Expectation<SubtestOutcome>) {
+    static PRINTED_WARNING: AtomicBool = AtomicBool::new(false);
+    let already_printed_warning = PRINTED_WARNING.swap(true, atomic::Ordering::Relaxed);
+    if !already_printed_warning {
+        log::info!("encountered at least one case where taint-by-suspicion is being applied…")
+    }
+    if !expected.is_disjoint(SubtestOutcome::Timeout | SubtestOutcome::NotRun) {
+        *expected |= SubtestOutcome::Timeout | SubtestOutcome::NotRun;
+    }
 }
