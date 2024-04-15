@@ -1,8 +1,8 @@
 # `moz-webgpu-cts`
 
-A (WIP) tool for analyzing and adjusting [Web Platform Tests] data in
-a checkout of [`mozilla-central`]. Currently tailored exclusively towards the
-WebGPU team and its use cases.
+A (WIP) tool for analyzing and adjusting [Web Platform Tests] data in a checkout
+of [`mozilla-central`]. Currently tailored exclusively towards Firefox's WebGPU
+team and its use cases.
 
 [Web Platform Tests]: https://web-platform-tests.org/
 [`mozilla-central`]: https://hg.mozilla.org/mozilla-central/
