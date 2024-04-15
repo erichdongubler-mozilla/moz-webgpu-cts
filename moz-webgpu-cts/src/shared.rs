@@ -85,6 +85,10 @@ where
         self.inner().iter()
     }
 
+    pub fn is_disjoint(&self, rep: EnumSet<Out>) -> bool {
+        self.inner().is_disjoint(rep)
+    }
+
     pub fn is_superset(&self, rep: &Expectation<Out>) -> bool
     where
         Out: std::fmt::Debug + Default + EnumSetType,
@@ -139,6 +143,28 @@ where
     Out: EnumSetType,
 {
     fn bitor_assign(&mut self, rhs: Self) {
+        *self = *self | rhs;
+    }
+}
+
+impl<Out> BitOr<EnumSet<Out>> for Expectation<Out>
+where
+    Out: EnumSetType,
+{
+    type Output = Self;
+
+    fn bitor(self, rhs: EnumSet<Out>) -> Self::Output {
+        let Self(lhs) = self;
+
+        Self(lhs | rhs)
+    }
+}
+
+impl<Out> BitOrAssign<EnumSet<Out>> for Expectation<Out>
+where
+    Out: EnumSetType,
+{
+    fn bitor_assign(&mut self, rhs: EnumSet<Out>) {
         *self = *self | rhs;
     }
 }
@@ -244,6 +270,16 @@ where
             exps_by_bp.iter().map(move |(build_profile, expectations)| {
                 ((platform, build_profile), *expectations)
             })
+        })
+    }
+
+    pub(crate) fn iter_mut(
+        &mut self,
+    ) -> impl Iterator<Item = ((Platform, BuildProfile), &mut Expectation<Out>)> + '_ {
+        self.0.iter_mut().flat_map(|(platform, exps_by_bp)| {
+            exps_by_bp
+                .iter_mut()
+                .map(move |(build_profile, expectations)| ((platform, build_profile), expectations))
         })
     }
 }

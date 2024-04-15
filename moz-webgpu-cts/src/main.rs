@@ -23,7 +23,11 @@ use std::{
     io::{self, BufReader, BufWriter},
     path::{Path, PathBuf},
     process::ExitCode,
-    sync::{mpsc::channel, Arc},
+    sync::{
+        atomic::{self, AtomicBool},
+        mpsc::channel,
+        Arc,
+    },
 };
 
 use camino::Utf8PathBuf;
@@ -604,7 +608,7 @@ fn run(cli: Cli) -> ExitCode {
                         } = entry;
 
                         let mut meta_props = meta_props.unwrap_or_default();
-                        meta_props.expectations = Some('resolve: {
+                        let reconciled = 'resolve: {
                             let reported = |platform, build_profile| {
                                 reported
                                     .get(&platform)
@@ -645,7 +649,8 @@ fn run(cli: Cli) -> ExitCode {
                             } else {
                                 all_reported()
                             }
-                        });
+                        };
+                        meta_props.expectations = Some(reconciled);
                         meta_props
                     }
 
@@ -680,12 +685,29 @@ fn run(cli: Cli) -> ExitCode {
                             found_reconciliation_err = true;
                             log::error!("internal error: duplicate test path {test_path:?}");
                         }
-                        subtests.insert(
-                            subtest_name,
-                            Subtest {
-                                properties: reconcile(subtest, preset),
-                            },
-                        );
+
+                        let mut properties = reconcile(subtest, preset);
+
+                        // "Taint timeouts by suspicion": Ensure that _both_ `TIMEOUT` and `NOTRUN`
+                        // are in new expected outcomes if at least one of them are present.
+                        for (_, outcome) in properties.expectations.as_mut().unwrap().iter_mut() {
+                            if !outcome
+                                .is_disjoint(SubtestOutcome::Timeout | SubtestOutcome::NotRun)
+                            {
+                                static PRINTED_WARNING: AtomicBool = AtomicBool::new(false);
+                                let already_printed_warning =
+                                    PRINTED_WARNING.swap(true, atomic::Ordering::Relaxed);
+                                if !already_printed_warning {
+                                    log::info!(concat!(
+                                        "encountered at least one case where ",
+                                        "taint-by-suspicion is being applied…"
+                                    ))
+                                }
+                                *outcome |= SubtestOutcome::Timeout | SubtestOutcome::NotRun;
+                            }
+                        }
+
+                        subtests.insert(subtest_name, Subtest { properties });
                     }
 
                     if subtests.is_empty() && properties == Default::default() {
