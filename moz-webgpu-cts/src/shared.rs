@@ -3,12 +3,13 @@ use std::{
     collections::BTreeMap,
     fmt::{self, Debug, Display, Formatter},
     num::NonZeroUsize,
-    ops::{BitOr, BitOrAssign},
+    ops::{BitOr, BitOrAssign, Index, IndexMut},
     path::Path,
 };
 
 use camino::{Utf8Component, Utf8Path};
 
+use enum_map::EnumMap;
 use enumset::{EnumSet, EnumSetType};
 use format::lazy_format;
 use joinery::JoinableIterator;
@@ -181,6 +182,107 @@ where
     }
 }
 
+/// A completely flat representation of [`NormalizedExpectationPropertyValueData`] suitable for
+/// byte representation in memory.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub struct FullyExpandedExpectationPropertyValue<Out>(
+    EnumMap<Platform, EnumMap<BuildProfile, Expectation<Out>>>,
+)
+where
+    Out: EnumSetType;
+
+impl<Out> Default for FullyExpandedExpectationPropertyValue<Out>
+where
+    Out: Default + EnumSetType,
+{
+    fn default() -> Self {
+        Self(Default::default())
+    }
+}
+
+impl<Out> Index<(Platform, BuildProfile)> for FullyExpandedExpectationPropertyValue<Out>
+where
+    Out: EnumSetType,
+{
+    type Output = Expectation<Out>;
+
+    fn index(&self, (platform, build_profile): (Platform, BuildProfile)) -> &Self::Output {
+        &self.0[platform][build_profile]
+    }
+}
+
+impl<Out> IndexMut<(Platform, BuildProfile)> for FullyExpandedExpectationPropertyValue<Out>
+where
+    Out: EnumSetType,
+{
+    fn index_mut(
+        &mut self,
+        (platform, build_profile): (Platform, BuildProfile),
+    ) -> &mut Self::Output {
+        &mut self.0[platform][build_profile]
+    }
+}
+
+impl<Out> FullyExpandedExpectationPropertyValue<Out>
+where
+    Out: EnumSetType,
+{
+    pub fn uniform(expectation: Expectation<Out>) -> Self {
+        Self(EnumMap::from_fn(|_idx| {
+            EnumMap::from_fn(|_idx| expectation)
+        }))
+    }
+
+    pub fn get(&self, platform: Platform, build_profile: BuildProfile) -> Expectation<Out> {
+        self.0[platform][build_profile]
+    }
+
+    pub(crate) fn iter(
+        &self,
+    ) -> impl Iterator<Item = ((Platform, BuildProfile), Expectation<Out>)> + '_ {
+        self.0.iter().flat_map(|(platform, exps_by_bp)| {
+            exps_by_bp.iter().map(move |(build_profile, expectations)| {
+                ((platform, build_profile), *expectations)
+            })
+        })
+    }
+}
+
+impl<Out> FullyExpandedExpectationPropertyValue<Out>
+where
+    Out: Default + EnumSetType,
+{
+    pub fn from_query<F>(f: F) -> Self
+    where
+        F: FnMut(Platform, BuildProfile) -> Expectation<Out>,
+    {
+        let mut f = f;
+        let mut this = Self::default();
+        for platform in Platform::iter() {
+            let by_plat = &mut this.0[platform];
+            for build_profile in BuildProfile::iter() {
+                by_plat[build_profile] = f(platform, build_profile);
+            }
+        }
+        this
+    }
+}
+
+#[test]
+fn fully_expanded_is_tiny() {
+    use crate::metadata::{SubtestOutcome, TestOutcome};
+    use std::mem::size_of;
+
+    assert_eq!(
+        size_of::<FullyExpandedExpectationPropertyValue<TestOutcome>>(),
+        6
+    );
+    assert_eq!(
+        size_of::<FullyExpandedExpectationPropertyValue<SubtestOutcome>>(),
+        6
+    );
+}
+
 /// A normalized representation of [`Expectation`]s in [`TestProps`], which collapses
 /// backwards along the following branching factors:
 ///
@@ -219,100 +321,63 @@ impl<Out> NormalizedExpectationPropertyValue<Out>
 where
     Out: EnumSetType,
 {
-    pub fn uniform(expectation: Expectation<Out>) -> Self {
-        Self(MaybeCollapsed::Collapsed(MaybeCollapsed::Collapsed(
-            expectation,
-        )))
-    }
-
     pub fn inner(&self) -> &NormalizedExpectationPropertyValueData<Out> {
         let Self(inner) = self;
         inner
     }
 
-    pub fn into_inner(self) -> NormalizedExpectationPropertyValueData<Out> {
-        let Self(inner) = self;
-        inner
-    }
-
     pub(crate) fn from_fully_expanded(
-        outcomes: BTreeMap<Platform, BTreeMap<BuildProfile, Expectation<Out>>>,
-    ) -> Self
-    where
-        Out: Default,
-    {
-        if outcomes.is_empty() {
-            return Self::default();
-        }
-
-        fn normalize<K, V, T, F>(
-            mut map: BTreeMap<K, V>,
-            mut f: F,
-        ) -> MaybeCollapsed<T, BTreeMap<K, T>>
+        outcomes: FullyExpandedExpectationPropertyValue<Out>,
+    ) -> Self {
+        fn same_value<T>(iter: impl IntoIterator<Item = T>) -> Option<T>
         where
-            F: FnMut(V) -> T,
-            K: IntoEnumIterator + Ord,
-            V: Default,
-            T: Clone + Default + Eq + PartialEq,
+            T: Eq,
         {
-            fn skip_default<K, V, I>(iter: I) -> impl Iterator<Item = (K, V)>
-            where
-                I: IntoIterator<Item = (K, V)>,
-                V: Default + Eq + PartialEq,
-            {
-                iter.into_iter().filter(|(_k, v)| v != &Default::default())
-            }
-
-            let mut iter = K::iter().map(|k| {
-                let v = map.remove(&k).unwrap_or_default();
-                (k, f(v))
-            });
-
-            let (first_key, first_t) = iter.next().unwrap();
-
-            let mut inconsistency_found = false;
-            let mut expanded = BTreeMap::default();
-            for (k, t) in iter.by_ref() {
-                if t == first_t {
-                    expanded.extend(skip_default([(k, t)]));
-                } else {
-                    inconsistency_found = true;
-                    expanded.extend(skip_default([(k, t)].into_iter().chain(iter)));
-                    break;
+            let mut iter = iter.into_iter();
+            let first = iter.next()?;
+            for next in iter {
+                if first != next {
+                    return None;
                 }
             }
-            if inconsistency_found {
-                expanded.extend(skip_default([(first_key, first_t)]));
-                MaybeCollapsed::Expanded(expanded)
-            } else {
-                MaybeCollapsed::Collapsed(first_t)
-            }
+            Some(first)
         }
 
-        NormalizedExpectationPropertyValue(normalize(outcomes, |by_build_profile| {
-            normalize(by_build_profile, std::convert::identity)
-        }))
-    }
-
-    pub fn get(&self, platform: Platform, build_profile: BuildProfile) -> Expectation<Out>
-    where
-        Out: Default,
-    {
-        match self.inner() {
-            MaybeCollapsed::Collapsed(exps) => match exps {
-                MaybeCollapsed::Collapsed(exps) => *exps,
-                MaybeCollapsed::Expanded(exps) => {
-                    exps.get(&build_profile).copied().unwrap_or_default()
+        Self(
+            if let Some(uniform) = same_value(outcomes.iter().map(|(_, outcomes)| outcomes)) {
+                MaybeCollapsed::Collapsed(MaybeCollapsed::Collapsed(uniform))
+            } else {
+                let per_bp = |outcomes_by_bp: &EnumMap<_, _>| {
+                    outcomes_by_bp
+                        .iter()
+                        .map(|(bp, outcomes)| (bp, *outcomes))
+                        .collect()
+                };
+                if let Some(uniform_per_platform) =
+                    same_value(outcomes.0.iter().map(|(_, outcomes_by_bp)| outcomes_by_bp))
+                {
+                    MaybeCollapsed::Collapsed(MaybeCollapsed::Expanded(per_bp(
+                        uniform_per_platform,
+                    )))
+                } else {
+                    MaybeCollapsed::Expanded(
+                        outcomes
+                            .0
+                            .iter()
+                            .map(|(platform, outcomes_by_bp)| {
+                                if let Some(uniform_per_bp) =
+                                    same_value(outcomes_by_bp.iter().map(|(_, outcomes)| *outcomes))
+                                {
+                                    (platform, MaybeCollapsed::Collapsed(uniform_per_bp))
+                                } else {
+                                    (platform, MaybeCollapsed::Expanded(per_bp(outcomes_by_bp)))
+                                }
+                            })
+                            .collect(),
+                    )
                 }
             },
-            MaybeCollapsed::Expanded(exps) => exps
-                .get(&platform)
-                .and_then(|exps| match exps {
-                    MaybeCollapsed::Collapsed(exps) => Some(*exps),
-                    MaybeCollapsed::Expanded(exps) => exps.get(&build_profile).copied(),
-                })
-                .unwrap_or_default(),
-        }
+        )
     }
 }
 

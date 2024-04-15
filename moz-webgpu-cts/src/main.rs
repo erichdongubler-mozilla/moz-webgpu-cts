@@ -12,7 +12,7 @@ use self::{
     report::{
         ExecutionReport, RunInfo, SubtestExecutionResult, TestExecutionEntry, TestExecutionResult,
     },
-    shared::{Expectation, MaybeCollapsed, NormalizedExpectationPropertyValue, TestPath},
+    shared::{Expectation, FullyExpandedExpectationPropertyValue, TestPath},
 };
 
 use std::{
@@ -35,7 +35,6 @@ use joinery::JoinableIterator;
 use miette::{miette, Diagnostic, IntoDiagnostic, NamedSource, Report, SourceSpan, WrapErr};
 use path_dsl::path;
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
-use strum::IntoEnumIterator;
 use wax::Glob;
 use whippit::{
     metadata::SectionHeader,
@@ -515,7 +514,7 @@ fn run(cli: Cli) -> ExitCode {
                         build_profile: BuildProfile,
                         reported_outcome: Out,
                     ) where
-                        Out: EnumSetType + Hash,
+                        Out: Default + EnumSetType + Hash,
                     {
                         match recorded.entry(platform).or_default().entry(build_profile) {
                             std::collections::btree_map::Entry::Vacant(entry) => {
@@ -603,13 +602,25 @@ fn run(cli: Cli) -> ExitCode {
                             meta_props,
                             reported,
                         } = entry;
-                        let normalize = NormalizedExpectationPropertyValue::from_fully_expanded;
 
                         let mut meta_props = meta_props.unwrap_or_default();
                         meta_props.expectations = Some('resolve: {
+                            let reported = |platform, build_profile| {
+                                reported
+                                    .get(&platform)
+                                    .and_then(|rep| rep.get(&build_profile))
+                                    .copied()
+                            };
+                            let all_reported = || {
+                                FullyExpandedExpectationPropertyValue::from_query(
+                                    |platform, build_profile| {
+                                        reported(platform, build_profile).unwrap_or_default()
+                                    },
+                                )
+                            };
                             let resolve = match preset {
                                 ReportProcessingPreset::ResetAll => {
-                                    break 'resolve normalize(reported);
+                                    break 'resolve all_reported();
                                 }
                                 ReportProcessingPreset::ResetContradictory => {
                                     |meta: Expectation<_>, rep: Option<Expectation<_>>| {
@@ -622,31 +633,18 @@ fn run(cli: Cli) -> ExitCode {
                                 },
                             };
 
-                            normalize(
-                                Platform::iter()
-                                    .map(|platform| {
-                                        let build_profiles = BuildProfile::iter()
-                                            .map(|build_profile| {
-                                                (
-                                                    build_profile,
-                                                    resolve(
-                                                        meta_props
-                                                            .expectations
-                                                            .as_ref()
-                                                            .unwrap_or(&Default::default())
-                                                            .get(platform, build_profile),
-                                                        reported
-                                                            .get(&platform)
-                                                            .and_then(|rep| rep.get(&build_profile))
-                                                            .copied(),
-                                                    ),
-                                                )
-                                            })
-                                            .collect();
-                                        (platform, build_profiles)
-                                    })
-                                    .collect(),
-                            )
+                            if let Some(meta_expectations) = meta_props.expectations {
+                                FullyExpandedExpectationPropertyValue::from_query(
+                                    |platform, build_profile| {
+                                        resolve(
+                                            meta_expectations.get(platform, build_profile),
+                                            reported(platform, build_profile),
+                                        )
+                                    },
+                                )
+                            } else {
+                                all_reported()
+                            }
                         });
                         meta_props
                     }
@@ -661,16 +659,13 @@ fn run(cli: Cli) -> ExitCode {
                     }
 
                     if test_entry.reported.is_empty() {
+                        let test_path = &test_path;
+                        let msg = lazy_format!("no entries found in reports for {:?}", test_path);
                         match preset {
-                            ReportProcessingPreset::Merge => {
-                                log::warn!("no entries found in reports for {test_path:?}")
-                            }
+                            ReportProcessingPreset::Merge => log::warn!("{msg}"),
                             ReportProcessingPreset::ResetAll
                             | ReportProcessingPreset::ResetContradictory => {
-                                log::warn!(
-                                    "removing entry after finding no entries in reports: {:?}",
-                                    test_path
-                                );
+                                log::warn!("removing metadata after {msg}");
                                 return None;
                             }
                         }
@@ -1091,11 +1086,6 @@ fn run(cli: Cli) -> ExitCode {
                         }
                     }
 
-                    let apply_to_all_platforms = |analysis: &mut Analysis, expectation| {
-                        analyze_test_outcome(&test_name, expectation, |f| {
-                            analysis.for_each_platform_mut(f)
-                        })
-                    };
                     let apply_to_specific_platforms =
                         |analysis: &mut Analysis, platform, expectation| {
                             analyze_test_outcome(&test_name, expectation, |f| {
@@ -1103,36 +1093,8 @@ fn run(cli: Cli) -> ExitCode {
                             })
                         };
 
-                    match expectations.into_inner() {
-                        MaybeCollapsed::Collapsed(exps) => match exps {
-                            MaybeCollapsed::Collapsed(exp) => {
-                                apply_to_all_platforms(&mut analysis, exp)
-                            }
-                            MaybeCollapsed::Expanded(by_build_profile) => {
-                                for (_build_profile, exp) in by_build_profile {
-                                    apply_to_all_platforms(&mut analysis, exp)
-                                }
-                            }
-                        },
-                        MaybeCollapsed::Expanded(by_platform) => {
-                            for (platform, exp_by_build_profile) in by_platform {
-                                // TODO: has a lot in common with above cases. Refactor out?
-                                match exp_by_build_profile {
-                                    MaybeCollapsed::Collapsed(exp) => {
-                                        apply_to_specific_platforms(&mut analysis, platform, exp)
-                                    }
-                                    MaybeCollapsed::Expanded(by_build_profile) => {
-                                        for (_build_profile, exp) in by_build_profile {
-                                            apply_to_specific_platforms(
-                                                &mut analysis,
-                                                platform,
-                                                exp,
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                    for ((platform, _build_profile), expectations) in expectations.iter() {
+                        apply_to_specific_platforms(&mut analysis, platform, expectations)
                     }
                 }
 
@@ -1198,11 +1160,6 @@ fn run(cli: Cli) -> ExitCode {
                             }
                         }
 
-                        let apply_to_all_platforms = |analysis: &mut Analysis, expectation| {
-                            analyze_subtest_outcome(&test_name, &subtest_name, expectation, |f| {
-                                analysis.for_each_platform_mut(f)
-                            })
-                        };
                         let apply_to_specific_platforms =
                             |analysis: &mut Analysis, platform, expectation| {
                                 analyze_subtest_outcome(
@@ -1213,40 +1170,8 @@ fn run(cli: Cli) -> ExitCode {
                                 )
                             };
 
-                        match expectations.into_inner() {
-                            MaybeCollapsed::Collapsed(exps) => match exps {
-                                MaybeCollapsed::Collapsed(exp) => {
-                                    apply_to_all_platforms(&mut analysis, exp)
-                                }
-                                MaybeCollapsed::Expanded(by_build_profile) => {
-                                    for (_build_profile, exp) in by_build_profile {
-                                        apply_to_all_platforms(&mut analysis, exp)
-                                    }
-                                }
-                            },
-                            MaybeCollapsed::Expanded(by_platform) => {
-                                for (platform, exp_by_build_profile) in by_platform {
-                                    // TODO: has a lot in common with above cases. Refactor out?
-                                    match exp_by_build_profile {
-                                        MaybeCollapsed::Collapsed(exp) => {
-                                            apply_to_specific_platforms(
-                                                &mut analysis,
-                                                platform,
-                                                exp,
-                                            )
-                                        }
-                                        MaybeCollapsed::Expanded(by_build_profile) => {
-                                            for (_build_profile, exp) in by_build_profile {
-                                                apply_to_specific_platforms(
-                                                    &mut analysis,
-                                                    platform,
-                                                    exp,
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-                            }
+                        for ((platform, _build_profile), expectations) in expectations.iter() {
+                            apply_to_specific_platforms(&mut analysis, platform, expectations)
                         }
                     }
                 }

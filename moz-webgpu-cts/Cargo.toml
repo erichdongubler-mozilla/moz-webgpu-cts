@@ -27,6 +27,7 @@ strum = { version = "0.25.0", features = ["derive"] }
 thiserror = { workspace = true }
 wax = { version = "0.6.0", features = ["miette"], git = "https://github.com/ErichDonGubler/wax", branch = "static-miette-diags"}
 whippit = { version = "0.6.0", path = "../whippit", default-features = false }
+enum-map = "2.7.3"
 
 [dev-dependencies]
 insta = { workspace = true }

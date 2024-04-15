@@ -4,11 +4,12 @@ use std::{
     hash::Hash,
 };
 
+use enum_map::Enum;
 use enumset::EnumSetType;
 use format::lazy_format;
 use joinery::JoinableIterator;
 use serde::Deserialize;
-use strum::{EnumIter, IntoEnumIterator};
+use strum::EnumIter;
 use whippit::{
     metadata::{
         self, file_parser,
@@ -28,7 +29,10 @@ use whippit::{
     },
 };
 
-use crate::shared::{Expectation, MaybeCollapsed, NormalizedExpectationPropertyValue};
+use crate::shared::{
+    Expectation, FullyExpandedExpectationPropertyValue, MaybeCollapsed,
+    NormalizedExpectationPropertyValue,
+};
 
 #[cfg(test)]
 use insta::assert_debug_snapshot;
@@ -755,6 +759,7 @@ where
                 BuildProfile::Debug => "debug",
                 BuildProfile::Optimized => "not debug",
             };
+            let exps = NormalizedExpectationPropertyValue::from_fully_expanded(*exps);
             match exps.inner() {
                 MaybeCollapsed::Collapsed(exps) => match exps {
                     MaybeCollapsed::Collapsed(exps) => {
@@ -804,14 +809,14 @@ where
     })
 }
 
-#[derive(Clone, Copy, Debug, EnumIter, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Enum, EnumIter, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Platform {
     Windows,
     Linux,
     MacOs,
 }
 
-#[derive(Clone, Copy, Debug, EnumIter, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Enum, EnumIter, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum BuildProfile {
     Debug,
     Optimized,
@@ -823,7 +828,7 @@ where
     Out: EnumSetType,
 {
     pub is_disabled: bool,
-    pub expectations: Option<NormalizedExpectationPropertyValue<Out>>,
+    pub expectations: Option<FullyExpandedExpectationPropertyValue<Out>>,
 }
 
 impl<Out> Default for TestProps<Out>
@@ -858,7 +863,7 @@ where
                 }
                 expectations.replace(match val {
                     PropertyValue::Unconditional(exp) => {
-                        NormalizedExpectationPropertyValue::uniform(exp)
+                        FullyExpandedExpectationPropertyValue::uniform(exp)
                     }
                     PropertyValue::Conditional(val) => {
                         let ConditionalValue {
@@ -866,40 +871,30 @@ where
                             fallback,
                         } = val;
                         if conditions.is_empty() {
-                            NormalizedExpectationPropertyValue::uniform(fallback.expect(concat!(
-                                "at least one condition or fallback not present ",
-                                "in conditional `expected` property value"
-                            )))
+                            FullyExpandedExpectationPropertyValue::uniform(fallback.expect(
+                                concat!(
+                                    "at least one condition or fallback not present ",
+                                    "in conditional `expected` property value"
+                                ),
+                            ))
                         } else {
-                            let fully_expanded = Platform::iter()
-                                .filter_map(|p| {
-                                    let by_build_profile = BuildProfile::iter()
-                                        .filter_map(|bp| {
-                                            let mut matched = None;
+                            let fallback = fallback.unwrap_or_default();
+                            FullyExpandedExpectationPropertyValue::from_query(|p, bp| {
+                                let mut matched = None;
 
-                                            for (applicability, val) in &conditions {
-                                                let Applicability {
-                                                    platform,
-                                                    build_profile,
-                                                } = applicability;
-                                                if platform.as_ref().map_or(true, |p2| *p2 == p)
-                                                    && build_profile
-                                                        .as_ref()
-                                                        .map_or(true, |bp2| *bp2 == bp)
-                                                {
-                                                    matched = Some(*val);
-                                                }
-                                            }
-                                            matched.or(fallback).map(|matched| (bp, matched))
-                                        })
-                                        .collect::<BTreeMap<_, _>>();
-                                    (!by_build_profile.is_empty())
-                                        .then_some(by_build_profile)
-                                        .map(|tree| (p, tree))
-                                })
-                                .collect();
-
-                            NormalizedExpectationPropertyValue::from_fully_expanded(fully_expanded)
+                                for (applicability, val) in &conditions {
+                                    let Applicability {
+                                        platform,
+                                        build_profile,
+                                    } = applicability;
+                                    if platform.as_ref().map_or(true, |p2| *p2 == p)
+                                        && build_profile.as_ref().map_or(true, |bp2| *bp2 == bp)
+                                    {
+                                        matched = Some(*val);
+                                    }
+                                }
+                                matched.unwrap_or(fallback)
+                            })
                         }
                     }
                 });
@@ -1337,14 +1332,33 @@ r#"
                                 properties: TestProps {
                                     is_disabled: false,
                                     expectations: Some(
-                                        NormalizedExpectationPropertyValue(
-                                            Collapsed(
-                                                Collapsed(
-                                                    [
+                                        FullyExpandedExpectationPropertyValue(
+                                            {
+                                                Windows: {
+                                                    Debug: [
                                                         Pass,
                                                     ],
-                                                ),
-                                            ),
+                                                    Optimized: [
+                                                        Pass,
+                                                    ],
+                                                },
+                                                Linux: {
+                                                    Debug: [
+                                                        Pass,
+                                                    ],
+                                                    Optimized: [
+                                                        Pass,
+                                                    ],
+                                                },
+                                                MacOs: {
+                                                    Debug: [
+                                                        Pass,
+                                                    ],
+                                                    Optimized: [
+                                                        Pass,
+                                                    ],
+                                                },
+                                            },
                                         ),
                                     ),
                                 },
@@ -1402,15 +1416,39 @@ r#"
                             properties: TestProps {
                                 is_disabled: false,
                                 expectations: Some(
-                                    NormalizedExpectationPropertyValue(
-                                        Collapsed(
-                                            Collapsed(
-                                                [
+                                    FullyExpandedExpectationPropertyValue(
+                                        {
+                                            Windows: {
+                                                Debug: [
                                                     Pass,
                                                     Fail,
                                                 ],
-                                            ),
-                                        ),
+                                                Optimized: [
+                                                    Pass,
+                                                    Fail,
+                                                ],
+                                            },
+                                            Linux: {
+                                                Debug: [
+                                                    Pass,
+                                                    Fail,
+                                                ],
+                                                Optimized: [
+                                                    Pass,
+                                                    Fail,
+                                                ],
+                                            },
+                                            MacOs: {
+                                                Debug: [
+                                                    Pass,
+                                                    Fail,
+                                                ],
+                                                Optimized: [
+                                                    Pass,
+                                                    Fail,
+                                                ],
+                                            },
+                                        },
                                     ),
                                 ),
                             },
@@ -1442,14 +1480,33 @@ r#"
                     properties: TestProps {
                         is_disabled: false,
                         expectations: Some(
-                            NormalizedExpectationPropertyValue(
-                                Collapsed(
-                                    Collapsed(
-                                        [
+                            FullyExpandedExpectationPropertyValue(
+                                {
+                                    Windows: {
+                                        Debug: [
                                             Ok,
                                         ],
-                                    ),
-                                ),
+                                        Optimized: [
+                                            Ok,
+                                        ],
+                                    },
+                                    Linux: {
+                                        Debug: [
+                                            Ok,
+                                        ],
+                                        Optimized: [
+                                            Ok,
+                                        ],
+                                    },
+                                    MacOs: {
+                                        Debug: [
+                                            Ok,
+                                        ],
+                                        Optimized: [
+                                            Ok,
+                                        ],
+                                    },
+                                },
                             ),
                         ),
                     },
@@ -1458,14 +1515,33 @@ r#"
                             properties: TestProps {
                                 is_disabled: false,
                                 expectations: Some(
-                                    NormalizedExpectationPropertyValue(
-                                        Collapsed(
-                                            Collapsed(
-                                                [
+                                    FullyExpandedExpectationPropertyValue(
+                                        {
+                                            Windows: {
+                                                Debug: [
                                                     Pass,
                                                 ],
-                                            ),
-                                        ),
+                                                Optimized: [
+                                                    Pass,
+                                                ],
+                                            },
+                                            Linux: {
+                                                Debug: [
+                                                    Pass,
+                                                ],
+                                                Optimized: [
+                                                    Pass,
+                                                ],
+                                            },
+                                            MacOs: {
+                                                Debug: [
+                                                    Pass,
+                                                ],
+                                                Optimized: [
+                                                    Pass,
+                                                ],
+                                            },
+                                        },
                                     ),
                                 ),
                             },
@@ -1503,16 +1579,33 @@ r#"
                             properties: TestProps {
                                 is_disabled: false,
                                 expectations: Some(
-                                    NormalizedExpectationPropertyValue(
-                                        Expanded(
-                                            {
-                                                Linux: Collapsed(
-                                                    [
-                                                        Fail,
-                                                    ],
-                                                ),
+                                    FullyExpandedExpectationPropertyValue(
+                                        {
+                                            Windows: {
+                                                Debug: [
+                                                    Pass,
+                                                ],
+                                                Optimized: [
+                                                    Pass,
+                                                ],
                                             },
-                                        ),
+                                            Linux: {
+                                                Debug: [
+                                                    Fail,
+                                                ],
+                                                Optimized: [
+                                                    Fail,
+                                                ],
+                                            },
+                                            MacOs: {
+                                                Debug: [
+                                                    Pass,
+                                                ],
+                                                Optimized: [
+                                                    Pass,
+                                                ],
+                                            },
+                                        },
                                     ),
                                 ),
                             },
@@ -1551,26 +1644,33 @@ r#"
                             properties: TestProps {
                                 is_disabled: false,
                                 expectations: Some(
-                                    NormalizedExpectationPropertyValue(
-                                        Expanded(
-                                            {
-                                                Windows: Collapsed(
-                                                    [
-                                                        Timeout,
-                                                    ],
-                                                ),
-                                                Linux: Collapsed(
-                                                    [
-                                                        Fail,
-                                                    ],
-                                                ),
-                                                MacOs: Collapsed(
-                                                    [
-                                                        Timeout,
-                                                    ],
-                                                ),
+                                    FullyExpandedExpectationPropertyValue(
+                                        {
+                                            Windows: {
+                                                Debug: [
+                                                    Timeout,
+                                                ],
+                                                Optimized: [
+                                                    Timeout,
+                                                ],
                                             },
-                                        ),
+                                            Linux: {
+                                                Debug: [
+                                                    Fail,
+                                                ],
+                                                Optimized: [
+                                                    Fail,
+                                                ],
+                                            },
+                                            MacOs: {
+                                                Debug: [
+                                                    Timeout,
+                                                ],
+                                                Optimized: [
+                                                    Timeout,
+                                                ],
+                                            },
+                                        },
                                     ),
                                 ),
                             },
@@ -1607,16 +1707,33 @@ r#"
                             properties: TestProps {
                                 is_disabled: false,
                                 expectations: Some(
-                                    NormalizedExpectationPropertyValue(
-                                        Expanded(
-                                            {
-                                                MacOs: Collapsed(
-                                                    [
-                                                        Fail,
-                                                    ],
-                                                ),
+                                    FullyExpandedExpectationPropertyValue(
+                                        {
+                                            Windows: {
+                                                Debug: [
+                                                    Pass,
+                                                ],
+                                                Optimized: [
+                                                    Pass,
+                                                ],
                                             },
-                                        ),
+                                            Linux: {
+                                                Debug: [
+                                                    Pass,
+                                                ],
+                                                Optimized: [
+                                                    Pass,
+                                                ],
+                                            },
+                                            MacOs: {
+                                                Debug: [
+                                                    Fail,
+                                                ],
+                                                Optimized: [
+                                                    Fail,
+                                                ],
+                                            },
+                                        },
                                     ),
                                 ),
                             },
