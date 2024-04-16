@@ -20,7 +20,7 @@ use std::{
     fmt::{self, Debug, Display, Formatter},
     fs,
     hash::Hash,
-    io::{self, BufReader, BufWriter},
+    io::{self, BufReader, BufWriter, Read},
     path::{Path, PathBuf},
     process::ExitCode,
     sync::{
@@ -34,7 +34,7 @@ use camino::Utf8PathBuf;
 use clap::{Parser, ValueEnum};
 use enumset::EnumSetType;
 use format::lazy_format;
-use indexmap::{IndexMap, IndexSet};
+use indexmap::{Equivalent, IndexMap, IndexSet};
 use joinery::JoinableIterator;
 use miette::{miette, Diagnostic, IntoDiagnostic, NamedSource, Report, SourceSpan, WrapErr};
 use path_dsl::path;
@@ -50,6 +50,8 @@ use whippit::{
 struct Cli {
     #[clap(long)]
     gecko_checkout: Option<PathBuf>,
+    #[clap(long)]
+    servo: bool,
     #[clap(subcommand)]
     subcommand: Subcommand,
 }
@@ -107,6 +109,8 @@ enum ReportProcessingPreset {
     #[value(alias("same-fx"))]
     Merge,
     ResetAll,
+    /// Resets only bad->good
+    SetGood,
 }
 
 #[derive(Clone, Copy, Debug, Default, ValueEnum)]
@@ -128,6 +132,7 @@ fn run(cli: Cli) -> ExitCode {
     let Cli {
         gecko_checkout,
         subcommand,
+        servo,
     } = cli;
 
     let gecko_checkout = match gecko_checkout
@@ -139,8 +144,11 @@ fn run(cli: Cli) -> ExitCode {
     };
 
     let read_metadata = || -> Result<_, AlreadyReportedToCommandline> {
-        let webgpu_cts_meta_parent_dir =
-            { path!(&gecko_checkout | "testing" | "web-platform" | "mozilla" | "meta" | "webgpu") };
+        let webgpu_cts_meta_parent_dir = if !servo {
+            path!(&gecko_checkout | "testing" | "web-platform" | "mozilla" | "meta" | "webgpu")
+        } else {
+            path!(&gecko_checkout | "tests" | "wpt" | "webgpu" | "meta" | "webgpu")
+        };
 
         let mut found_err = false;
         let collected =
@@ -436,11 +444,13 @@ fn run(cli: Cli) -> ExitCode {
                 .into_par_iter()
                 .for_each_with(exec_reports_sender, |sender, path| {
                     let res = fs::File::open(&path)
-                        .map(BufReader::new)
                         .map_err(Report::msg)
                         .wrap_err("failed to open file")
-                        .and_then(|reader| {
-                            serde_json::from_reader::<_, ExecutionReport>(reader)
+                        .and_then(|mut f| {
+                            let mut s = String::new();
+                            f.read_to_string(&mut s).unwrap();
+                            let first = s.lines().next().unwrap();
+                            serde_json::from_str::<ExecutionReport>(first)
                                 .into_diagnostic()
                                 .wrap_err("failed to parse JSON")
                         })
@@ -647,6 +657,18 @@ fn run(cli: Cli) -> ExitCode {
                                     Some(rep) => meta | rep,
                                     None => meta,
                                 },
+                                ReportProcessingPreset::SetGood => {
+                                    |meta: Expectation<_>, rep: Option<Expectation<_>>| match rep {
+                                        Some(rep) => {
+                                            if rep.equivalent(&Expectation::default()) {
+                                                rep
+                                            } else {
+                                                meta
+                                            }
+                                        }
+                                        None => meta,
+                                    }
+                                }
                             };
 
                             if let Some(meta_expectations) = meta_props.expectations {
@@ -685,6 +707,9 @@ fn run(cli: Cli) -> ExitCode {
                                 log::warn!("removing metadata after {msg}");
                                 return None;
                             }
+                            ReportProcessingPreset::SetGood => {
+                                log::warn!("no good results in {test_path:?}")
+                            }
                         }
                     }
 
@@ -721,7 +746,7 @@ fn run(cli: Cli) -> ExitCode {
             let mut files = BTreeMap::<PathBuf, File>::new();
             for (test_path, (properties, subtests)) in recombined_tests_iter {
                 let name = test_path.test_name().to_string();
-                let rel_path = Utf8PathBuf::from(test_path.rel_metadata_path_fx().to_string());
+                let rel_path = Utf8PathBuf::from(test_path.rel_metadata_path_fx(servo).to_string());
                 let path = gecko_checkout.join(&rel_path);
                 let file = files.entry(path).or_insert_with(|| File {
                     properties: file_props_by_file
@@ -952,6 +977,7 @@ fn run(cli: Cli) -> ExitCode {
                 tests_with_runner_errors: TestSet,
                 tests_with_disabled_or_skip: TestSet,
                 tests_with_crashes: TestSet,
+                tests_with_fails: TestSet,
                 subtests_with_failures_by_test: SubtestByTestSet,
                 subtests_with_timeouts_by_test: SubtestByTestSet,
             }
@@ -1113,6 +1139,15 @@ fn run(cli: Cli) -> ExitCode {
                                         outcome,
                                     )
                                 }),
+                                TestOutcome::Pass => (),
+                                TestOutcome::Fail => receiver(&mut |analysis| {
+                                    insert_in_test_set(
+                                        &mut analysis.tests_with_fails,
+                                        test_name,
+                                        expectation,
+                                        outcome,
+                                    )
+                                }),
                             }
                         }
                     }
@@ -1217,6 +1252,7 @@ fn run(cli: Cli) -> ExitCode {
                     tests_with_runner_errors,
                     tests_with_disabled_or_skip,
                     tests_with_crashes,
+                    tests_with_fails,
                     subtests_with_failures_by_test,
                     subtests_with_timeouts_by_test,
                 } = analysis;
