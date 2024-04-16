@@ -12,7 +12,7 @@ use self::{
     report::{
         ExecutionReport, RunInfo, SubtestExecutionResult, TestExecutionEntry, TestExecutionResult,
     },
-    shared::{Expectation, FullyExpandedExpectationPropertyValue, TestPath},
+    shared::{Expected, FullyExpandedExpectedPropertyValue, TestPath},
 };
 
 use std::{
@@ -525,7 +525,7 @@ fn run(cli: Cli) -> ExitCode {
                     };
 
                     fn accumulate<Out>(
-                        recorded: &mut BTreeMap<Platform, BTreeMap<BuildProfile, Expectation<Out>>>,
+                        recorded: &mut BTreeMap<Platform, BTreeMap<BuildProfile, Expected<Out>>>,
                         platform: Platform,
                         build_profile: BuildProfile,
                         reported_outcome: Out,
@@ -534,7 +534,7 @@ fn run(cli: Cli) -> ExitCode {
                     {
                         match recorded.entry(platform).or_default().entry(build_profile) {
                             std::collections::btree_map::Entry::Vacant(entry) => {
-                                entry.insert(Expectation::permanent(reported_outcome));
+                                entry.insert(Expected::permanent(reported_outcome));
                             }
                             std::collections::btree_map::Entry::Occupied(mut entry) => {
                                 *entry.get_mut() |= reported_outcome
@@ -628,7 +628,7 @@ fn run(cli: Cli) -> ExitCode {
                                     .copied()
                             };
                             let all_reported = || {
-                                FullyExpandedExpectationPropertyValue::from_query(
+                                FullyExpandedExpectedPropertyValue::from_query(
                                     |platform, build_profile| {
                                         reported(platform, build_profile).unwrap_or_default()
                                     },
@@ -639,7 +639,7 @@ fn run(cli: Cli) -> ExitCode {
                                     break 'resolve all_reported();
                                 }
                                 ReportProcessingPreset::ResetContradictory => {
-                                    |meta: Expectation<_>, rep: Option<Expectation<_>>| {
+                                    |meta: Expected<_>, rep: Option<Expected<_>>| {
                                         rep.filter(|rep| !meta.is_superset(rep)).unwrap_or(meta)
                                     }
                                 }
@@ -649,11 +649,11 @@ fn run(cli: Cli) -> ExitCode {
                                 },
                             };
 
-                            if let Some(meta_expectations) = meta_props.expectations {
-                                FullyExpandedExpectationPropertyValue::from_query(
+                            if let Some(meta_expected) = meta_props.expected {
+                                FullyExpandedExpectedPropertyValue::from_query(
                                     |platform, build_profile| {
                                         resolve(
-                                            meta_expectations.get(platform, build_profile),
+                                            meta_expected.get(platform, build_profile),
                                             reported(platform, build_profile),
                                         )
                                     },
@@ -662,7 +662,7 @@ fn run(cli: Cli) -> ExitCode {
                                 all_reported()
                             }
                         };
-                        meta_props.expectations = Some(reconciled);
+                        meta_props.expected = Some(reconciled);
                         meta_props
                     }
 
@@ -700,7 +700,7 @@ fn run(cli: Cli) -> ExitCode {
 
                         let mut properties = reconcile(subtest, preset);
 
-                        for (_, expected) in properties.expectations.as_mut().unwrap().iter_mut() {
+                        for (_, expected) in properties.expected.as_mut().unwrap().iter_mut() {
                             taint_subtest_timeouts_by_suspicion(expected);
                         }
 
@@ -804,7 +804,7 @@ fn run(cli: Cli) -> ExitCode {
                     Ok(mut file) => {
                         for test in file.tests.values_mut() {
                             for subtest in &mut test.subtests.values_mut() {
-                                if let Some(expected) = subtest.properties.expectations.as_mut() {
+                                if let Some(expected) = subtest.properties.expected.as_mut() {
                                     for (_, expected) in expected.iter_mut() {
                                         taint_subtest_timeouts_by_suspicion(expected);
                                     }
@@ -1022,7 +1022,7 @@ fn run(cli: Cli) -> ExitCode {
 
                 let TestProps {
                     is_disabled,
-                    expectations,
+                    expected,
                 } = properties;
 
                 let test_name = Arc::new(test_name);
@@ -1039,13 +1039,13 @@ fn run(cli: Cli) -> ExitCode {
                 fn insert_in_test_set<Out>(
                     poi: &mut TestSet,
                     test_name: &Arc<String>,
-                    expectation: Expectation<Out>,
+                    expected: Expected<Out>,
                     outcome: Out,
                 ) where
                     Out: Debug + Default + EnumSetType,
                 {
-                    if expectation.is_superset(&Expectation::permanent(outcome)) {
-                        if expectation.is_permanent() {
+                    if expected.is_superset(&Expected::permanent(outcome)) {
+                        if expected.is_permanent() {
                             &mut poi.perma
                         } else {
                             &mut poi.intermittent
@@ -1058,13 +1058,13 @@ fn run(cli: Cli) -> ExitCode {
                     poi: &mut SubtestByTestSet,
                     test_name: &Arc<String>,
                     subtest_name: &Arc<String>,
-                    expectation: Expectation<Out>,
+                    expected: Expected<Out>,
                     outcome: Out,
                 ) where
                     Out: Debug + Default + EnumSetType,
                 {
-                    if expectation.is_superset(&Expectation::permanent(outcome)) {
-                        if expectation.is_permanent() {
+                    if expected.is_superset(&Expected::permanent(outcome)) {
+                        if expected.is_permanent() {
                             &mut poi.perma
                         } else {
                             &mut poi.intermittent
@@ -1075,10 +1075,10 @@ fn run(cli: Cli) -> ExitCode {
                     }
                 }
 
-                if let Some(expectations) = expectations {
+                if let Some(expected) = expected {
                     fn analyze_test_outcome<F>(
                         test_name: &Arc<String>,
-                        expectation: Expectation<TestOutcome>,
+                        expectation: Expected<TestOutcome>,
                         mut receiver: F,
                     ) where
                         F: FnMut(&mut dyn FnMut(&mut PerPlatformAnalysis)),
@@ -1124,8 +1124,8 @@ fn run(cli: Cli) -> ExitCode {
                             })
                         };
 
-                    for ((platform, _build_profile), expectations) in expectations.iter() {
-                        apply_to_specific_platforms(&mut analysis, platform, expectations)
+                    for ((platform, _build_profile), expected) in expected.iter() {
+                        apply_to_specific_platforms(&mut analysis, platform, expected)
                     }
                 }
 
@@ -1136,7 +1136,7 @@ fn run(cli: Cli) -> ExitCode {
                     let Subtest { properties } = subtest;
                     let TestProps {
                         is_disabled,
-                        expectations,
+                        expected,
                     } = properties;
 
                     if is_disabled {
@@ -1147,16 +1147,16 @@ fn run(cli: Cli) -> ExitCode {
                             .insert(test_name.clone());
                     }
 
-                    if let Some(expectations) = expectations {
+                    if let Some(expected) = expected {
                         fn analyze_subtest_outcome<Fo>(
                             test_name: &Arc<String>,
                             subtest_name: &Arc<String>,
-                            expectation: Expectation<SubtestOutcome>,
+                            expected: Expected<SubtestOutcome>,
                             mut receiver: Fo,
                         ) where
                             Fo: FnMut(&mut dyn FnMut(&mut PerPlatformAnalysis)),
                         {
-                            for outcome in expectation.iter() {
+                            for outcome in expected.iter() {
                                 match outcome {
                                     SubtestOutcome::Pass => (),
                                     SubtestOutcome::Timeout | SubtestOutcome::NotRun => {
@@ -1165,7 +1165,7 @@ fn run(cli: Cli) -> ExitCode {
                                                 &mut analysis.subtests_with_timeouts_by_test,
                                                 test_name,
                                                 subtest_name,
-                                                expectation,
+                                                expected,
                                                 outcome,
                                             )
                                         })
@@ -1174,7 +1174,7 @@ fn run(cli: Cli) -> ExitCode {
                                         insert_in_test_set(
                                             &mut analysis.tests_with_crashes,
                                             test_name,
-                                            expectation,
+                                            expected,
                                             outcome,
                                         )
                                     }),
@@ -1183,7 +1183,7 @@ fn run(cli: Cli) -> ExitCode {
                                             &mut analysis.subtests_with_failures_by_test,
                                             test_name,
                                             subtest_name,
-                                            expectation,
+                                            expected,
                                             outcome,
                                         )
                                     }),
@@ -1201,8 +1201,8 @@ fn run(cli: Cli) -> ExitCode {
                                 )
                             };
 
-                        for ((platform, _build_profile), expectations) in expectations.iter() {
-                            apply_to_specific_platforms(&mut analysis, platform, expectations)
+                        for ((platform, _build_profile), expected) in expected.iter() {
+                            apply_to_specific_platforms(&mut analysis, platform, expected)
                         }
                     }
                 }
@@ -1575,7 +1575,7 @@ fn write_to_file(path: &Path, contents: impl Display) -> Result<(), AlreadyRepor
 /// motivating example in Firefox's test runs are tests with a large matrix of subtests that are
 /// deterministic if executed, but consistently exceed the timeout window offered by the test
 /// runner.
-fn taint_subtest_timeouts_by_suspicion(expected: &mut Expectation<SubtestOutcome>) {
+fn taint_subtest_timeouts_by_suspicion(expected: &mut Expected<SubtestOutcome>) {
     static PRINTED_WARNING: AtomicBool = AtomicBool::new(false);
     let already_printed_warning = PRINTED_WARNING.swap(true, atomic::Ordering::Relaxed);
     if !already_printed_warning {
