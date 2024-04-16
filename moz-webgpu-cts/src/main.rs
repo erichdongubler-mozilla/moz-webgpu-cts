@@ -40,6 +40,7 @@ use joinery::JoinableIterator;
 use miette::{miette, Diagnostic, IntoDiagnostic, NamedSource, Report, SourceSpan, WrapErr};
 use path_dsl::path;
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
+use shared::Browser;
 use wax::Glob;
 use whippit::{
     metadata::SectionHeader,
@@ -51,8 +52,10 @@ use whippit::{
 #[derive(Debug, Parser)]
 #[command(about, version)]
 struct Cli {
-    #[clap(long)]
-    gecko_checkout: Option<PathBuf>,
+    #[clap(long, alias = "gecko-checkout")]
+    checkout: Option<PathBuf>,
+    #[clap(value_enum, long, default_value = "firefox")]
+    browser: Browser,
     #[clap(subcommand)]
     subcommand: Subcommand,
 }
@@ -131,14 +134,12 @@ fn main() -> ExitCode {
 
 fn run(cli: Cli) -> ExitCode {
     let Cli {
-        gecko_checkout,
+        browser,
+        checkout,
         subcommand,
     } = cli;
 
-    let gecko_checkout = match gecko_checkout
-        .map(Ok)
-        .unwrap_or_else(search_for_moz_central_ckt)
-    {
+    let checkout = match checkout.map(Ok).unwrap_or_else(search_for_moz_central_ckt) {
         Ok(ckt_path) => ckt_path,
         Err(AlreadyReportedToCommandline) => return ExitCode::FAILURE,
     };
@@ -244,7 +245,7 @@ fn run(cli: Cli) -> ExitCode {
             log::trace!("working with the following WPT report files: {exec_report_paths:#?}");
             log::info!("working with {} WPT report files", exec_report_paths.len());
 
-            let meta_files_by_path = match read_and_parse_all_metadata(&gecko_checkout)
+            let meta_files_by_path = match read_and_parse_all_metadata(browser, &checkout)
                 .collect::<Result<IndexMap<_, _>, _>>()
             {
                 Ok(paths) => paths,
@@ -276,7 +277,7 @@ fn run(cli: Cli) -> ExitCode {
             for (path, file) in meta_files_by_path {
                 let File { properties, tests } = file;
 
-                let file_rel_path = path.strip_prefix(&gecko_checkout).unwrap();
+                let file_rel_path = path.strip_prefix(&checkout).unwrap();
 
                 file_props_by_file.insert(
                     Utf8PathBuf::from(file_rel_path.to_str().unwrap()),
@@ -289,7 +290,8 @@ fn run(cli: Cli) -> ExitCode {
                         subtests,
                     } = test;
 
-                    let test_path = TestPath::from_fx_metadata_test(file_rel_path, &name).unwrap();
+                    let test_path =
+                        TestPath::from_metadata_test(browser, file_rel_path, &name).unwrap();
 
                     let freak_out_do_nothing = |what: &dyn Display| {
                         log::error!("hoo boy, not sure what to do yet: {what}")
@@ -402,7 +404,7 @@ fn run(cli: Cli) -> ExitCode {
                 for entry in entries {
                     let TestExecutionEntry { test_name, result } = entry;
 
-                    let test_path = TestPath::from_execution_report(&test_name).unwrap();
+                    let test_path = TestPath::from_execution_report(browser, &test_name).unwrap();
                     let TestEntry {
                         entry: test_entry,
                         subtests: subtest_entries,
@@ -682,8 +684,8 @@ fn run(cli: Cli) -> ExitCode {
             let mut files = BTreeMap::<PathBuf, File>::new();
             for (test_path, (properties, subtests)) in recombined_tests_iter {
                 let name = test_path.test_name().to_string();
-                let rel_path = Utf8PathBuf::from(test_path.rel_metadata_path_fx().to_string());
-                let path = gecko_checkout.join(&rel_path);
+                let rel_path = Utf8PathBuf::from(test_path.rel_metadata_path().to_string());
+                let path = checkout.join(&rel_path);
                 let file = files.entry(path).or_insert_with(|| File {
                     properties: file_props_by_file
                         .get(&rel_path)
@@ -751,7 +753,7 @@ fn run(cli: Cli) -> ExitCode {
         }
         Subcommand::Fixup => {
             log::info!("fixing up metadata in-place…");
-            let err_found = read_and_parse_all_metadata(&gecko_checkout)
+            let err_found = read_and_parse_all_metadata(browser, &checkout)
                 .map(|res| {
                     res.and_then(|(path, mut file)| {
                         for test in file.tests.values_mut() {
@@ -789,7 +791,7 @@ fn run(cli: Cli) -> ExitCode {
                 inner: Test,
             }
             let mut err_found = false;
-            let tests_by_name = read_and_parse_all_metadata(&gecko_checkout)
+            let tests_by_name = read_and_parse_all_metadata(browser, &checkout)
                 .map_ok(
                     |(
                         path,
@@ -799,11 +801,12 @@ fn run(cli: Cli) -> ExitCode {
                         },
                     )| {
                         tests.into_iter().map({
-                            let gecko_checkout = &gecko_checkout;
+                            let checkout = &checkout;
                             move |(name, inner)| {
                                 let SectionHeader(name) = &name;
-                                let test_path = TestPath::from_fx_metadata_test(
-                                    path.strip_prefix(gecko_checkout).unwrap(),
+                                let test_path = TestPath::from_metadata_test(
+                                    browser,
+                                    path.strip_prefix(checkout).unwrap(),
                                     name,
                                 )
                                 .unwrap();
@@ -1353,13 +1356,17 @@ fn run(cli: Cli) -> ExitCode {
 }
 
 fn read_and_parse_all_metadata(
-    gecko_checkout: &Path,
+    browser: Browser,
+    checkout: &Path,
 ) -> impl Iterator<Item = Result<(Arc<PathBuf>, metadata::File), AlreadyReportedToCommandline>> {
-    let webgpu_cts_meta_parent_dir =
-        path!(gecko_checkout | "testing" | "web-platform" | "mozilla" | "meta" | "webgpu");
+    let webgpu_cts_meta_parent_dir = match browser {
+        Browser::Firefox => {
+            path!(&checkout | "testing" | "web-platform" | "mozilla" | "meta" | "webgpu")
+        }
+        Browser::Servo => path!(&checkout | "tests" | "wpt" | "webgpu" | "meta" | "webgpu"),
+    };
 
-    let raw_metadata_files =
-        read_gecko_files_at(gecko_checkout, &webgpu_cts_meta_parent_dir, "**/*.ini");
+    let raw_metadata_files = read_files_at(checkout, &webgpu_cts_meta_parent_dir, "**/*.ini");
 
     let mut started_parsing = false;
     raw_metadata_files.filter_map(move |res| {
@@ -1420,20 +1427,20 @@ fn render_metadata_parse_errors<'a>(
 }
 
 /// Returns a "naturally" sorted list of files found by searching for `glob_pattern` in `base`.
-/// `gecko_checkout` is stripped as a prefix from the absolute paths recorded into `log` entries
-/// emitted by this function.
+/// `checkout` is stripped as a prefix from the absolute paths recorded into `log` entries emitted
+/// by this function.
 ///
 /// # Returns
 ///
-/// An iterator over [`Result`]s containing either a Gecko file's path and contents as a UTF-8
+/// An iterator over [`Result`]s containing either a checkout file's path and contents as a UTF-8
 /// string, or the sentinel of an error encountered for the same file that is already reported to
 /// the command line.
 ///
 /// # Panics
 ///
-/// This function will panick if `gecko_checkout` cannot be stripped as a prefix of `base`.
-fn read_gecko_files_at(
-    gecko_checkout: &Path,
+/// This function will panick if `checkout` cannot be stripped as a prefix of `base`.
+fn read_files_at(
+    checkout: &Path,
     base: &Path,
     glob_pattern: &str,
 ) -> impl Iterator<Item = Result<(PathBuf, String), AlreadyReportedToCommandline>> {
@@ -1447,7 +1454,7 @@ fn read_gecko_files_at(
             Err(e) => {
                 let path_disp = e
                     .path()
-                    .map(|p| format!(" in {}", p.strip_prefix(gecko_checkout).unwrap().display()));
+                    .map(|p| format!(" in {}", p.strip_prefix(checkout).unwrap().display()));
                 let path_disp: &dyn Display = match path_disp.as_ref() {
                     Some(disp) => disp,
                     None => &"",
@@ -1469,7 +1476,7 @@ fn read_gecko_files_at(
         "working with these files: {:#?}",
         paths
             .iter()
-            .map(|f| f.strip_prefix(gecko_checkout).unwrap())
+            .map(|f| f.strip_prefix(checkout).unwrap())
             .collect::<std::collections::BTreeSet<_>>()
     );
 
