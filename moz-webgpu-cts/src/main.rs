@@ -80,10 +80,12 @@ enum Subcommand {
     UpdateExpected {
         /// Direct paths to report files to be processed.
         report_paths: Vec<PathBuf>,
-        /// Cross-platform `wax` globs to enumerate report files to be processed.
+        /// Cross-platform [`wax` globs] to enumerate report files to be processed.
         ///
         /// N.B. for Windows users: backslashes are used strictly for escaped characters, and
         /// forward slashes (`/`) are the only valid path separator for these globs.
+        ///
+        /// [`wax` globs]: https://github.com/olson-sean-k/wax/blob/master/README.md#patterns
         #[clap(long = "glob", value_name = "REPORT_GLOB")]
         report_globs: Vec<String>,
         /// The heuristic for resolving differences between current metadata and processed reports.
