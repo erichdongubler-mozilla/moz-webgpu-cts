@@ -19,17 +19,17 @@ use crate::metadata::{BuildProfile, Platform};
 
 /// A non-empty set of expected outcomes in a [`Test`] or [`Subtest`].
 ///
-/// The default test expectation is a "good" outcome, where testing passes. The `Out` type
+/// The default expected test outcome is a "good" outcome, where testing passes. The `Out` type
 /// parameter should return this value in its implementation of `Default`.
 ///
 /// [`Test`]: crate::metadata::Test
 /// [`Subtest`]: crate::metadata::Subtest
 #[derive(Clone, Copy, Eq, PartialEq)]
-pub struct Expectation<Out>(EnumSet<Out>)
+pub struct Expected<Out>(EnumSet<Out>)
 where
     Out: EnumSetType;
 
-impl<Out> Default for Expectation<Out>
+impl<Out> Default for Expected<Out>
 where
     Out: Default + EnumSetType,
 {
@@ -38,7 +38,7 @@ where
     }
 }
 
-impl<Out> Expectation<Out>
+impl<Out> Expected<Out>
 where
     Out: EnumSetType,
 {
@@ -70,7 +70,7 @@ where
         self.inner()
             .len()
             .try_into()
-            .expect("invariant violation: empty `Expectation`")
+            .expect("invariant violation: empty `Expected`")
     }
 
     pub fn is_permanent(&self) -> bool {
@@ -89,7 +89,7 @@ where
         self.inner().is_disjoint(rep)
     }
 
-    pub fn is_superset(&self, rep: &Expectation<Out>) -> bool
+    pub fn is_superset(&self, rep: &Self) -> bool
     where
         Out: std::fmt::Debug + Default + EnumSetType,
     {
@@ -97,7 +97,7 @@ where
     }
 }
 
-impl<Out> Display for Expectation<Out>
+impl<Out> Display for Expected<Out>
 where
     Out: Display + EnumSetType,
 {
@@ -115,7 +115,7 @@ where
     }
 }
 
-impl<Out> Debug for Expectation<Out>
+impl<Out> Debug for Expected<Out>
 where
     Out: Debug + EnumSetType,
 {
@@ -124,7 +124,7 @@ where
     }
 }
 
-impl<Out> BitOr for Expectation<Out>
+impl<Out> BitOr for Expected<Out>
 where
     Out: EnumSetType,
 {
@@ -138,7 +138,7 @@ where
     }
 }
 
-impl<Out> BitOrAssign for Expectation<Out>
+impl<Out> BitOrAssign for Expected<Out>
 where
     Out: EnumSetType,
 {
@@ -147,7 +147,7 @@ where
     }
 }
 
-impl<Out> BitOr<EnumSet<Out>> for Expectation<Out>
+impl<Out> BitOr<EnumSet<Out>> for Expected<Out>
 where
     Out: EnumSetType,
 {
@@ -160,7 +160,7 @@ where
     }
 }
 
-impl<Out> BitOrAssign<EnumSet<Out>> for Expectation<Out>
+impl<Out> BitOrAssign<EnumSet<Out>> for Expected<Out>
 where
     Out: EnumSetType,
 {
@@ -169,7 +169,7 @@ where
     }
 }
 
-impl<Out> BitOr<Out> for Expectation<Out>
+impl<Out> BitOr<Out> for Expected<Out>
 where
     Out: EnumSetType,
 {
@@ -182,7 +182,7 @@ where
     }
 }
 
-impl<Out> BitOrAssign<Out> for Expectation<Out>
+impl<Out> BitOrAssign<Out> for Expected<Out>
 where
     Out: EnumSetType,
 {
@@ -208,16 +208,16 @@ where
     }
 }
 
-/// A completely flat representation of [`NormalizedExpectationPropertyValueData`] suitable for
+/// A completely flat representation of [`NormalizedExpectedPropertyValueData`] suitable for
 /// byte representation in memory.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub struct FullyExpandedExpectationPropertyValue<Out>(
-    EnumMap<Platform, EnumMap<BuildProfile, Expectation<Out>>>,
+pub struct FullyExpandedExpectedPropertyValue<Out>(
+    EnumMap<Platform, EnumMap<BuildProfile, Expected<Out>>>,
 )
 where
     Out: EnumSetType;
 
-impl<Out> Default for FullyExpandedExpectationPropertyValue<Out>
+impl<Out> Default for FullyExpandedExpectedPropertyValue<Out>
 where
     Out: Default + EnumSetType,
 {
@@ -226,18 +226,18 @@ where
     }
 }
 
-impl<Out> Index<(Platform, BuildProfile)> for FullyExpandedExpectationPropertyValue<Out>
+impl<Out> Index<(Platform, BuildProfile)> for FullyExpandedExpectedPropertyValue<Out>
 where
     Out: EnumSetType,
 {
-    type Output = Expectation<Out>;
+    type Output = Expected<Out>;
 
     fn index(&self, (platform, build_profile): (Platform, BuildProfile)) -> &Self::Output {
         &self.0[platform][build_profile]
     }
 }
 
-impl<Out> IndexMut<(Platform, BuildProfile)> for FullyExpandedExpectationPropertyValue<Out>
+impl<Out> IndexMut<(Platform, BuildProfile)> for FullyExpandedExpectedPropertyValue<Out>
 where
     Out: EnumSetType,
 {
@@ -249,48 +249,46 @@ where
     }
 }
 
-impl<Out> FullyExpandedExpectationPropertyValue<Out>
+impl<Out> FullyExpandedExpectedPropertyValue<Out>
 where
     Out: EnumSetType,
 {
-    pub fn uniform(expectation: Expectation<Out>) -> Self {
-        Self(EnumMap::from_fn(|_idx| {
-            EnumMap::from_fn(|_idx| expectation)
-        }))
+    pub fn uniform(expected: Expected<Out>) -> Self {
+        Self(EnumMap::from_fn(|_idx| EnumMap::from_fn(|_idx| expected)))
     }
 
-    pub fn get(&self, platform: Platform, build_profile: BuildProfile) -> Expectation<Out> {
+    pub fn get(&self, platform: Platform, build_profile: BuildProfile) -> Expected<Out> {
         self.0[platform][build_profile]
     }
 
     pub(crate) fn iter(
         &self,
-    ) -> impl Iterator<Item = ((Platform, BuildProfile), Expectation<Out>)> + '_ {
+    ) -> impl Iterator<Item = ((Platform, BuildProfile), Expected<Out>)> + '_ {
         self.0.iter().flat_map(|(platform, exps_by_bp)| {
-            exps_by_bp.iter().map(move |(build_profile, expectations)| {
-                ((platform, build_profile), *expectations)
-            })
+            exps_by_bp
+                .iter()
+                .map(move |(build_profile, expected)| ((platform, build_profile), *expected))
         })
     }
 
     pub(crate) fn iter_mut(
         &mut self,
-    ) -> impl Iterator<Item = ((Platform, BuildProfile), &mut Expectation<Out>)> + '_ {
+    ) -> impl Iterator<Item = ((Platform, BuildProfile), &mut Expected<Out>)> + '_ {
         self.0.iter_mut().flat_map(|(platform, exps_by_bp)| {
             exps_by_bp
                 .iter_mut()
-                .map(move |(build_profile, expectations)| ((platform, build_profile), expectations))
+                .map(move |(build_profile, expected)| ((platform, build_profile), expected))
         })
     }
 }
 
-impl<Out> FullyExpandedExpectationPropertyValue<Out>
+impl<Out> FullyExpandedExpectedPropertyValue<Out>
 where
     Out: Default + EnumSetType,
 {
     pub fn from_query<F>(f: F) -> Self
     where
-        F: FnMut(Platform, BuildProfile) -> Expectation<Out>,
+        F: FnMut(Platform, BuildProfile) -> Expected<Out>,
     {
         let mut f = f;
         let mut this = Self::default();
@@ -310,16 +308,16 @@ fn fully_expanded_is_tiny() {
     use std::mem::size_of;
 
     assert_eq!(
-        size_of::<FullyExpandedExpectationPropertyValue<TestOutcome>>(),
+        size_of::<FullyExpandedExpectedPropertyValue<TestOutcome>>(),
         6
     );
     assert_eq!(
-        size_of::<FullyExpandedExpectationPropertyValue<SubtestOutcome>>(),
+        size_of::<FullyExpandedExpectedPropertyValue<SubtestOutcome>>(),
         6
     );
 }
 
-/// A normalized representation of [`Expectation`]s in [`TestProps`], which collapses
+/// A normalized representation of [`Expected`]s in [`TestProps`], which collapses
 /// backwards along the following branching factors:
 ///
 /// * [`Platform`]
@@ -329,20 +327,20 @@ fn fully_expanded_is_tiny() {
 ///
 /// [`TestProps`]: crate::metadata::TestProps
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct NormalizedExpectationPropertyValue<Out>(NormalizedExpectationPropertyValueData<Out>)
+pub struct NormalizedExpectedPropertyValue<Out>(NormalizedExpectatedPropertyValueData<Out>)
 where
     Out: EnumSetType;
 
-pub type NormalizedExpectationByBuildProfile<Out> =
-    MaybeCollapsed<Expectation<Out>, BTreeMap<BuildProfile, Expectation<Out>>>;
+pub type NormalizedExpectedByBuildProfile<Out> =
+    MaybeCollapsed<Expected<Out>, BTreeMap<BuildProfile, Expected<Out>>>;
 
-/// Data from a [`NormalizedExpectationPropertyValue`].
-pub type NormalizedExpectationPropertyValueData<Out> = MaybeCollapsed<
-    NormalizedExpectationByBuildProfile<Out>,
-    BTreeMap<Platform, NormalizedExpectationByBuildProfile<Out>>,
+/// Data from a [`NormalizedExpectedPropertyValue`].
+pub type NormalizedExpectatedPropertyValueData<Out> = MaybeCollapsed<
+    NormalizedExpectedByBuildProfile<Out>,
+    BTreeMap<Platform, NormalizedExpectedByBuildProfile<Out>>,
 >;
 
-impl<Out> Default for NormalizedExpectationPropertyValue<Out>
+impl<Out> Default for NormalizedExpectedPropertyValue<Out>
 where
     Out: Default + EnumSetType,
 {
@@ -353,18 +351,16 @@ where
     }
 }
 
-impl<Out> NormalizedExpectationPropertyValue<Out>
+impl<Out> NormalizedExpectedPropertyValue<Out>
 where
     Out: EnumSetType,
 {
-    pub fn inner(&self) -> &NormalizedExpectationPropertyValueData<Out> {
+    pub fn inner(&self) -> &NormalizedExpectatedPropertyValueData<Out> {
         let Self(inner) = self;
         inner
     }
 
-    pub(crate) fn from_fully_expanded(
-        outcomes: FullyExpandedExpectationPropertyValue<Out>,
-    ) -> Self {
+    pub(crate) fn from_fully_expanded(outcomes: FullyExpandedExpectedPropertyValue<Out>) -> Self {
         fn same_value<T>(iter: impl IntoIterator<Item = T>) -> Option<T>
         where
             T: Eq,

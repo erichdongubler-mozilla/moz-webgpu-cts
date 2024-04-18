@@ -30,8 +30,7 @@ use whippit::{
 };
 
 use crate::shared::{
-    Expectation, FullyExpandedExpectationPropertyValue, MaybeCollapsed,
-    NormalizedExpectationPropertyValue,
+    Expected, FullyExpandedExpectedPropertyValue, MaybeCollapsed, NormalizedExpectedPropertyValue,
 };
 
 #[cfg(test)]
@@ -731,16 +730,16 @@ where
         ));
         let TestProps {
             is_disabled,
-            expectations,
+            expected,
         } = property;
 
         if *is_disabled {
             writeln!(f, "{indent}disabled: true")?;
         }
 
-        if let Some(exps) = expectations {
+        if let Some(exps) = expected {
             fn if_not_default<Out>(
-                exp: &Expectation<Out>,
+                exp: &Expected<Out>,
                 f: impl FnOnce() -> fmt::Result,
             ) -> fmt::Result
             where
@@ -759,7 +758,7 @@ where
                 BuildProfile::Debug => "debug",
                 BuildProfile::Optimized => "not debug",
             };
-            let exps = NormalizedExpectationPropertyValue::from_fully_expanded(*exps);
+            let exps = NormalizedExpectedPropertyValue::from_fully_expanded(*exps);
             match exps.inner() {
                 MaybeCollapsed::Collapsed(exps) => match exps {
                     MaybeCollapsed::Collapsed(exps) => {
@@ -828,7 +827,7 @@ where
     Out: EnumSetType,
 {
     pub is_disabled: bool,
-    pub expectations: Option<FullyExpandedExpectationPropertyValue<Out>>,
+    pub expected: Option<FullyExpandedExpectedPropertyValue<Out>>,
 }
 
 impl<Out> Default for TestProps<Out>
@@ -838,7 +837,7 @@ where
     fn default() -> Self {
         Self {
             is_disabled: false,
-            expectations: None,
+            expected: None,
         }
     }
 }
@@ -850,20 +849,20 @@ where
     fn insert(&mut self, prop: TestProp<Out>, emitter: &mut Emitter<Rich<'a, char>>) {
         let Self {
             is_disabled,
-            expectations,
+            expected,
         } = self;
 
         let TestProp { kind, span } = prop;
 
         match kind {
             TestPropKind::Expected(val) => {
-                if expectations.is_some() {
+                if expected.is_some() {
                     emitter.emit(Rich::custom(span, "duplicate `expected` key detected"));
                     return;
                 }
-                expectations.replace(match val {
+                expected.replace(match val {
                     PropertyValue::Unconditional(exp) => {
-                        FullyExpandedExpectationPropertyValue::uniform(exp)
+                        FullyExpandedExpectedPropertyValue::uniform(exp)
                     }
                     PropertyValue::Conditional(val) => {
                         let ConditionalValue {
@@ -871,15 +870,13 @@ where
                             fallback,
                         } = val;
                         if conditions.is_empty() {
-                            FullyExpandedExpectationPropertyValue::uniform(fallback.expect(
-                                concat!(
-                                    "at least one condition or fallback not present ",
-                                    "in conditional `expected` property value"
-                                ),
-                            ))
+                            FullyExpandedExpectedPropertyValue::uniform(fallback.expect(concat!(
+                                "at least one condition or fallback not present ",
+                                "in conditional `expected` property value"
+                            )))
                         } else {
                             let fallback = fallback.unwrap_or_default();
-                            FullyExpandedExpectationPropertyValue::from_query(|p, bp| {
+                            FullyExpandedExpectedPropertyValue::from_query(|p, bp| {
                                 let mut matched = None;
 
                                 for (applicability, val) in &conditions {
@@ -929,7 +926,7 @@ enum TestPropKind<Out>
 where
     Out: EnumSetType,
 {
-    Expected(PropertyValue<Applicability, Expectation<Out>>),
+    Expected(PropertyValue<Applicability, Expected<Out>>),
     Disabled,
 }
 
@@ -1062,7 +1059,7 @@ where
                     just("expected").to(()),
                     conditional_term.clone(),
                     choice((
-                        outcome_parser.clone().map(Expectation::permanent),
+                        outcome_parser.clone().map(Expected::permanent),
                         outcome_parser
                             .padded_by(inline_whitespace())
                             .separated_by(just(','))
@@ -1070,7 +1067,7 @@ where
                             .map(|vec| vec.into_iter().collect())
                             .delimited_by(just('['), just(']'))
                             .try_map(|outcomes, span| {
-                                Expectation::intermittent(outcomes).ok_or_else(|| {
+                                Expected::intermittent(outcomes).ok_or_else(|| {
                                     Rich::custom(
                                         span,
                                         "intermittent outcomes must have at least 2 elements",
@@ -1251,7 +1248,7 @@ r#"
                     "asdf": Test {
                         properties: TestProps {
                             is_disabled: false,
-                            expectations: None,
+                            expected: None,
                         },
                         subtests: {},
                     },
@@ -1284,13 +1281,13 @@ r#"
                     "asdf": Test {
                         properties: TestProps {
                             is_disabled: false,
-                            expectations: None,
+                            expected: None,
                         },
                         subtests: {
                             "blarg": Subtest {
                                 properties: TestProps {
                                     is_disabled: false,
-                                    expectations: None,
+                                    expected: None,
                                 },
                             },
                         },
@@ -1325,14 +1322,14 @@ r#"
                     "asdf": Test {
                         properties: TestProps {
                             is_disabled: false,
-                            expectations: None,
+                            expected: None,
                         },
                         subtests: {
                             "blarg": Subtest {
                                 properties: TestProps {
                                     is_disabled: false,
-                                    expectations: Some(
-                                        FullyExpandedExpectationPropertyValue(
+                                    expected: Some(
+                                        FullyExpandedExpectedPropertyValue(
                                             {
                                                 Windows: {
                                                     Debug: [
@@ -1409,14 +1406,14 @@ r#"
                 Test {
                     properties: TestProps {
                         is_disabled: false,
-                        expectations: None,
+                        expected: None,
                     },
                     subtests: {
                         "blarg": Subtest {
                             properties: TestProps {
                                 is_disabled: false,
-                                expectations: Some(
-                                    FullyExpandedExpectationPropertyValue(
+                                expected: Some(
+                                    FullyExpandedExpectedPropertyValue(
                                         {
                                             Windows: {
                                                 Debug: [
@@ -1479,8 +1476,8 @@ r#"
                 Test {
                     properties: TestProps {
                         is_disabled: false,
-                        expectations: Some(
-                            FullyExpandedExpectationPropertyValue(
+                        expected: Some(
+                            FullyExpandedExpectedPropertyValue(
                                 {
                                     Windows: {
                                         Debug: [
@@ -1514,8 +1511,8 @@ r#"
                         "blarg": Subtest {
                             properties: TestProps {
                                 is_disabled: false,
-                                expectations: Some(
-                                    FullyExpandedExpectationPropertyValue(
+                                expected: Some(
+                                    FullyExpandedExpectedPropertyValue(
                                         {
                                             Windows: {
                                                 Debug: [
@@ -1572,14 +1569,14 @@ r#"
                 Test {
                     properties: TestProps {
                         is_disabled: false,
-                        expectations: None,
+                        expected: None,
                     },
                     subtests: {
                         "blarg": Subtest {
                             properties: TestProps {
                                 is_disabled: false,
-                                expectations: Some(
-                                    FullyExpandedExpectationPropertyValue(
+                                expected: Some(
+                                    FullyExpandedExpectedPropertyValue(
                                         {
                                             Windows: {
                                                 Debug: [
@@ -1637,14 +1634,14 @@ r#"
                 Test {
                     properties: TestProps {
                         is_disabled: false,
-                        expectations: None,
+                        expected: None,
                     },
                     subtests: {
                         "blarg": Subtest {
                             properties: TestProps {
                                 is_disabled: false,
-                                expectations: Some(
-                                    FullyExpandedExpectationPropertyValue(
+                                expected: Some(
+                                    FullyExpandedExpectedPropertyValue(
                                         {
                                             Windows: {
                                                 Debug: [
@@ -1700,14 +1697,14 @@ r#"
                 Test {
                     properties: TestProps {
                         is_disabled: false,
-                        expectations: None,
+                        expected: None,
                     },
                     subtests: {
                         ":": Subtest {
                             properties: TestProps {
                                 is_disabled: false,
-                                expectations: Some(
-                                    FullyExpandedExpectationPropertyValue(
+                                expected: Some(
+                                    FullyExpandedExpectedPropertyValue(
                                         {
                                             Windows: {
                                                 Debug: [

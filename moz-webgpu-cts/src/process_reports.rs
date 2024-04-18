@@ -4,7 +4,7 @@ use enumset::EnumSetType;
 
 use crate::{
     metadata::{BuildProfile, Platform, SubtestOutcome, TestOutcome, TestProps},
-    shared::Expectation,
+    shared::Expected,
 };
 
 #[derive(Debug, Default)]
@@ -13,7 +13,7 @@ where
     Out: EnumSetType,
 {
     pub meta_props: Option<TestProps<Out>>,
-    pub reported: BTreeMap<Platform, BTreeMap<BuildProfile, Expectation<Out>>>,
+    pub reported: BTreeMap<Platform, BTreeMap<BuildProfile, Expected<Out>>>,
 }
 
 #[derive(Debug, Default)]
