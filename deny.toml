@@ -1,14 +1,8 @@
 [licenses]
-allow = [
-	"Apache-2.0",
-	"ISC",
-	"MIT",
-	"Unicode-DFS-2016",
-	"Zlib",
-]
+allow = ["Apache-2.0", "ISC", "MIT", "Unicode-DFS-2016", "Zlib"]
 
 [sources]
 allow-git = [
-	"https://github.com/ErichDonGubler/tardar",
-	"https://github.com/ErichDonGubler/wax",
+  "https://github.com/ErichDonGubler/tardar",
+  "https://github.com/ErichDonGubler/wax",
 ]
