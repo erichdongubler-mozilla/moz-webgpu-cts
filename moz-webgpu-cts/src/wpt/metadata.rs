@@ -4,6 +4,7 @@ use std::{
     hash::Hash,
 };
 
+use arcstr::ArcStr;
 use clap::ValueEnum;
 use enum_map::Enum;
 use enumset::EnumSetType;
@@ -31,7 +32,9 @@ use whippit::{
     },
 };
 
-use crate::wpt::metadata::properties::{ExpandedPropertyValue, Expected, NormalizedPropertyValue};
+use crate::wpt::metadata::properties::{
+    DisabledString, ExpandedPropertyValue, Expected, NormalizedPropertyValue,
+};
 
 #[cfg(test)]
 use insta::assert_debug_snapshot;
@@ -63,7 +66,7 @@ impl metadata::File<'_> for File {
 
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct FileProps {
-    pub is_disabled: Option<PropertyValue<Expr<Value<'static>>, String>>,
+    pub disabled: Option<PropertyValue<Expr<Value<'static>>, DisabledString>>,
     #[allow(clippy::type_complexity)]
     pub prefs: Option<PropertyValue<Expr<Value<'static>>, Vec<(String, String)>>>,
     pub tags: Option<PropertyValue<Expr<Value<'static>>, Vec<String>>>,
@@ -120,11 +123,11 @@ impl<'a> Properties<'a> for FileProps {
                 any()
                     .and_is(newline().or(end()).not())
                     .repeated()
-                    .at_least(1)
                     .to_slice()
-                    .map(|s: &str| s.to_owned()),
+                    .map(ArcStr::from)
+                    .map(DisabledString::new),
             )
-            .map(|((), is_disabled)| FileProp::Disabled(is_disabled));
+            .map(|((), val)| FileProp::Disabled(val));
 
         let implementation_status = helper
             .parser(
@@ -145,7 +148,7 @@ impl<'a> Properties<'a> for FileProps {
         let (span, prop) = prop;
         let Self {
             implementation_status,
-            is_disabled,
+            disabled,
             prefs,
             tags,
         } = self;
@@ -171,7 +174,7 @@ impl<'a> Properties<'a> for FileProps {
             FileProp::Prefs(new_prefs) => check_dupe_then_insert!(new_prefs, prefs, "prefs"),
             FileProp::Tags(new_tags) => check_dupe_then_insert!(new_tags, tags, "tags"),
             FileProp::Disabled(new_is_disabled) => {
-                check_dupe_then_insert!(new_is_disabled, is_disabled, DISABLED_IDENT)
+                check_dupe_then_insert!(new_is_disabled, disabled, DISABLED_IDENT)
             }
         }
     }
@@ -483,7 +486,7 @@ const DISABLED_IDENT: &str = "disabled";
 pub enum FileProp {
     Prefs(PropertyValue<Expr<Value<'static>>, Vec<(String, String)>>),
     Tags(PropertyValue<Expr<Value<'static>>, Vec<String>>),
-    Disabled(PropertyValue<Expr<Value<'static>>, String>),
+    Disabled(PropertyValue<Expr<Value<'static>>, DisabledString>),
     ImplementationStatus(PropertyValue<Expr<Value<'static>>, ImplementationStatus>),
 }
 
@@ -551,7 +554,7 @@ fn format_file_properties(props: &FileProps) -> impl Display + '_ {
     lazy_format!(|f| {
         let FileProps {
             implementation_status,
-            is_disabled,
+            disabled,
             prefs,
             tags,
         } = props;
@@ -589,8 +592,8 @@ fn format_file_properties(props: &FileProps) -> impl Display + '_ {
             )?;
         }
 
-        if let Some(is_disabled) = is_disabled {
-            write_prop_val(DISABLED_IDENT, is_disabled, Display::fmt, f)?;
+        if let Some(disabled) = disabled {
+            write_prop_val(DISABLED_IDENT, disabled, Display::fmt, f)?;
         }
 
         Ok(())
@@ -782,15 +785,11 @@ where
                 .join_with("  ")
         ));
         let TestProps {
-            is_disabled,
+            disabled,
             expected,
             implementation_status,
             tags,
         } = property;
-
-        if *is_disabled {
-            writeln!(f, "{indent}disabled: true")?;
-        }
 
         fn write_normalized<T>(
             f: &mut Formatter<'_>,
@@ -894,6 +893,10 @@ where
             )?;
         }
 
+        if let Some(disabled) = disabled {
+            write_normalized(f, &indent, "disabled", disabled.clone())?;
+        }
+
         if let Some(exps) = expected {
             write_normalized(f, &indent, EXPECTED_IDENT, *exps)?;
         }
@@ -920,7 +923,7 @@ pub struct TestProps<Out>
 where
     Out: EnumSetType,
 {
-    pub is_disabled: bool,
+    pub disabled: Option<ExpandedPropertyValue<DisabledString>>,
     pub expected: Option<ExpandedPropertyValue<Expected<Out>>>,
     pub implementation_status: Option<ExpandedPropertyValue<ImplementationStatus>>,
     pub tags: Option<ExpandedPropertyValue<Vec<String>>>,
@@ -932,7 +935,7 @@ where
 {
     fn insert(&mut self, prop: TestProp<Out>, emitter: &mut Emitter<Rich<'_, char>>) {
         let Self {
-            is_disabled,
+            disabled,
             expected,
             implementation_status,
             tags,
@@ -1001,11 +1004,8 @@ where
             TestPropKind::Expected(val) => {
                 conditional(emitter, span, EXPECTED_IDENT, expected, val)
             }
-            TestPropKind::Disabled => {
-                if *is_disabled {
-                    emitter.emit(Rich::custom(span, "duplicate `disabled` key detected"))
-                }
-                *is_disabled = true;
+            TestPropKind::Disabled(val) => {
+                conditional(emitter, span, DISABLED_IDENT, disabled, val)
             }
             TestPropKind::ImplementationStatus(val) => conditional(
                 emitter,
@@ -1040,7 +1040,7 @@ where
     Out: EnumSetType,
 {
     Expected(PropertyValue<Applicability, Expected<Out>>),
-    Disabled,
+    Disabled(PropertyValue<Applicability, DisabledString>),
     ImplementationStatus(PropertyValue<Applicability, ImplementationStatus>),
     Tags(PropertyValue<Applicability, Vec<String>>),
 }
@@ -1200,22 +1200,16 @@ where
                 .parser(
                     just(DISABLED_IDENT).to(()),
                     conditional_term.clone(),
-                    just("true").to(()),
+                    any()
+                        .and_is(newline().not())
+                        .repeated()
+                        .to_slice()
+                        .map(ArcStr::from)
+                        .map(DisabledString::new),
                 )
-                .validate(|((), val), e, emitter| {
-                    match val {
-                        PropertyValue::Unconditional(()) => (),
-                        PropertyValue::Conditional { .. } => {
-                            emitter.emit(Rich::custom(
-                                e.span(),
-                                "conditional rules for `disabled` aren't supported yet",
-                            ));
-                        }
-                    }
-                    TestProp {
-                        span: e.span(),
-                        kind: TestPropKind::Disabled,
-                    }
+                .map_with(|((), val), e| TestProp {
+                    span: e.span(),
+                    kind: TestPropKind::Disabled(val),
                 }),
             helper
                 .parser(
@@ -1389,7 +1383,7 @@ r#"
         output: Some(
             File {
                 properties: FileProps {
-                    is_disabled: None,
+                    disabled: None,
                     prefs: None,
                     tags: None,
                     implementation_status: None,
@@ -1397,7 +1391,7 @@ r#"
                 tests: {
                     "asdf": Test {
                         properties: TestProps {
-                            is_disabled: false,
+                            disabled: None,
                             expected: None,
                             implementation_status: None,
                             tags: None,
@@ -1424,7 +1418,7 @@ r#"
         output: Some(
             File {
                 properties: FileProps {
-                    is_disabled: None,
+                    disabled: None,
                     prefs: None,
                     tags: None,
                     implementation_status: None,
@@ -1432,7 +1426,7 @@ r#"
                 tests: {
                     "asdf": Test {
                         properties: TestProps {
-                            is_disabled: false,
+                            disabled: None,
                             expected: None,
                             implementation_status: None,
                             tags: None,
@@ -1440,7 +1434,7 @@ r#"
                         subtests: {
                             "blarg": Subtest {
                                 properties: TestProps {
-                                    is_disabled: false,
+                                    disabled: None,
                                     expected: None,
                                     implementation_status: None,
                                     tags: None,
@@ -1469,7 +1463,7 @@ r#"
         output: Some(
             File {
                 properties: FileProps {
-                    is_disabled: None,
+                    disabled: None,
                     prefs: None,
                     tags: None,
                     implementation_status: None,
@@ -1477,7 +1471,7 @@ r#"
                 tests: {
                     "asdf": Test {
                         properties: TestProps {
-                            is_disabled: false,
+                            disabled: None,
                             expected: None,
                             implementation_status: None,
                             tags: None,
@@ -1485,7 +1479,7 @@ r#"
                         subtests: {
                             "blarg": Subtest {
                                 properties: TestProps {
-                                    is_disabled: false,
+                                    disabled: None,
                                     expected: Some(
                                         ExpandedPropertyValue(
                                             {
@@ -1547,7 +1541,7 @@ r#"
                 "asdf",
                 Test {
                     properties: TestProps {
-                        is_disabled: false,
+                        disabled: None,
                         expected: None,
                         implementation_status: None,
                         tags: None,
@@ -1555,7 +1549,7 @@ r#"
                     subtests: {
                         "blarg": Subtest {
                             properties: TestProps {
-                                is_disabled: false,
+                                disabled: None,
                                 expected: Some(
                                     ExpandedPropertyValue(
                                         {
@@ -1621,7 +1615,7 @@ r#"
                 "asdf",
                 Test {
                     properties: TestProps {
-                        is_disabled: false,
+                        disabled: None,
                         expected: Some(
                             ExpandedPropertyValue(
                                 {
@@ -1658,7 +1652,7 @@ r#"
                     subtests: {
                         "blarg": Subtest {
                             properties: TestProps {
-                                is_disabled: false,
+                                disabled: None,
                                 expected: Some(
                                     ExpandedPropertyValue(
                                         {
@@ -1718,7 +1712,7 @@ r#"
                 "asdf",
                 Test {
                     properties: TestProps {
-                        is_disabled: false,
+                        disabled: None,
                         expected: None,
                         implementation_status: None,
                         tags: None,
@@ -1726,7 +1720,7 @@ r#"
                     subtests: {
                         "blarg": Subtest {
                             properties: TestProps {
-                                is_disabled: false,
+                                disabled: None,
                                 expected: Some(
                                     ExpandedPropertyValue(
                                         {
@@ -1787,7 +1781,7 @@ r#"
                 "asdf",
                 Test {
                     properties: TestProps {
-                        is_disabled: false,
+                        disabled: None,
                         expected: None,
                         implementation_status: None,
                         tags: None,
@@ -1795,7 +1789,7 @@ r#"
                     subtests: {
                         "blarg": Subtest {
                             properties: TestProps {
-                                is_disabled: false,
+                                disabled: None,
                                 expected: Some(
                                     ExpandedPropertyValue(
                                         {
@@ -1854,7 +1848,7 @@ r#"
                 "cts.https.html?q=webgpu:api,validation,buffer,destroy:twice:*",
                 Test {
                     properties: TestProps {
-                        is_disabled: false,
+                        disabled: None,
                         expected: None,
                         implementation_status: None,
                         tags: None,
@@ -1862,7 +1856,7 @@ r#"
                     subtests: {
                         ":": Subtest {
                             properties: TestProps {
-                                is_disabled: false,
+                                disabled: None,
                                 expected: Some(
                                     ExpandedPropertyValue(
                                         {
@@ -1920,7 +1914,7 @@ r#"
                 "canvas_complex_rgba8unorm_store.https.html",
                 Test {
                     properties: TestProps {
-                        is_disabled: false,
+                        disabled: None,
                         expected: Some(
                             ExpandedPropertyValue(
                                 {
@@ -1968,6 +1962,7 @@ r#"
     }
     "###
     );
+
     assert_debug_snapshot!(
     parser().parse(
 r#"
@@ -1983,7 +1978,7 @@ r#"
                 "this_is_tagged.https.html",
                 Test {
                     properties: TestProps {
-                        is_disabled: false,
+                        disabled: None,
                         expected: Some(
                             ExpandedPropertyValue(
                                 {
@@ -2059,6 +2054,140 @@ r#"
                         ),
                     },
                     subtests: {},
+                },
+            ),
+        ),
+        errs: [],
+    }
+    "###
+    );
+
+    assert_debug_snapshot!(
+        parser().parse(
+r#"
+[asdf]
+  [blarg]
+    disabled: @False
+"#
+        ),
+        @r###"
+    ParseResult {
+        output: Some(
+            (
+                "asdf",
+                Test {
+                    properties: TestProps {
+                        disabled: None,
+                        expected: None,
+                        implementation_status: None,
+                        tags: None,
+                    },
+                    subtests: {
+                        "blarg": Subtest {
+                            properties: TestProps {
+                                disabled: Some(
+                                    ExpandedPropertyValue(
+                                        {
+                                            Windows: {
+                                                Debug: DisabledString(
+                                                    "@False",
+                                                ),
+                                                Optimized: DisabledString(
+                                                    "@False",
+                                                ),
+                                            },
+                                            Linux: {
+                                                Debug: DisabledString(
+                                                    "@False",
+                                                ),
+                                                Optimized: DisabledString(
+                                                    "@False",
+                                                ),
+                                            },
+                                            MacOs: {
+                                                Debug: DisabledString(
+                                                    "@False",
+                                                ),
+                                                Optimized: DisabledString(
+                                                    "@False",
+                                                ),
+                                            },
+                                        },
+                                    ),
+                                ),
+                                expected: None,
+                                implementation_status: None,
+                                tags: None,
+                            },
+                        },
+                    },
+                },
+            ),
+        ),
+        errs: [],
+    }
+    "###
+    );
+
+    assert_debug_snapshot!(
+        parser().parse(
+r#"
+[whoa-this-is-cool]
+  [TIME TO USE A DISABLED PROPERTY]
+    disabled: https://bugzilla.mozilla.org/show_bug.cgi?id=1234567
+"#
+        ),
+        @r###"
+    ParseResult {
+        output: Some(
+            (
+                "whoa-this-is-cool",
+                Test {
+                    properties: TestProps {
+                        disabled: None,
+                        expected: None,
+                        implementation_status: None,
+                        tags: None,
+                    },
+                    subtests: {
+                        "TIME TO USE A DISABLED PROPERTY": Subtest {
+                            properties: TestProps {
+                                disabled: Some(
+                                    ExpandedPropertyValue(
+                                        {
+                                            Windows: {
+                                                Debug: DisabledString(
+                                                    "https://bugzilla.mozilla.org/show_bug.cgi?id=1234567",
+                                                ),
+                                                Optimized: DisabledString(
+                                                    "https://bugzilla.mozilla.org/show_bug.cgi?id=1234567",
+                                                ),
+                                            },
+                                            Linux: {
+                                                Debug: DisabledString(
+                                                    "https://bugzilla.mozilla.org/show_bug.cgi?id=1234567",
+                                                ),
+                                                Optimized: DisabledString(
+                                                    "https://bugzilla.mozilla.org/show_bug.cgi?id=1234567",
+                                                ),
+                                            },
+                                            MacOs: {
+                                                Debug: DisabledString(
+                                                    "https://bugzilla.mozilla.org/show_bug.cgi?id=1234567",
+                                                ),
+                                                Optimized: DisabledString(
+                                                    "https://bugzilla.mozilla.org/show_bug.cgi?id=1234567",
+                                                ),
+                                            },
+                                        },
+                                    ),
+                                ),
+                                expected: None,
+                                implementation_status: None,
+                                tags: None,
+                            },
+                        },
+                    },
                 },
             ),
         ),

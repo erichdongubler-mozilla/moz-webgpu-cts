@@ -5,6 +5,7 @@ use std::{
     ops::{BitOr, BitOrAssign, Index, IndexMut},
 };
 
+use arcstr::ArcStr;
 use enum_map::EnumMap;
 use enumset::{EnumSet, EnumSetType};
 use itertools::Itertools;
@@ -205,6 +206,47 @@ where
 }
 
 impl<Out> Eq for Expected<Out> where Out: EnumSetType + Eq {}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
+pub struct DisabledString(ArcStr);
+
+impl DisabledString {
+    const FALSE: ArcStr = arcstr::literal!("@False");
+
+    pub fn new(inner: ArcStr) -> Self {
+        Self(if inner == Self::FALSE {
+            Self::FALSE
+        } else {
+            inner
+        })
+    }
+
+    fn value(&self) -> &str {
+        self.0.as_ref()
+    }
+
+    pub fn is_disabled(&self) -> bool {
+        self.value() != Self::FALSE
+    }
+}
+
+impl Display for DisabledString {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        Display::fmt(self.value(), f)
+    }
+}
+
+#[test]
+fn disabled_string() {
+    let asdf = DisabledString::new("asdf".into());
+    assert_eq!(asdf, DisabledString(ArcStr::from("asdf")),);
+    assert_eq!(asdf.value(), "asdf");
+
+    assert!(ArcStr::ptr_eq(
+        &DisabledString::new("@False".into()).0,
+        &DisabledString::FALSE
+    ));
+}
 
 /// A completely flat representation of [`NormalizedPropertyValue`] suitable for byte
 /// representation in memory.
