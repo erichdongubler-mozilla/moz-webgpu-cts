@@ -758,7 +758,8 @@ fn run(cli: Cli) -> ExitCode {
                 orig_path: Arc<PathBuf>,
                 inner: Test,
             }
-            let tests_by_name = match read_and_parse_all_metadata(&gecko_checkout)
+            let mut err_found = false;
+            let tests_by_name = read_and_parse_all_metadata(&gecko_checkout)
                 .map_ok(
                     |(
                         path,
@@ -789,11 +790,17 @@ fn run(cli: Cli) -> ExitCode {
                     },
                 )
                 .flatten_ok()
-                .collect::<Result<BTreeMap<_, _>, _>>()
-            {
-                Ok(paths) => paths,
-                Err(AlreadyReportedToCommandline) => return ExitCode::FAILURE,
-            };
+                .filter_map(|res| match res {
+                    Ok(ok) => Some(ok),
+                    Err(AlreadyReportedToCommandline) => {
+                        err_found = true;
+                        None
+                    }
+                })
+                .collect::<BTreeMap<_, _>>();
+            if err_found {
+                return ExitCode::FAILURE;
+            }
 
             log::info!(concat!(
                 "finished parsing of interesting properties ",
