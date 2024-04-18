@@ -162,33 +162,6 @@ fn run(cli: Cli) -> ExitCode {
         }
     };
 
-    fn render_metadata_parse_errors<'a>(
-        path: &Arc<PathBuf>,
-        file_contents: &Arc<String>,
-        errors: impl IntoIterator<Item = Rich<'a, char>>,
-    ) {
-        #[derive(Debug, Diagnostic, thiserror::Error)]
-        #[error("{inner}")]
-        struct ParseError {
-            #[label]
-            span: SourceSpan,
-            #[source_code]
-            source_code: NamedSource,
-            inner: Rich<'static, char>,
-        }
-        let source_code = file_contents.clone();
-        for error in errors {
-            let span = error.span();
-            let error = ParseError {
-                source_code: NamedSource::new(path.to_str().unwrap(), source_code.clone()),
-                inner: error.clone().into_owned(),
-                span: SourceSpan::new(span.start.into(), (span.end - span.start).into()),
-            };
-            let error = Report::new(error);
-            eprintln!("{error:?}");
-        }
-    }
-
     match subcommand {
         Subcommand::UpdateExpected {
             report_globs,
@@ -1411,6 +1384,33 @@ fn run(cli: Cli) -> ExitCode {
             println!("Full analysis: {analysis:#?}");
             ExitCode::SUCCESS
         }
+    }
+}
+
+fn render_metadata_parse_errors<'a>(
+    path: &Arc<PathBuf>,
+    file_contents: &Arc<String>,
+    errors: impl IntoIterator<Item = Rich<'a, char>>,
+) {
+    #[derive(Debug, Diagnostic, thiserror::Error)]
+    #[error("{inner}")]
+    struct ParseError {
+        #[label]
+        span: SourceSpan,
+        #[source_code]
+        source_code: NamedSource,
+        inner: Rich<'static, char>,
+    }
+    let source_code = file_contents.clone();
+    for error in errors {
+        let span = error.span();
+        let error = ParseError {
+            source_code: NamedSource::new(path.to_str().unwrap(), source_code.clone()),
+            inner: error.clone().into_owned(),
+            span: SourceSpan::new(span.start.into(), (span.end - span.start).into()),
+        };
+        let error = Report::new(error);
+        eprintln!("{error:?}");
     }
 }
 
