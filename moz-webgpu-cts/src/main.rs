@@ -64,13 +64,13 @@ enum Subcommand {
     /// are testing your own changes in CI, you can use this subcommand to update expected outcomes
     /// automatically with the following steps:
     ///
-    /// 1. Run `moz-webgpu-cts process-reports --preset=new-fx …` against the first complete set of
+    /// 1. Run `moz-webgpu-cts update-expected --preset=new-fx …` against the first complete set of
     ///    reports you gather from CI with your new Firefox build. This will adjust for new
     ///    permanent outcomes, and may capture some (but not all) intermittent outcomes.
     ///
     /// 2. There may still exist intermittent issues that you do not discover in CI run(s) from the
     ///    previous step. As you discover them in further CI runs on the same build of Firefox,
-    ///    adjust expected outcomes to match by running `moz-webgpu-cts process-reports
+    ///    adjust expected outcomes to match by running `moz-webgpu-cts update-expected
     ///    --preset=same-fx …` against the runs' new reports. Repeat as necessary.
     ///
     /// With both steps, you may delete the local copies of these reports after being processed
