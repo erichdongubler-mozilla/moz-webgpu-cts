@@ -712,35 +712,26 @@ fn run(cli: Cli) -> ExitCode {
         }
         Subcommand::Fixup => {
             log::info!("formatting metadata in-place…");
-            let raw_test_files_by_path = read_and_parse_all_metadata(&gecko_checkout);
-            let mut err_found = false;
-            for res in raw_test_files_by_path {
-                let (path, mut file) = match res {
-                    Ok(ok) => ok,
-                    Err(AlreadyReportedToCommandline) => {
-                        err_found = true;
-                        continue;
-                    }
-                };
-
-                for test in file.tests.values_mut() {
-                    for subtest in &mut test.subtests.values_mut() {
-                        if let Some(expected) = subtest.properties.expected.as_mut() {
-                            for (_, expected) in expected.iter_mut() {
-                                taint_subtest_timeouts_by_suspicion(expected);
+            let err_found = read_and_parse_all_metadata(&gecko_checkout)
+                .map(|res| {
+                    res.and_then(|(path, mut file)| {
+                        for test in file.tests.values_mut() {
+                            for subtest in &mut test.subtests.values_mut() {
+                                if let Some(expected) = subtest.properties.expected.as_mut() {
+                                    for (_, expected) in expected.iter_mut() {
+                                        taint_subtest_timeouts_by_suspicion(expected);
+                                    }
+                                }
                             }
                         }
-                    }
-                }
 
-                match write_to_file(&path, metadata::format_file(&file)) {
-                    Ok(()) => (),
-                    Err(AlreadyReportedToCommandline) => {
-                        err_found = true;
-                    }
-                };
-            }
-
+                        write_to_file(&path, metadata::format_file(&file))
+                    })
+                })
+                .fold(false, |err_found, res| match res {
+                    Ok(()) => err_found,
+                    Err(AlreadyReportedToCommandline) => true,
+                });
             if err_found {
                 log::error!(concat!(
                     "found one or more failures while formatting metadata, ",
