@@ -1545,12 +1545,16 @@ fn write_to_file(path: &Path, contents: impl Display) -> Result<(), AlreadyRepor
 /// deterministic if executed, but consistently exceed the timeout window offered by the test
 /// runner.
 fn taint_subtest_timeouts_by_suspicion(expected: &mut Expected<SubtestOutcome>) {
-    static PRINTED_WARNING: AtomicBool = AtomicBool::new(false);
-    let already_printed_warning = PRINTED_WARNING.swap(true, atomic::Ordering::Relaxed);
-    if !already_printed_warning {
-        log::info!("encountered at least one case where taint-by-suspicion is being applied…")
-    }
-    if !expected.is_disjoint(SubtestOutcome::Timeout | SubtestOutcome::NotRun) {
+    let timeout_and_notrun =
+        Expected::intermittent(SubtestOutcome::Timeout | SubtestOutcome::NotRun).unwrap();
+    if !expected.is_disjoint(timeout_and_notrun.inner())
+        && !expected.is_superset(&timeout_and_notrun)
+    {
+        static PRINTED_WARNING: AtomicBool = AtomicBool::new(false);
+        let already_printed_warning = PRINTED_WARNING.swap(true, atomic::Ordering::Relaxed);
+        if !already_printed_warning {
+            log::info!("encountered at least one case where taint-by-suspicion is being applied…")
+        }
         *expected |= SubtestOutcome::Timeout | SubtestOutcome::NotRun;
     }
 }
