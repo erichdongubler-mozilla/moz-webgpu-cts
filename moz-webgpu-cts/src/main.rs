@@ -789,11 +789,11 @@ fn run(cli: Cli) -> ExitCode {
             ExitCode::SUCCESS
         }
         Subcommand::Fixup => {
+            log::info!("formatting metadata in-place…");
             let raw_test_files_by_path = match read_metadata() {
                 Ok(paths) => paths,
                 Err(AlreadyReportedToCommandline) => return ExitCode::FAILURE,
             };
-            log::info!("formatting metadata in-place…");
             let mut err_found = false;
             for (path, file_contents) in raw_test_files_by_path {
                 match chumsky::Parser::parse(&File::parser(), &*file_contents).into_result() {
