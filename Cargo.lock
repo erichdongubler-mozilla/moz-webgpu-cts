@@ -590,6 +590,7 @@ dependencies = [
  "format",
  "indexmap",
  "insta",
+ "itertools",
  "joinery",
  "lets_find_up",
  "log",

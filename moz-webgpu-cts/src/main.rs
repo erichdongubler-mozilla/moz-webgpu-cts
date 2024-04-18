@@ -35,6 +35,7 @@ use clap::{Parser, ValueEnum};
 use enumset::EnumSetType;
 use format::lazy_format;
 use indexmap::{IndexMap, IndexSet};
+use itertools::Itertools;
 use joinery::JoinableIterator;
 use miette::{miette, Diagnostic, IntoDiagnostic, NamedSource, Report, SourceSpan, WrapErr};
 use path_dsl::path;
@@ -138,57 +139,6 @@ fn run(cli: Cli) -> ExitCode {
         Err(AlreadyReportedToCommandline) => return ExitCode::FAILURE,
     };
 
-    let read_metadata = || -> Result<_, AlreadyReportedToCommandline> {
-        let webgpu_cts_meta_parent_dir =
-            { path!(&gecko_checkout | "testing" | "web-platform" | "mozilla" | "meta" | "webgpu") };
-
-        let mut found_err = false;
-        let collected =
-            read_gecko_files_at(&gecko_checkout, &webgpu_cts_meta_parent_dir, "**/*.ini")?
-                .filter_map(|res| match res {
-                    Ok((p, _contents)) if p.ends_with("__dir__.ini") => None,
-                    Ok(ok) => Some(ok),
-                    Err(AlreadyReportedToCommandline) => {
-                        found_err = true;
-                        None
-                    }
-                })
-                .map(|(p, fc)| (Arc::new(p), Arc::new(fc)))
-                .collect::<IndexMap<_, _>>();
-        if found_err {
-            Err(AlreadyReportedToCommandline)
-        } else {
-            Ok(collected)
-        }
-    };
-
-    fn render_metadata_parse_errors<'a>(
-        path: &Arc<PathBuf>,
-        file_contents: &Arc<String>,
-        errors: impl IntoIterator<Item = Rich<'a, char>>,
-    ) {
-        #[derive(Debug, Diagnostic, thiserror::Error)]
-        #[error("{inner}")]
-        struct ParseError {
-            #[label]
-            span: SourceSpan,
-            #[source_code]
-            source_code: NamedSource,
-            inner: Rich<'static, char>,
-        }
-        let source_code = file_contents.clone();
-        for error in errors {
-            let span = error.span();
-            let error = ParseError {
-                source_code: NamedSource::new(path.to_str().unwrap(), source_code.clone()),
-                inner: error.clone().into_owned(),
-                span: SourceSpan::new(span.start.into(), (span.end - span.start).into()),
-            };
-            let error = Report::new(error);
-            eprintln!("{error:?}");
-        }
-    }
-
     match subcommand {
         Subcommand::UpdateExpected {
             report_globs,
@@ -290,39 +240,11 @@ fn run(cli: Cli) -> ExitCode {
             log::trace!("working with the following WPT report files: {exec_report_paths:#?}");
             log::info!("working with {} WPT report files", exec_report_paths.len());
 
-            let meta_files_by_path = {
-                let raw_meta_files_by_path = match read_metadata() {
-                    Ok(paths) => paths,
-                    Err(AlreadyReportedToCommandline) => return ExitCode::FAILURE,
-                };
-
-                log::info!("parsing metadata…");
-                let mut found_parse_err = false;
-
-                let files = raw_meta_files_by_path
-                    .into_iter()
-                    .filter_map(|(path, file_contents)| {
-                        match chumsky::Parser::parse(&File::parser(), &*file_contents).into_result()
-                        {
-                            Err(errors) => {
-                                found_parse_err = true;
-                                render_metadata_parse_errors(&path, &file_contents, errors);
-                                None
-                            }
-                            Ok(file) => Some((path, file)),
-                        }
-                    })
-                    .collect::<IndexMap<_, _>>();
-
-                if found_parse_err {
-                    log::error!(concat!(
-                        "found one or more failures while parsing metadata, ",
-                        "see above for more details"
-                    ));
-                    return ExitCode::FAILURE;
-                }
-
-                files
+            let meta_files_by_path = match read_and_parse_all_metadata(&gecko_checkout)
+                .collect::<Result<IndexMap<_, _>, _>>()
+            {
+                Ok(paths) => paths,
+                Err(AlreadyReportedToCommandline) => return ExitCode::FAILURE,
             };
 
             #[derive(Debug, Default)]
@@ -789,37 +711,34 @@ fn run(cli: Cli) -> ExitCode {
             ExitCode::SUCCESS
         }
         Subcommand::Fixup => {
-            let raw_test_files_by_path = match read_metadata() {
-                Ok(paths) => paths,
-                Err(AlreadyReportedToCommandline) => return ExitCode::FAILURE,
-            };
             log::info!("formatting metadata in-place…");
+            let raw_test_files_by_path = read_and_parse_all_metadata(&gecko_checkout);
             let mut err_found = false;
-            for (path, file_contents) in raw_test_files_by_path {
-                match chumsky::Parser::parse(&File::parser(), &*file_contents).into_result() {
-                    Err(errors) => {
+            for res in raw_test_files_by_path {
+                let (path, mut file) = match res {
+                    Ok(ok) => ok,
+                    Err(AlreadyReportedToCommandline) => {
                         err_found = true;
-                        render_metadata_parse_errors(&path, &file_contents, errors);
+                        continue;
                     }
-                    Ok(mut file) => {
-                        for test in file.tests.values_mut() {
-                            for subtest in &mut test.subtests.values_mut() {
-                                if let Some(expected) = subtest.properties.expected.as_mut() {
-                                    for (_, expected) in expected.iter_mut() {
-                                        taint_subtest_timeouts_by_suspicion(expected);
-                                    }
-                                }
+                };
+
+                for test in file.tests.values_mut() {
+                    for subtest in &mut test.subtests.values_mut() {
+                        if let Some(expected) = subtest.properties.expected.as_mut() {
+                            for (_, expected) in expected.iter_mut() {
+                                taint_subtest_timeouts_by_suspicion(expected);
                             }
                         }
-
-                        match write_to_file(&path, metadata::format_file(&file)) {
-                            Ok(()) => (),
-                            Err(AlreadyReportedToCommandline) => {
-                                err_found = true;
-                            }
-                        };
                     }
                 }
+
+                match write_to_file(&path, metadata::format_file(&file)) {
+                    Ok(()) => (),
+                    Err(AlreadyReportedToCommandline) => {
+                        err_found = true;
+                    }
+                };
             }
 
             if err_found {
@@ -839,57 +758,41 @@ fn run(cli: Cli) -> ExitCode {
                 orig_path: Arc<PathBuf>,
                 inner: Test,
             }
-            let tests_by_name = {
-                let mut found_parse_err = false;
-                let raw_test_files_by_path = match read_metadata() {
-                    Ok(paths) => paths,
-                    Err(AlreadyReportedToCommandline) => return ExitCode::FAILURE,
-                };
-                let extracted = raw_test_files_by_path
-                    .iter()
-                    .filter_map(|(path, file_contents)| {
-                        match chumsky::Parser::parse(&metadata::File::parser(), file_contents)
-                            .into_result()
-                        {
-                            Ok(File {
-                                properties: _,
-                                tests,
-                            }) => Some(tests.into_iter().map({
-                                let gecko_checkout = &gecko_checkout;
-                                move |(name, inner)| {
-                                    let SectionHeader(name) = &name;
-                                    let test_path = TestPath::from_fx_metadata_test(
-                                        path.strip_prefix(gecko_checkout).unwrap(),
-                                        name,
-                                    )
-                                    .unwrap();
-                                    let url_path = test_path.runner_url_path().to_string();
-                                    (
-                                        url_path,
-                                        TaggedTest {
-                                            inner,
-                                            orig_path: path.clone(),
-                                        },
-                                    )
-                                }
-                            })),
-                            Err(errors) => {
-                                found_parse_err = true;
-                                render_metadata_parse_errors(path, file_contents, errors);
-                                None
+            let tests_by_name = match read_and_parse_all_metadata(&gecko_checkout)
+                .map_ok(
+                    |(
+                        path,
+                        metadata::File {
+                            properties: _,
+                            tests,
+                        },
+                    )| {
+                        tests.into_iter().map({
+                            let gecko_checkout = &gecko_checkout;
+                            move |(name, inner)| {
+                                let SectionHeader(name) = &name;
+                                let test_path = TestPath::from_fx_metadata_test(
+                                    path.strip_prefix(gecko_checkout).unwrap(),
+                                    name,
+                                )
+                                .unwrap();
+                                let url_path = test_path.runner_url_path().to_string();
+                                (
+                                    url_path,
+                                    TaggedTest {
+                                        inner,
+                                        orig_path: path.clone(),
+                                    },
+                                )
                             }
-                        }
-                    })
-                    .flatten()
-                    .collect::<BTreeMap<_, _>>();
-                if found_parse_err {
-                    log::error!(concat!(
-                        "found one or more failures while parsing metadata, ",
-                        "see above for more details"
-                    ));
-                    return ExitCode::FAILURE;
-                }
-                extracted
+                        })
+                    },
+                )
+                .flatten_ok()
+                .collect::<Result<BTreeMap<_, _>, _>>()
+            {
+                Ok(paths) => paths,
+                Err(AlreadyReportedToCommandline) => return ExitCode::FAILURE,
             };
 
             log::info!(concat!(
@@ -1012,12 +915,11 @@ fn run(cli: Cli) -> ExitCode {
             for (test_name, test) in tests_by_name {
                 let TaggedTest {
                     orig_path: _,
-                    inner: test,
-                } = test;
-
-                let Test {
-                    properties,
-                    subtests,
+                    inner:
+                        Test {
+                            properties,
+                            subtests,
+                        },
                 } = test;
 
                 let TestProps {
@@ -1414,6 +1316,73 @@ fn run(cli: Cli) -> ExitCode {
     }
 }
 
+fn read_and_parse_all_metadata(
+    gecko_checkout: &Path,
+) -> impl Iterator<Item = Result<(Arc<PathBuf>, metadata::File), AlreadyReportedToCommandline>> {
+    let webgpu_cts_meta_parent_dir =
+        path!(gecko_checkout | "testing" | "web-platform" | "mozilla" | "meta" | "webgpu");
+
+    let raw_metadata_files =
+        read_gecko_files_at(gecko_checkout, &webgpu_cts_meta_parent_dir, "**/*.ini");
+
+    let mut started_parsing = false;
+    raw_metadata_files.filter_map(move |res| {
+        res.and_then(|(path, file_contents)| {
+            if path.ends_with("__dir__.ini") {
+                return Ok(None);
+            }
+
+            let path = Arc::new(path);
+            let file_contents = Arc::new(file_contents);
+
+            if !started_parsing {
+                log::info!("parsing metadata…");
+                started_parsing = true;
+            }
+
+            log::debug!("parsing metadata at {}", path.display());
+            let res = match chumsky::Parser::parse(&metadata::File::parser(), &*file_contents)
+                .into_result()
+            {
+                Err(errors) => {
+                    render_metadata_parse_errors(&path, &file_contents, errors);
+                    Err(AlreadyReportedToCommandline)
+                }
+                Ok(file) => Ok((path, file)),
+            };
+            Some(res).transpose()
+        })
+        .transpose()
+    })
+}
+
+fn render_metadata_parse_errors<'a>(
+    path: &Arc<PathBuf>,
+    file_contents: &Arc<String>,
+    errors: impl IntoIterator<Item = Rich<'a, char>>,
+) {
+    #[derive(Debug, Diagnostic, thiserror::Error)]
+    #[error("{inner}")]
+    struct ParseError {
+        #[label]
+        span: SourceSpan,
+        #[source_code]
+        source_code: NamedSource,
+        inner: Rich<'static, char>,
+    }
+    let source_code = file_contents.clone();
+    for error in errors {
+        let span = error.span();
+        let error = ParseError {
+            source_code: NamedSource::new(path.to_str().unwrap(), source_code.clone()),
+            inner: error.clone().into_owned(),
+            span: SourceSpan::new(span.start.into(), (span.end - span.start).into()),
+        };
+        let error = Report::new(error);
+        eprintln!("{error:?}");
+    }
+}
+
 /// Returns a "naturally" sorted list of files found by searching for `glob_pattern` in `base`.
 /// `gecko_checkout` is stripped as a prefix from the absolute paths recorded into `log` entries
 /// emitted by this function.
@@ -1431,10 +1400,7 @@ fn read_gecko_files_at(
     gecko_checkout: &Path,
     base: &Path,
     glob_pattern: &str,
-) -> Result<
-    impl Iterator<Item = Result<(PathBuf, String), AlreadyReportedToCommandline>>,
-    AlreadyReportedToCommandline,
-> {
+) -> impl Iterator<Item = Result<(PathBuf, String), AlreadyReportedToCommandline>> {
     log::info!("reading {glob_pattern} files at {}", base.display());
     let mut found_read_err = false;
     let mut paths = Glob::new(glob_pattern)
@@ -1471,11 +1437,7 @@ fn read_gecko_files_at(
             .collect::<std::collections::BTreeSet<_>>()
     );
 
-    if found_read_err {
-        return Err(AlreadyReportedToCommandline);
-    }
-
-    Ok(paths.into_iter().map(|path| -> Result<_, _> {
+    let iter = paths.into_iter().map(|path| -> Result<_, _> {
         log::debug!("reading from {}…", path.display());
         fs::read_to_string(&path)
             .map_err(|e| {
@@ -1483,7 +1445,17 @@ fn read_gecko_files_at(
                 AlreadyReportedToCommandline
             })
             .map(|file_contents| (path, file_contents))
-    }))
+    });
+
+    let (read_err_iter, file_read_iter) = if found_read_err {
+        (Some(Err(AlreadyReportedToCommandline)), None)
+    } else {
+        (None, Some(iter))
+    };
+
+    read_err_iter
+        .into_iter()
+        .chain(file_read_iter.into_iter().flatten())
 }
 
 /// Search for a `mozilla-central` checkout either via Mercurial or Git, iterating from the CWD to
