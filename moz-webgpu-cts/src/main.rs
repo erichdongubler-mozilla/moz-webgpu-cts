@@ -713,7 +713,7 @@ fn run(cli: Cli) -> ExitCode {
             ExitCode::SUCCESS
         }
         Subcommand::Fixup => {
-            log::info!("formatting metadata in-place…");
+            log::info!("fixing up metadata in-place…");
             let err_found = read_and_parse_all_metadata(&gecko_checkout)
                 .map(|res| {
                     res.and_then(|(path, mut file)| {
@@ -736,7 +736,7 @@ fn run(cli: Cli) -> ExitCode {
                 });
             if err_found {
                 log::error!(concat!(
-                    "found one or more failures while formatting metadata, ",
+                    "found one or more failures while fixing up metadata, ",
                     "see above for more details"
                 ));
                 ExitCode::FAILURE
