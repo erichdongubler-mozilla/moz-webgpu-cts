@@ -57,20 +57,20 @@ struct Cli {
 
 #[derive(Debug, Parser)]
 enum Subcommand {
-    /// Adjust test expectations in metadata, optionally using `wptreport.json` reports from CI
-    /// runs covering Firefox's implementation of WebGPU.
+    /// Adjust expected test outcomes in metadata, optionally using `wptreport.json` reports from
+    /// CI runs covering Firefox's implementation of WebGPU.
     ///
     /// As Firefox's behavior changes, one generally expects CTS test outcomes to change. When you
-    /// are testing your own changes in CI, you can use this subcommand to update expectations
+    /// are testing your own changes in CI, you can use this subcommand to update expected outcomes
     /// automatically with the following steps:
     ///
-    /// 1. Run `moz-webgpu-cts process-reports --preset=new-fx …` against the first complete set of
+    /// 1. Run `moz-webgpu-cts update-expected --preset=new-fx …` against the first complete set of
     ///    reports you gather from CI with your new Firefox build. This will adjust for new
     ///    permanent outcomes, and may capture some (but not all) intermittent outcomes.
     ///
     /// 2. There may still exist intermittent issues that you do not discover in CI run(s) from the
     ///    previous step. As you discover them in further CI runs on the same build of Firefox,
-    ///    adjust expected outcomes to match by running `moz-webgpu-cts process-reports
+    ///    adjust expected outcomes to match by running `moz-webgpu-cts update-expected
     ///    --preset=same-fx …` against the runs' new reports. Repeat as necessary.
     ///
     /// With both steps, you may delete the local copies of these reports after being processed
@@ -80,10 +80,12 @@ enum Subcommand {
     UpdateExpected {
         /// Direct paths to report files to be processed.
         report_paths: Vec<PathBuf>,
-        /// Cross-platform `wax` globs to enumerate report files to be processed.
+        /// Cross-platform [`wax` globs] to enumerate report files to be processed.
         ///
         /// N.B. for Windows users: backslashes are used strictly for escaped characters, and
         /// forward slashes (`/`) are the only valid path separator for these globs.
+        ///
+        /// [`wax` globs]: https://github.com/olson-sean-k/wax/blob/master/README.md#patterns
         #[clap(long = "glob", value_name = "REPORT_GLOB")]
         report_globs: Vec<String>,
         /// The heuristic for resolving differences between current metadata and processed reports.
@@ -711,39 +713,30 @@ fn run(cli: Cli) -> ExitCode {
             ExitCode::SUCCESS
         }
         Subcommand::Fixup => {
-            log::info!("formatting metadata in-place…");
-            let raw_test_files_by_path = read_and_parse_all_metadata(&gecko_checkout);
-            let mut err_found = false;
-            for res in raw_test_files_by_path {
-                let (path, mut file) = match res {
-                    Ok(ok) => ok,
-                    Err(AlreadyReportedToCommandline) => {
-                        err_found = true;
-                        continue;
-                    }
-                };
-
-                for test in file.tests.values_mut() {
-                    for subtest in &mut test.subtests.values_mut() {
-                        if let Some(expected) = subtest.properties.expected.as_mut() {
-                            for (_, expected) in expected.iter_mut() {
-                                taint_subtest_timeouts_by_suspicion(expected);
+            log::info!("fixing up metadata in-place…");
+            let err_found = read_and_parse_all_metadata(&gecko_checkout)
+                .map(|res| {
+                    res.and_then(|(path, mut file)| {
+                        for test in file.tests.values_mut() {
+                            for subtest in &mut test.subtests.values_mut() {
+                                if let Some(expected) = subtest.properties.expected.as_mut() {
+                                    for (_, expected) in expected.iter_mut() {
+                                        taint_subtest_timeouts_by_suspicion(expected);
+                                    }
+                                }
                             }
                         }
-                    }
-                }
 
-                match write_to_file(&path, metadata::format_file(&file)) {
-                    Ok(()) => (),
-                    Err(AlreadyReportedToCommandline) => {
-                        err_found = true;
-                    }
-                };
-            }
-
+                        write_to_file(&path, metadata::format_file(&file))
+                    })
+                })
+                .fold(false, |err_found, res| match res {
+                    Ok(()) => err_found,
+                    Err(AlreadyReportedToCommandline) => true,
+                });
             if err_found {
                 log::error!(concat!(
-                    "found one or more failures while formatting metadata, ",
+                    "found one or more failures while fixing up metadata, ",
                     "see above for more details"
                 ));
                 ExitCode::FAILURE
@@ -758,7 +751,8 @@ fn run(cli: Cli) -> ExitCode {
                 orig_path: Arc<PathBuf>,
                 inner: Test,
             }
-            let tests_by_name = match read_and_parse_all_metadata(&gecko_checkout)
+            let mut err_found = false;
+            let tests_by_name = read_and_parse_all_metadata(&gecko_checkout)
                 .map_ok(
                     |(
                         path,
@@ -789,11 +783,17 @@ fn run(cli: Cli) -> ExitCode {
                     },
                 )
                 .flatten_ok()
-                .collect::<Result<BTreeMap<_, _>, _>>()
-            {
-                Ok(paths) => paths,
-                Err(AlreadyReportedToCommandline) => return ExitCode::FAILURE,
-            };
+                .filter_map(|res| match res {
+                    Ok(ok) => Some(ok),
+                    Err(AlreadyReportedToCommandline) => {
+                        err_found = true;
+                        None
+                    }
+                })
+                .collect::<BTreeMap<_, _>>();
+            if err_found {
+                return ExitCode::FAILURE;
+            }
 
             log::info!(concat!(
                 "finished parsing of interesting properties ",
@@ -980,12 +980,12 @@ fn run(cli: Cli) -> ExitCode {
                 if let Some(expected) = expected {
                     fn analyze_test_outcome<F>(
                         test_name: &Arc<String>,
-                        expectation: Expected<TestOutcome>,
+                        expected: Expected<TestOutcome>,
                         mut receiver: F,
                     ) where
                         F: FnMut(&mut dyn FnMut(&mut PerPlatformAnalysis)),
                     {
-                        for outcome in expectation.iter() {
+                        for outcome in expected.iter() {
                             match outcome {
                                 TestOutcome::Ok => (),
                                 // We skip this because this test _should_ contain subtests with
@@ -995,7 +995,7 @@ fn run(cli: Cli) -> ExitCode {
                                     insert_in_test_set(
                                         &mut analysis.tests_with_crashes,
                                         test_name,
-                                        expectation,
+                                        expected,
                                         outcome,
                                     )
                                 }),
@@ -1003,7 +1003,7 @@ fn run(cli: Cli) -> ExitCode {
                                     insert_in_test_set(
                                         &mut analysis.tests_with_runner_errors,
                                         test_name,
-                                        expectation,
+                                        expected,
                                         outcome,
                                     )
                                 }),
@@ -1011,7 +1011,7 @@ fn run(cli: Cli) -> ExitCode {
                                     insert_in_test_set(
                                         &mut analysis.tests_with_disabled_or_skip,
                                         test_name,
-                                        expectation,
+                                        expected,
                                         outcome,
                                     )
                                 }),
@@ -1020,8 +1020,8 @@ fn run(cli: Cli) -> ExitCode {
                     }
 
                     let apply_to_specific_platforms =
-                        |analysis: &mut Analysis, platform, expectation| {
-                            analyze_test_outcome(&test_name, expectation, |f| {
+                        |analysis: &mut Analysis, platform, expected| {
+                            analyze_test_outcome(&test_name, expected, |f| {
                                 analysis.for_platform_mut(platform, f)
                             })
                         };
@@ -1094,13 +1094,10 @@ fn run(cli: Cli) -> ExitCode {
                         }
 
                         let apply_to_specific_platforms =
-                            |analysis: &mut Analysis, platform, expectation| {
-                                analyze_subtest_outcome(
-                                    &test_name,
-                                    &subtest_name,
-                                    expectation,
-                                    |f| analysis.for_platform_mut(platform, f),
-                                )
+                            |analysis: &mut Analysis, platform, expected| {
+                                analyze_subtest_outcome(&test_name, &subtest_name, expected, |f| {
+                                    analysis.for_platform_mut(platform, f)
+                                })
                             };
 
                         for ((platform, _build_profile), expected) in expected.iter() {
@@ -1548,12 +1545,16 @@ fn write_to_file(path: &Path, contents: impl Display) -> Result<(), AlreadyRepor
 /// deterministic if executed, but consistently exceed the timeout window offered by the test
 /// runner.
 fn taint_subtest_timeouts_by_suspicion(expected: &mut Expected<SubtestOutcome>) {
-    static PRINTED_WARNING: AtomicBool = AtomicBool::new(false);
-    let already_printed_warning = PRINTED_WARNING.swap(true, atomic::Ordering::Relaxed);
-    if !already_printed_warning {
-        log::info!("encountered at least one case where taint-by-suspicion is being applied…")
-    }
-    if !expected.is_disjoint(SubtestOutcome::Timeout | SubtestOutcome::NotRun) {
+    let timeout_and_notrun =
+        Expected::intermittent(SubtestOutcome::Timeout | SubtestOutcome::NotRun).unwrap();
+    if !expected.is_disjoint(timeout_and_notrun.inner())
+        && !expected.is_superset(&timeout_and_notrun)
+    {
+        static PRINTED_WARNING: AtomicBool = AtomicBool::new(false);
+        let already_printed_warning = PRINTED_WARNING.swap(true, atomic::Ordering::Relaxed);
+        if !already_printed_warning {
+            log::info!("encountered at least one case where taint-by-suspicion is being applied…")
+        }
         *expected |= SubtestOutcome::Timeout | SubtestOutcome::NotRun;
     }
 }

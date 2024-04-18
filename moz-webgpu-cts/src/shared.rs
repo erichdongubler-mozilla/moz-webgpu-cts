@@ -61,9 +61,9 @@ where
         }
     }
 
-    fn inner(&self) -> &EnumSet<Out> {
+    pub fn inner(&self) -> EnumSet<Out> {
         let Self(inner) = self;
-        inner
+        *inner
     }
 
     pub fn len(&self) -> NonZeroUsize {
@@ -93,7 +93,7 @@ where
     where
         Out: std::fmt::Debug + Default + EnumSetType,
     {
-        self.inner().is_superset(*rep.inner())
+        self.inner().is_superset(rep.inner())
     }
 }
 
