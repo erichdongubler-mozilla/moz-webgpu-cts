@@ -19,7 +19,7 @@ use crate::metadata::{BuildProfile, Platform};
 
 /// A non-empty set of expected outcomes in a [`Test`] or [`Subtest`].
 ///
-/// The default test expectation is a "good" outcome, where testing passes. The `Out` type
+/// The default expected test outcome is a "good" outcome, where testing passes. The `Out` type
 /// parameter should return this value in its implementation of `Default`.
 ///
 /// [`Test`]: crate::metadata::Test
