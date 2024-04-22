@@ -587,7 +587,7 @@ fn run(cli: Cli) -> ExitCode {
                         entry:
                             Entry {
                                 meta_props: properties,
-                                reported: test_reported,
+                                reported: mut test_reported,
                             },
                         subtests: subtest_entries,
                     } = test_entry;
@@ -610,6 +610,41 @@ fn run(cli: Cli) -> ExitCode {
                     }
 
                     let mut properties = properties.unwrap_or_default();
+
+                    for (platform, build_profile, reported) in
+                        test_reported.iter_mut().flat_map(|(p, by_bp)| {
+                            by_bp
+                                .iter_mut()
+                                .map(move |(bp, reported)| (p, bp, reported))
+                        })
+                    {
+                        let skip = TestOutcome::Skip;
+                        // Ignore `SKIP` outcomes if we have non-`SKIP` outcomes here.
+                        //
+                        // Do this so that test runs whose coverage _in aggregate_ includes actual
+                        // runs on this test are viable for processing. Otherwise, we'd have `SKIP`
+                        // outcomes be included that aren't actually wanted.
+                        if *reported != skip {
+                            let skip = skip.into();
+                            if reported.inner().is_superset(skip) {
+                                log::debug!(
+                                    concat!(
+                                        "encountered `{}` among other outcomes ",
+                                        "in aggregation of reported test outcomes ",
+                                        "for {:?} with platform {:?} and build profile {:?}, ",
+                                        " removing with the assumption that ",
+                                        "this is an artifact of disjoint test runs"
+                                    ),
+                                    skip,
+                                    test_path,
+                                    platform,
+                                    build_profile,
+                                );
+                                *reported = Expected::new(reported.inner() & !skip)
+                                    .expect("internal error: empty non-`SKIP` superset");
+                            }
+                        }
+                    }
 
                     reconcile(&mut properties, test_reported, preset);
 
