@@ -24,7 +24,7 @@ use crate::metadata::{BuildProfile, Platform};
 ///
 /// [`Test`]: crate::metadata::Test
 /// [`Subtest`]: crate::metadata::Subtest
-#[derive(Clone, Copy, Eq, PartialEq)]
+#[derive(Clone, Copy)]
 pub struct Expected<Out>(EnumSet<Out>)
 where
     Out: EnumSetType;
@@ -190,6 +190,26 @@ where
         *self = *self | rhs;
     }
 }
+
+impl<Out> PartialEq for Expected<Out>
+where
+    Out: EnumSetType + Eq,
+{
+    fn eq(&self, other: &Self) -> bool {
+        self.inner() == other.inner()
+    }
+}
+
+impl<Out> PartialEq<Out> for Expected<Out>
+where
+    Out: EnumSetType + Eq,
+{
+    fn eq(&self, other: &Out) -> bool {
+        self.inner() == *other
+    }
+}
+
+impl<Out> Eq for Expected<Out> where Out: EnumSetType + Eq {}
 
 /// Similar to the ubiquitous `enum Either`, but with the implication that `Collapsed` values are
 /// abbreviations of equivalent `Expanded` values.

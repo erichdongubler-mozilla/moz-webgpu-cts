@@ -745,7 +745,7 @@ where
             where
                 Out: Default + EnumSetType + Eq + PartialEq,
             {
-                if exp != &Default::default() {
+                if exp != &Out::default() {
                     f()
                 } else {
                     Ok(())
