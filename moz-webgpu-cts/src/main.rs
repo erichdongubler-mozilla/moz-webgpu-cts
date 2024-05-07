@@ -571,7 +571,7 @@ fn run(cli: Cli) -> ExitCode {
                                 FullyExpandedExpectedPropertyValue::from_query(
                                     |platform, build_profile| {
                                         resolve(
-                                            meta_expected.get(platform, build_profile),
+                                            meta_expected[(platform, build_profile)],
                                             reported(platform, build_profile),
                                         )
                                     },

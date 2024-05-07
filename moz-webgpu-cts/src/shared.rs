@@ -278,10 +278,6 @@ where
         Self(EnumMap::from_fn(|_idx| EnumMap::from_fn(|_idx| expected)))
     }
 
-    pub fn get(&self, platform: Platform, build_profile: BuildProfile) -> Expected<Out> {
-        self.0[platform][build_profile]
-    }
-
     pub(crate) fn iter(
         &self,
     ) -> impl Iterator<Item = ((Platform, BuildProfile), Expected<Out>)> + '_ {
