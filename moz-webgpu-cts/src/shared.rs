@@ -329,8 +329,8 @@ fn fully_expanded_expected_is_tiny() {
     );
 }
 
-/// A normalized representation of [`Expected`]s in [`TestProps`], which collapses
-/// backwards along the following branching factors:
+/// A normalized representation of a property in [`TestProps`], which collapses backwards along the
+/// following branching factors:
 ///
 /// * [`Platform`]
 /// * [`BuildProfile`]
@@ -339,22 +339,11 @@ fn fully_expanded_expected_is_tiny() {
 ///
 /// [`TestProps`]: crate::metadata::TestProps
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct NormalizedExpectedPropertyValue<Out>(NormalizedExpectatedPropertyValueData<Out>)
+pub struct NormalizedPropertyValue<T>(NormalizedPropertyValueData<T>);
+
+impl<T> Default for NormalizedPropertyValue<T>
 where
-    Out: EnumSetType;
-
-pub type NormalizedExpectedByBuildProfile<Out> =
-    MaybeCollapsed<Expected<Out>, BTreeMap<BuildProfile, Expected<Out>>>;
-
-/// Data from a [`NormalizedExpectedPropertyValue`].
-pub type NormalizedExpectatedPropertyValueData<Out> = MaybeCollapsed<
-    NormalizedExpectedByBuildProfile<Out>,
-    BTreeMap<Platform, NormalizedExpectedByBuildProfile<Out>>,
->;
-
-impl<Out> Default for NormalizedExpectedPropertyValue<Out>
-where
-    Out: Default + EnumSetType,
+    T: Default,
 {
     fn default() -> Self {
         Self(MaybeCollapsed::Collapsed(MaybeCollapsed::Collapsed(
@@ -363,32 +352,34 @@ where
     }
 }
 
-impl<Out> NormalizedExpectedPropertyValue<Out>
-where
-    Out: EnumSetType,
-{
-    pub fn inner(&self) -> &NormalizedExpectatedPropertyValueData<Out> {
+impl<T> NormalizedPropertyValue<T> {
+    pub fn inner(&self) -> &NormalizedPropertyValueData<T> {
         let Self(inner) = self;
         inner
     }
+}
 
-    pub(crate) fn from_fully_expanded(outcomes: FullyExpandedExpectedPropertyValue<Out>) -> Self {
+impl<T> NormalizedPropertyValue<T>
+where
+    T: Clone + Eq,
+{
+    pub(crate) fn from_fully_expanded(outcomes: FullyExpandedPropertyValue<T>) -> Self {
         Self(
             if let Ok(uniform) = outcomes
-                .into_iter()
+                .iter()
                 .map(|(_, outcome)| outcome)
                 .all_equal_value()
             {
-                MaybeCollapsed::Collapsed(MaybeCollapsed::Collapsed(uniform))
+                MaybeCollapsed::Collapsed(MaybeCollapsed::Collapsed(uniform.clone()))
             } else {
                 let per_bp = |outcomes_by_bp: &EnumMap<_, _>| {
                     outcomes_by_bp
                         .iter()
-                        .map(|(bp, outcomes)| (bp, *outcomes))
+                        .map(|(bp, outcomes): (_, &T)| (bp, outcomes.clone()))
                         .collect()
                 };
                 if let Ok(uniform_per_platform) = outcomes
-                    .0
+                    .inner()
                     .iter()
                     .map(|(_, outcomes)| outcomes)
                     .all_equal_value()
@@ -399,12 +390,12 @@ where
                 } else {
                     MaybeCollapsed::Expanded(
                         outcomes
-                            .0
+                            .inner()
                             .iter()
                             .map(|(platform, outcomes_by_bp)| {
                                 if let Ok(uniform_per_bp) = outcomes_by_bp
                                     .iter()
-                                    .map(|(_, outcomes)| *outcomes)
+                                    .map(|(_, outcomes)| outcomes.clone())
                                     .all_equal_value()
                                 {
                                     (platform, MaybeCollapsed::Collapsed(uniform_per_bp))
@@ -419,6 +410,16 @@ where
         )
     }
 }
+
+/// Data from a [`NormalizedPropertyValue`].
+pub type NormalizedPropertyValueData<T> = Normalized<Platform, Normalized<BuildProfile, T>>;
+
+/// A value that is either `V` or a set of `V`s branched on by `K`.
+pub type Normalized<K, V> = MaybeCollapsed<V, BTreeMap<K, V>>;
+
+/// A normalized representation of [`Expected`]s in [`TestProps`]. See [`NormalizedPropertyValue`]
+/// for branching factors.
+pub type NormalizedExpectedPropertyValue<Out> = NormalizedPropertyValue<Expected<Out>>;
 
 /// A single symbolic path to a test and its metadata.
 ///
