@@ -830,25 +830,13 @@ pub enum BuildProfile {
     Optimized,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct TestProps<Out>
 where
     Out: EnumSetType,
 {
     pub is_disabled: bool,
     pub expected: Option<ExpandedPropertyValue<Expected<Out>>>,
-}
-
-impl<Out> Default for TestProps<Out>
-where
-    Out: EnumSetType,
-{
-    fn default() -> Self {
-        Self {
-            is_disabled: false,
-            expected: None,
-        }
-    }
 }
 
 impl<'a, Out> TestProps<Out>
