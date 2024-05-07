@@ -228,8 +228,8 @@ where
     }
 }
 
-/// A completely flat representation of [`NormalizedExpectedPropertyValueData`] suitable for
-/// byte representation in memory.
+/// A completely flat representation of [`NormalizedPropertyValue`] suitable for byte
+/// representation in memory.
 #[derive(Debug, Default, Clone, Copy, Eq, PartialEq)]
 pub struct ExpandedPropertyValue<T>(ExpandedPropertyValueData<T>);
 
