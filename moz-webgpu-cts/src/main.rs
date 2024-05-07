@@ -21,6 +21,7 @@ use std::{
     fs,
     hash::Hash,
     io::{self, BufReader, BufWriter},
+    iter,
     path::{Path, PathBuf},
     process::ExitCode,
     sync::{
@@ -104,6 +105,12 @@ enum Subcommand {
         #[clap(value_enum, long, default_value_t = Default::default())]
         on_zero_item: OnZeroItem,
     },
+    /// Identify and promote tests that are ready to come out of the `backlog` implementation
+    /// status.
+    UpdateBacklog {
+        /// The heuristic to use for identifying tests that can be promoted.
+        preset: UpdateBacklogPreset,
+    },
 }
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
@@ -124,6 +131,12 @@ enum OnZeroItem {
     Show,
     #[default]
     Hide,
+}
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum UpdateBacklogPreset {
+    /// Remove tests that expect only `PASS` outcomes on all platforms from `backlog`.
+    PromotePermaPassing,
 }
 
 fn main() -> ExitCode {
@@ -1353,6 +1366,103 @@ fn run(cli: Cli) -> ExitCode {
             });
             println!("Full analysis: {analysis:#?}");
             ExitCode::SUCCESS
+        }
+        Subcommand::UpdateBacklog { preset } => {
+            let mut files = {
+                let mut found_parse_err = false;
+                let extracted = read_and_parse_all_metadata(browser, &checkout)
+                    .filter_map(|res| match res {
+                        Ok(ok) => Some(ok),
+                        Err(AlreadyReportedToCommandline) => {
+                            found_parse_err = true;
+                            None
+                        }
+                    })
+                    .collect::<BTreeMap<_, _>>();
+                if found_parse_err {
+                    log::error!(concat!(
+                        "found one or more failures while parsing metadata, ",
+                        "see above for more details"
+                    ));
+                    return ExitCode::FAILURE;
+                }
+                extracted
+            };
+
+            #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+            enum Case {
+                #[default]
+                PermaPass,
+                Other,
+            }
+            let mut found_write_err = false;
+            for (file_path, file) in files.iter_mut() {
+                let File {
+                    properties: _,
+                    tests,
+                } = file;
+
+                for test in tests.values_mut() {
+                    let Test {
+                        properties,
+                        subtests,
+                    } = test;
+                    let mut cases = ExpandedPropertyValue::default();
+                    for ((platform, build_profile), expected) in properties
+                        .expected
+                        .as_ref()
+                        .unwrap_or(&Default::default())
+                        .iter()
+                    {
+                        let case = match expected.as_permanent() {
+                            Some(TestOutcome::Ok) => Case::PermaPass,
+                            _ => Case::Other,
+                        };
+                        cases[(platform, build_profile)] = case;
+                    }
+                    if !subtests.is_empty() {
+                        cases = ExpandedPropertyValue::from_query(|platform, build_profile| {
+                            let consistent_expected = subtests
+                                .iter()
+                                .map(|subtest| {
+                                    let (_name, Subtest { properties }) = subtest;
+                                    let expected =
+                                        properties.expected.as_ref().unwrap_or(&Default::default())
+                                            [(platform, build_profile)];
+                                    if let Some(SubtestOutcome::Pass) = expected.as_permanent() {
+                                        Case::PermaPass
+                                    } else {
+                                        Case::Other
+                                    }
+                                })
+                                .chain(iter::once(cases[(platform, build_profile)]))
+                                .all_equal_value()
+                                .ok();
+                            consistent_expected.unwrap_or(Case::Other)
+                        });
+                    }
+                    // TODO: Just compare this multiple times (here _and_ above), and compare
+                    // subtests afterwards.
+                    let value_across_all_platforms =
+                        || cases.into_iter().map(|(_, case)| case).all_equal_value();
+                    match preset {
+                        UpdateBacklogPreset::PromotePermaPassing => {
+                            if matches!(value_across_all_platforms(), Ok(Case::PermaPass)) {
+                                properties.implementation_status = None;
+                            }
+                        }
+                    }
+                }
+                match write_to_file(file_path, metadata::format_file(file)) {
+                    Ok(()) => (),
+                    Err(AlreadyReportedToCommandline) => found_write_err = true,
+                }
+            }
+            if found_write_err {
+                ExitCode::FAILURE
+            } else {
+                ExitCode::SUCCESS
+            }
         }
     }
 }
