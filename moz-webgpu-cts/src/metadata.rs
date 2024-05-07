@@ -1331,7 +1331,7 @@ r#"
                                 properties: TestProps {
                                     is_disabled: false,
                                     expected: Some(
-                                        FullyExpandedExpectedPropertyValue(
+                                        FullyExpandedPropertyValue(
                                             {
                                                 Windows: {
                                                     Debug: [
@@ -1415,7 +1415,7 @@ r#"
                             properties: TestProps {
                                 is_disabled: false,
                                 expected: Some(
-                                    FullyExpandedExpectedPropertyValue(
+                                    FullyExpandedPropertyValue(
                                         {
                                             Windows: {
                                                 Debug: [
@@ -1479,7 +1479,7 @@ r#"
                     properties: TestProps {
                         is_disabled: false,
                         expected: Some(
-                            FullyExpandedExpectedPropertyValue(
+                            FullyExpandedPropertyValue(
                                 {
                                     Windows: {
                                         Debug: [
@@ -1514,7 +1514,7 @@ r#"
                             properties: TestProps {
                                 is_disabled: false,
                                 expected: Some(
-                                    FullyExpandedExpectedPropertyValue(
+                                    FullyExpandedPropertyValue(
                                         {
                                             Windows: {
                                                 Debug: [
@@ -1578,7 +1578,7 @@ r#"
                             properties: TestProps {
                                 is_disabled: false,
                                 expected: Some(
-                                    FullyExpandedExpectedPropertyValue(
+                                    FullyExpandedPropertyValue(
                                         {
                                             Windows: {
                                                 Debug: [
@@ -1643,7 +1643,7 @@ r#"
                             properties: TestProps {
                                 is_disabled: false,
                                 expected: Some(
-                                    FullyExpandedExpectedPropertyValue(
+                                    FullyExpandedPropertyValue(
                                         {
                                             Windows: {
                                                 Debug: [
@@ -1706,7 +1706,7 @@ r#"
                             properties: TestProps {
                                 is_disabled: false,
                                 expected: Some(
-                                    FullyExpandedExpectedPropertyValue(
+                                    FullyExpandedPropertyValue(
                                         {
                                             Windows: {
                                                 Debug: [

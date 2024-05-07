@@ -14,7 +14,6 @@ use enumset::{EnumSet, EnumSetType};
 use format::lazy_format;
 use itertools::Itertools;
 use joinery::JoinableIterator;
-use strum::IntoEnumIterator;
 
 use crate::metadata::{BuildProfile, Platform};
 
@@ -231,37 +230,18 @@ where
 
 /// A completely flat representation of [`NormalizedExpectedPropertyValueData`] suitable for
 /// byte representation in memory.
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub struct FullyExpandedExpectedPropertyValue<Out>(
-    EnumMap<Platform, EnumMap<BuildProfile, Expected<Out>>>,
-)
-where
-    Out: EnumSetType;
+#[derive(Debug, Default, Clone, Copy, Eq, PartialEq)]
+pub struct FullyExpandedPropertyValue<T>(FullyExpandedPropertyValueData<T>);
 
-impl<Out> Default for FullyExpandedExpectedPropertyValue<Out>
-where
-    Out: Default + EnumSetType,
-{
-    fn default() -> Self {
-        Self(Default::default())
-    }
-}
-
-impl<Out> Index<(Platform, BuildProfile)> for FullyExpandedExpectedPropertyValue<Out>
-where
-    Out: EnumSetType,
-{
-    type Output = Expected<Out>;
+impl<T> Index<(Platform, BuildProfile)> for FullyExpandedPropertyValue<T> {
+    type Output = T;
 
     fn index(&self, (platform, build_profile): (Platform, BuildProfile)) -> &Self::Output {
         &self.0[platform][build_profile]
     }
 }
 
-impl<Out> IndexMut<(Platform, BuildProfile)> for FullyExpandedExpectedPropertyValue<Out>
-where
-    Out: EnumSetType,
-{
+impl<Out> IndexMut<(Platform, BuildProfile)> for FullyExpandedPropertyValue<Out> {
     fn index_mut(
         &mut self,
         (platform, build_profile): (Platform, BuildProfile),
@@ -270,57 +250,72 @@ where
     }
 }
 
-impl<Out> FullyExpandedExpectedPropertyValue<Out>
+impl<T> FullyExpandedPropertyValue<T>
 where
-    Out: EnumSetType,
+    T: Clone,
 {
-    pub fn unconditional(expected: Expected<Out>) -> Self {
-        Self(EnumMap::from_fn(|_idx| EnumMap::from_fn(|_idx| expected)))
-    }
-
-    pub(crate) fn into_iter(
-        &self,
-    ) -> impl Iterator<Item = ((Platform, BuildProfile), Expected<Out>)> + '_ {
-        self.0.iter().flat_map(|(platform, exps_by_bp)| {
-            exps_by_bp
-                .iter()
-                .map(move |(build_profile, expected)| ((platform, build_profile), *expected))
-        })
-    }
-
-    pub(crate) fn iter_mut(
-        &mut self,
-    ) -> impl Iterator<Item = ((Platform, BuildProfile), &mut Expected<Out>)> + '_ {
-        self.0.iter_mut().flat_map(|(platform, exps_by_bp)| {
-            exps_by_bp
-                .iter_mut()
-                .map(move |(build_profile, expected)| ((platform, build_profile), expected))
-        })
+    pub fn unconditional(value: T) -> Self {
+        Self::from_query(|_, _| value.clone())
     }
 }
 
-impl<Out> FullyExpandedExpectedPropertyValue<Out>
-where
-    Out: Default + EnumSetType,
-{
+impl<T> FullyExpandedPropertyValue<T> {
+    pub(crate) fn into_iter(self) -> impl Iterator<Item = ((Platform, BuildProfile), T)> {
+        let Self(inner) = self;
+        inner.into_iter().flat_map(|(platform, outcomes)| {
+            outcomes
+                .into_iter()
+                .map(move |(build_profile, outcomes)| ((platform, build_profile), outcomes))
+        })
+    }
+
+    pub(crate) fn iter(&self) -> impl Iterator<Item = ((Platform, BuildProfile), &T)> {
+        self.inner().iter().flat_map(|(platform, outcomes)| {
+            outcomes
+                .iter()
+                .map(move |(build_profile, outcomes)| ((platform, build_profile), outcomes))
+        })
+    }
+
+    pub(crate) fn iter_mut(&mut self) -> impl Iterator<Item = ((Platform, BuildProfile), &mut T)> {
+        self.inner_mut()
+            .iter_mut()
+            .flat_map(|(platform, outcomes)| {
+                outcomes
+                    .iter_mut()
+                    .map(move |(build_profile, outcomes)| ((platform, build_profile), outcomes))
+            })
+    }
+
+    pub(crate) fn inner(&self) -> &FullyExpandedPropertyValueData<T> {
+        let Self(inner) = self;
+        inner
+    }
+
+    fn inner_mut(&mut self) -> &mut FullyExpandedPropertyValueData<T> {
+        let Self(inner) = self;
+        inner
+    }
+}
+
+impl<T> FullyExpandedPropertyValue<T> {
     pub fn from_query<F>(f: F) -> Self
     where
-        F: FnMut(Platform, BuildProfile) -> Expected<Out>,
+        F: FnMut(Platform, BuildProfile) -> T,
     {
         let mut f = f;
-        let mut this = Self::default();
-        for platform in Platform::iter() {
-            let by_plat = &mut this.0[platform];
-            for build_profile in BuildProfile::iter() {
-                by_plat[build_profile] = f(platform, build_profile);
-            }
-        }
-        this
+        Self(EnumMap::from_fn(|platform| {
+            EnumMap::from_fn(|build_profile| f(platform, build_profile))
+        }))
     }
 }
 
+pub type FullyExpandedPropertyValueData<T> = EnumMap<Platform, EnumMap<BuildProfile, T>>;
+
+pub type FullyExpandedExpectedPropertyValue<Out> = FullyExpandedPropertyValue<Expected<Out>>;
+
 #[test]
-fn fully_expanded_is_tiny() {
+fn fully_expanded_expected_is_tiny() {
     use crate::metadata::{SubtestOutcome, TestOutcome};
     use std::mem::size_of;
 
