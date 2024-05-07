@@ -129,7 +129,7 @@ impl<'a> Properties<'a> for FileProps {
 
         let disabled = helper
             .parser(
-                keyword("disabled").to(()),
+                keyword(DISABLED_IDENT).to(()),
                 conditional_term.clone(),
                 any()
                     .and_is(newline().or(end()).not())
@@ -142,13 +142,9 @@ impl<'a> Properties<'a> for FileProps {
 
         let implementation_status = helper
             .parser(
-                just("implementation-status").to(()),
+                ImplementationStatus::property_ident_parser(),
                 conditional_term,
-                choice((
-                    just("backlog").to(ImplementationStatus::Backlog),
-                    just("implementing").to(ImplementationStatus::Implementing),
-                    just("not-implementing").to(ImplementationStatus::NotImplementing),
-                )),
+                ImplementationStatus::property_value_parser(),
             )
             .map(|((), implementation_status)| {
                 FileProp::ImplementationStatus(implementation_status)
@@ -168,14 +164,13 @@ impl<'a> Properties<'a> for FileProps {
             tags,
         } = self;
         macro_rules! check_dupe_then_insert {
-            ($new:expr, $old:expr, $prop_name:literal) => {{
+            ($new:expr, $old:expr, $prop_name:expr) => {{
                 if $old.replace($new).is_some() {
                     emitter.emit(Rich::custom(
                         span,
-                        concat!(
-                            "duplicate `",
-                            $prop_name,
-                            "` property detected; discarding oldest"
+                        format!(
+                            "duplicate `{}` property detected; discarding oldest",
+                            $prop_name
                         ),
                     ));
                 }
@@ -185,12 +180,12 @@ impl<'a> Properties<'a> for FileProps {
             FileProp::ImplementationStatus(new_impl_status) => check_dupe_then_insert!(
                 new_impl_status,
                 implementation_status,
-                "implementation-status"
+                ImplementationStatus::IDENT
             ),
             FileProp::Prefs(new_prefs) => check_dupe_then_insert!(new_prefs, prefs, "prefs"),
             FileProp::Tags(new_tags) => check_dupe_then_insert!(new_tags, tags, "tags"),
             FileProp::Disabled(new_is_disabled) => {
-                check_dupe_then_insert!(new_is_disabled, is_disabled, "disabled")
+                check_dupe_then_insert!(new_is_disabled, is_disabled, DISABLED_IDENT)
             }
         }
     }
@@ -447,6 +442,8 @@ disabled:
         );
 }
 
+const DISABLED_IDENT: &str = "disabled";
+
 #[derive(Clone, Debug)]
 pub enum FileProp {
     Prefs(PropertyValue<Expr<Value<'static>>, Vec<(String, String)>>),
@@ -526,7 +523,7 @@ fn format_file_properties(props: &FileProps) -> impl Display + '_ {
 
         if let Some(implementation_status) = implementation_status {
             write_prop_val(
-                "implementation-status",
+                ImplementationStatus::IDENT,
                 implementation_status,
                 Display::fmt,
                 f,
@@ -558,7 +555,7 @@ fn format_file_properties(props: &FileProps) -> impl Display + '_ {
         }
 
         if let Some(is_disabled) = is_disabled {
-            write_prop_val("disabled", is_disabled, Display::fmt, f)?;
+            write_prop_val(DISABLED_IDENT, is_disabled, Display::fmt, f)?;
         }
 
         Ok(())
@@ -585,11 +582,31 @@ impl Display for ImplementationStatus {
             f,
             "{}",
             match self {
-                Self::Implementing => "implementing",
-                Self::Backlog => "backlog",
-                Self::NotImplementing => "not-implementing",
+                Self::Implementing => Self::IMPLEMENTING,
+                Self::Backlog => Self::BACKLOG,
+                Self::NotImplementing => Self::NOT_IMPLEMENTING,
             }
         )
+    }
+}
+
+impl ImplementationStatus {
+    const IDENT: &'static str = "implementation-status";
+    const IMPLEMENTING: &'static str = "implementing";
+    const BACKLOG: &'static str = "backlog";
+    const NOT_IMPLEMENTING: &'static str = "not-implementing";
+
+    fn property_ident_parser<'a>() -> impl Parser<'a, &'a str, (), ParseError<'a>> {
+        just(Self::IDENT).to(())
+    }
+
+    fn property_value_parser<'a>(
+    ) -> impl Clone + Parser<'a, &'a str, ImplementationStatus, ParseError<'a>> {
+        choice((
+            just(Self::BACKLOG).to(ImplementationStatus::Backlog),
+            just(Self::IMPLEMENTING).to(ImplementationStatus::Implementing),
+            just(Self::NOT_IMPLEMENTING).to(ImplementationStatus::NotImplementing),
+        ))
     }
 }
 
@@ -810,7 +827,7 @@ where
         }
 
         if let Some(exps) = expected {
-            write_normalized(f, &indent, "expected", exps)?;
+            write_normalized(f, &indent, EXPECTED_IDENT, exps)?;
         }
 
         Ok(())
@@ -909,7 +926,9 @@ where
         }
 
         match kind {
-            TestPropKind::Expected(val) => conditional(emitter, span, "expected", expected, val),
+            TestPropKind::Expected(val) => {
+                conditional(emitter, span, EXPECTED_IDENT, expected, val)
+            }
             TestPropKind::Disabled => {
                 if *is_disabled {
                     emitter.emit(Rich::custom(span, "duplicate `disabled` key detected"))
@@ -1070,7 +1089,7 @@ where
         choice((
             helper
                 .parser(
-                    just("expected").to(()),
+                    just(EXPECTED_IDENT).to(()),
                     conditional_term.clone(),
                     choice((
                         outcome_parser.clone().map(Expected::permanent),
@@ -1097,7 +1116,7 @@ where
                 }),
             helper
                 .parser(
-                    just("disabled").to(()),
+                    just(DISABLED_IDENT).to(()),
                     conditional_term,
                     just("true").to(()),
                 )
@@ -1119,6 +1138,16 @@ where
         ))
     }
 }
+
+pub(crate) const EXPECTED_IDENT: &str = "expected";
+pub(crate) const PASS: &str = "PASS";
+pub(crate) const FAIL: &str = "FAIL";
+pub(crate) const NOTRUN: &str = "NOTRUN";
+pub(crate) const TIMEOUT: &str = "TIMEOUT";
+pub(crate) const SKIP: &str = "SKIP";
+pub(crate) const CRASH: &str = "CRASH";
+pub(crate) const OK: &str = "OK";
+pub(crate) const ERROR: &str = "ERROR";
 
 #[derive(Debug, Deserialize, EnumSetType, Hash)]
 #[serde(rename_all = "UPPERCASE")]
@@ -1142,11 +1171,11 @@ impl Display for TestOutcome {
             f,
             "{}",
             match self {
-                Self::Ok => "OK",
-                Self::Timeout => "TIMEOUT",
-                Self::Crash => "CRASH",
-                Self::Error => "ERROR",
-                Self::Skip => "SKIP",
+                Self::Ok => OK,
+                Self::Timeout => TIMEOUT,
+                Self::Crash => CRASH,
+                Self::Error => ERROR,
+                Self::Skip => SKIP,
             }
         )
     }
@@ -1160,11 +1189,11 @@ impl<'a> Properties<'a> for TestProps<TestOutcome> {
         TestProp::property_parser(
             helper,
             choice((
-                keyword("OK").to(TestOutcome::Ok),
-                keyword("CRASH").to(TestOutcome::Crash),
-                keyword("TIMEOUT").to(TestOutcome::Timeout),
-                keyword("ERROR").to(TestOutcome::Error),
-                keyword("SKIP").to(TestOutcome::Skip),
+                keyword(OK).to(TestOutcome::Ok),
+                keyword(CRASH).to(TestOutcome::Crash),
+                keyword(TIMEOUT).to(TestOutcome::Timeout),
+                keyword(ERROR).to(TestOutcome::Error),
+                keyword(SKIP).to(TestOutcome::Skip),
             )),
         )
         .boxed()
@@ -1197,11 +1226,11 @@ impl Display for SubtestOutcome {
             f,
             "{}",
             match self {
-                Self::Pass => "PASS",
-                Self::Fail => "FAIL",
-                Self::Timeout => "TIMEOUT",
-                Self::Crash => "CRASH",
-                Self::NotRun => "NOTRUN",
+                Self::Pass => PASS,
+                Self::Fail => FAIL,
+                Self::Timeout => TIMEOUT,
+                Self::Crash => CRASH,
+                Self::NotRun => NOTRUN,
             }
         )
     }
@@ -1215,11 +1244,11 @@ impl<'a> Properties<'a> for TestProps<SubtestOutcome> {
         TestProp::property_parser(
             helper,
             choice((
-                keyword("PASS").to(SubtestOutcome::Pass),
-                keyword("FAIL").to(SubtestOutcome::Fail),
-                keyword("TIMEOUT").to(SubtestOutcome::Timeout),
-                keyword("CRASH").to(SubtestOutcome::Crash),
-                keyword("NOTRUN").to(SubtestOutcome::NotRun),
+                keyword(PASS).to(SubtestOutcome::Pass),
+                keyword(FAIL).to(SubtestOutcome::Fail),
+                keyword(TIMEOUT).to(SubtestOutcome::Timeout),
+                keyword(CRASH).to(SubtestOutcome::Crash),
+                keyword(NOTRUN).to(SubtestOutcome::NotRun),
             )),
         )
         .boxed()
