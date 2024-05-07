@@ -12,6 +12,7 @@ use camino::{Utf8Component, Utf8Path};
 use enum_map::EnumMap;
 use enumset::{EnumSet, EnumSetType};
 use format::lazy_format;
+use itertools::Itertools;
 use joinery::JoinableIterator;
 use strum::IntoEnumIterator;
 
@@ -381,22 +382,12 @@ where
     }
 
     pub(crate) fn from_fully_expanded(outcomes: FullyExpandedExpectedPropertyValue<Out>) -> Self {
-        fn same_value<T>(iter: impl IntoIterator<Item = T>) -> Option<T>
-        where
-            T: Eq,
-        {
-            let mut iter = iter.into_iter();
-            let first = iter.next()?;
-            for next in iter {
-                if first != next {
-                    return None;
-                }
-            }
-            Some(first)
-        }
-
         Self(
-            if let Some(uniform) = same_value(outcomes.iter().map(|(_, outcomes)| outcomes)) {
+            if let Ok(uniform) = outcomes
+                .iter()
+                .map(|(_, outcome)| outcome)
+                .all_equal_value()
+            {
                 MaybeCollapsed::Collapsed(MaybeCollapsed::Collapsed(uniform))
             } else {
                 let per_bp = |outcomes_by_bp: &EnumMap<_, _>| {
@@ -405,8 +396,11 @@ where
                         .map(|(bp, outcomes)| (bp, *outcomes))
                         .collect()
                 };
-                if let Some(uniform_per_platform) =
-                    same_value(outcomes.0.iter().map(|(_, outcomes_by_bp)| outcomes_by_bp))
+                if let Ok(uniform_per_platform) = outcomes
+                    .0
+                    .iter()
+                    .map(|(_, outcomes)| outcomes)
+                    .all_equal_value()
                 {
                     MaybeCollapsed::Collapsed(MaybeCollapsed::Expanded(per_bp(
                         uniform_per_platform,
@@ -417,8 +411,10 @@ where
                             .0
                             .iter()
                             .map(|(platform, outcomes_by_bp)| {
-                                if let Some(uniform_per_bp) =
-                                    same_value(outcomes_by_bp.iter().map(|(_, outcomes)| *outcomes))
+                                if let Ok(uniform_per_bp) = outcomes_by_bp
+                                    .iter()
+                                    .map(|(_, outcomes)| *outcomes)
+                                    .all_equal_value()
                                 {
                                     (platform, MaybeCollapsed::Collapsed(uniform_per_bp))
                                 } else {
