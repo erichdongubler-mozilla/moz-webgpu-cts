@@ -274,7 +274,7 @@ impl<Out> FullyExpandedExpectedPropertyValue<Out>
 where
     Out: EnumSetType,
 {
-    pub fn uniform(expected: Expected<Out>) -> Self {
+    pub fn unconditional(expected: Expected<Out>) -> Self {
         Self(EnumMap::from_fn(|_idx| EnumMap::from_fn(|_idx| expected)))
     }
 

@@ -862,7 +862,7 @@ where
                 }
                 expected.replace(match val {
                     PropertyValue::Unconditional(exp) => {
-                        FullyExpandedExpectedPropertyValue::uniform(exp)
+                        FullyExpandedExpectedPropertyValue::unconditional(exp)
                     }
                     PropertyValue::Conditional(val) => {
                         let ConditionalValue {
@@ -870,10 +870,12 @@ where
                             fallback,
                         } = val;
                         if conditions.is_empty() {
-                            FullyExpandedExpectedPropertyValue::uniform(fallback.expect(concat!(
-                                "at least one condition or fallback not present ",
-                                "in conditional `expected` property value"
-                            )))
+                            FullyExpandedExpectedPropertyValue::unconditional(fallback.expect(
+                                concat!(
+                                    "at least one condition or fallback not present ",
+                                    "in conditional `expected` property value"
+                                ),
+                            ))
                         } else {
                             let fallback = fallback.unwrap_or_default();
                             FullyExpandedExpectedPropertyValue::from_query(|p, bp| {
