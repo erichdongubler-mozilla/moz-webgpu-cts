@@ -142,13 +142,9 @@ impl<'a> Properties<'a> for FileProps {
 
         let implementation_status = helper
             .parser(
-                just("implementation-status").to(()),
+                ImplementationStatus::property_ident_parser(),
                 conditional_term,
-                choice((
-                    just("backlog").to(ImplementationStatus::Backlog),
-                    just("implementing").to(ImplementationStatus::Implementing),
-                    just("not-implementing").to(ImplementationStatus::NotImplementing),
-                )),
+                ImplementationStatus::property_value_parser(),
             )
             .map(|((), implementation_status)| {
                 FileProp::ImplementationStatus(implementation_status)
@@ -590,6 +586,21 @@ impl Display for ImplementationStatus {
                 Self::NotImplementing => "not-implementing",
             }
         )
+    }
+}
+
+impl ImplementationStatus {
+    fn property_ident_parser<'a>() -> impl Parser<'a, &'a str, (), ParseError<'a>> {
+        just("implementation-status").to(())
+    }
+
+    fn property_value_parser<'a>(
+    ) -> impl Clone + Parser<'a, &'a str, ImplementationStatus, ParseError<'a>> {
+        choice((
+            just("backlog").to(ImplementationStatus::Backlog),
+            just("implementing").to(ImplementationStatus::Implementing),
+            just("not-implementing").to(ImplementationStatus::NotImplementing),
+        ))
     }
 }
 
