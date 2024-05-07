@@ -129,7 +129,7 @@ impl<'a> Properties<'a> for FileProps {
 
         let disabled = helper
             .parser(
-                keyword("disabled").to(()),
+                keyword(DISABLED_IDENT).to(()),
                 conditional_term.clone(),
                 any()
                     .and_is(newline().or(end()).not())
@@ -185,7 +185,7 @@ impl<'a> Properties<'a> for FileProps {
             FileProp::Prefs(new_prefs) => check_dupe_then_insert!(new_prefs, prefs, "prefs"),
             FileProp::Tags(new_tags) => check_dupe_then_insert!(new_tags, tags, "tags"),
             FileProp::Disabled(new_is_disabled) => {
-                check_dupe_then_insert!(new_is_disabled, is_disabled, "disabled")
+                check_dupe_then_insert!(new_is_disabled, is_disabled, DISABLED_IDENT)
             }
         }
     }
@@ -442,6 +442,8 @@ disabled:
         );
 }
 
+const DISABLED_IDENT: &str = "disabled";
+
 #[derive(Clone, Debug)]
 pub enum FileProp {
     Prefs(PropertyValue<Expr<Value<'static>>, Vec<(String, String)>>),
@@ -553,7 +555,7 @@ fn format_file_properties(props: &FileProps) -> impl Display + '_ {
         }
 
         if let Some(is_disabled) = is_disabled {
-            write_prop_val("disabled", is_disabled, Display::fmt, f)?;
+            write_prop_val(DISABLED_IDENT, is_disabled, Display::fmt, f)?;
         }
 
         Ok(())
@@ -1114,7 +1116,7 @@ where
                 }),
             helper
                 .parser(
-                    just("disabled").to(()),
+                    just(DISABLED_IDENT).to(()),
                     conditional_term,
                     just("true").to(()),
                 )
