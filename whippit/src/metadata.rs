@@ -31,7 +31,7 @@ use self::properties::{Properties, PropertiesParseHelper};
 
 pub mod properties;
 
-/// An error emitted by [`File::parser`] and [other WPT metadata parsing logic][self].
+/// An error emitted by [`file_parser`] and [other WPT metadata parsing logic][self].
 pub type ParseError<'a> = Full<Rich<'a, char>, (), ()>;
 
 /// Behavior that needs to be defined to parse [the WPT metadata format][self] with
