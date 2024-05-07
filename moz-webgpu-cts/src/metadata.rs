@@ -164,14 +164,13 @@ impl<'a> Properties<'a> for FileProps {
             tags,
         } = self;
         macro_rules! check_dupe_then_insert {
-            ($new:expr, $old:expr, $prop_name:literal) => {{
+            ($new:expr, $old:expr, $prop_name:expr) => {{
                 if $old.replace($new).is_some() {
                     emitter.emit(Rich::custom(
                         span,
-                        concat!(
-                            "duplicate `",
-                            $prop_name,
-                            "` property detected; discarding oldest"
+                        format!(
+                            "duplicate `{}` property detected; discarding oldest",
+                            $prop_name
                         ),
                     ));
                 }
