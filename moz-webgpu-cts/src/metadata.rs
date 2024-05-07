@@ -825,7 +825,7 @@ where
         }
 
         if let Some(exps) = expected {
-            write_normalized(f, &indent, "expected", exps)?;
+            write_normalized(f, &indent, EXPECTED_IDENT, exps)?;
         }
 
         Ok(())
@@ -924,7 +924,9 @@ where
         }
 
         match kind {
-            TestPropKind::Expected(val) => conditional(emitter, span, "expected", expected, val),
+            TestPropKind::Expected(val) => {
+                conditional(emitter, span, EXPECTED_IDENT, expected, val)
+            }
             TestPropKind::Disabled => {
                 if *is_disabled {
                     emitter.emit(Rich::custom(span, "duplicate `disabled` key detected"))
@@ -1085,7 +1087,7 @@ where
         choice((
             helper
                 .parser(
-                    just("expected").to(()),
+                    just(EXPECTED_IDENT).to(()),
                     conditional_term.clone(),
                     choice((
                         outcome_parser.clone().map(Expected::permanent),
@@ -1135,6 +1137,16 @@ where
     }
 }
 
+pub(crate) const EXPECTED_IDENT: &str = "expected";
+pub(crate) const PASS: &str = "PASS";
+pub(crate) const FAIL: &str = "FAIL";
+pub(crate) const NOTRUN: &str = "NOTRUN";
+pub(crate) const TIMEOUT: &str = "TIMEOUT";
+pub(crate) const SKIP: &str = "SKIP";
+pub(crate) const CRASH: &str = "CRASH";
+pub(crate) const OK: &str = "OK";
+pub(crate) const ERROR: &str = "ERROR";
+
 #[derive(Debug, Deserialize, EnumSetType, Hash)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum TestOutcome {
@@ -1157,11 +1169,11 @@ impl Display for TestOutcome {
             f,
             "{}",
             match self {
-                Self::Ok => "OK",
-                Self::Timeout => "TIMEOUT",
-                Self::Crash => "CRASH",
-                Self::Error => "ERROR",
-                Self::Skip => "SKIP",
+                Self::Ok => OK,
+                Self::Timeout => TIMEOUT,
+                Self::Crash => CRASH,
+                Self::Error => ERROR,
+                Self::Skip => SKIP,
             }
         )
     }
@@ -1175,11 +1187,11 @@ impl<'a> Properties<'a> for TestProps<TestOutcome> {
         TestProp::property_parser(
             helper,
             choice((
-                keyword("OK").to(TestOutcome::Ok),
-                keyword("CRASH").to(TestOutcome::Crash),
-                keyword("TIMEOUT").to(TestOutcome::Timeout),
-                keyword("ERROR").to(TestOutcome::Error),
-                keyword("SKIP").to(TestOutcome::Skip),
+                keyword(OK).to(TestOutcome::Ok),
+                keyword(CRASH).to(TestOutcome::Crash),
+                keyword(TIMEOUT).to(TestOutcome::Timeout),
+                keyword(ERROR).to(TestOutcome::Error),
+                keyword(SKIP).to(TestOutcome::Skip),
             )),
         )
         .boxed()
@@ -1212,11 +1224,11 @@ impl Display for SubtestOutcome {
             f,
             "{}",
             match self {
-                Self::Pass => "PASS",
-                Self::Fail => "FAIL",
-                Self::Timeout => "TIMEOUT",
-                Self::Crash => "CRASH",
-                Self::NotRun => "NOTRUN",
+                Self::Pass => PASS,
+                Self::Fail => FAIL,
+                Self::Timeout => TIMEOUT,
+                Self::Crash => CRASH,
+                Self::NotRun => NOTRUN,
             }
         )
     }
@@ -1230,11 +1242,11 @@ impl<'a> Properties<'a> for TestProps<SubtestOutcome> {
         TestProp::property_parser(
             helper,
             choice((
-                keyword("PASS").to(SubtestOutcome::Pass),
-                keyword("FAIL").to(SubtestOutcome::Fail),
-                keyword("TIMEOUT").to(SubtestOutcome::Timeout),
-                keyword("CRASH").to(SubtestOutcome::Crash),
-                keyword("NOTRUN").to(SubtestOutcome::NotRun),
+                keyword(PASS).to(SubtestOutcome::Pass),
+                keyword(FAIL).to(SubtestOutcome::Fail),
+                keyword(TIMEOUT).to(SubtestOutcome::Timeout),
+                keyword(CRASH).to(SubtestOutcome::Crash),
+                keyword(NOTRUN).to(SubtestOutcome::NotRun),
             )),
         )
         .boxed()
