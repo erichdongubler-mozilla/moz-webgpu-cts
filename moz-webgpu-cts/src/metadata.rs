@@ -30,8 +30,7 @@ use whippit::{
 };
 
 use crate::shared::{
-    Expected, FullyExpandedExpectedPropertyValue, FullyExpandedPropertyValue, MaybeCollapsed,
-    NormalizedPropertyValue,
+    Expected, FullyExpandedPropertyValue, MaybeCollapsed, NormalizedPropertyValue,
 };
 
 #[cfg(test)]
@@ -839,7 +838,7 @@ where
     Out: EnumSetType,
 {
     pub is_disabled: bool,
-    pub expected: Option<FullyExpandedExpectedPropertyValue<Out>>,
+    pub expected: Option<FullyExpandedPropertyValue<Expected<Out>>>,
 }
 
 impl<Out> Default for TestProps<Out>
@@ -866,50 +865,65 @@ where
 
         let TestProp { kind, span } = prop;
 
-        match kind {
-            TestPropKind::Expected(val) => {
-                if expected.is_some() {
-                    emitter.emit(Rich::custom(span, "duplicate `expected` key detected"));
-                    return;
-                }
-                expected.replace(match val {
-                    PropertyValue::Unconditional(exp) => {
-                        FullyExpandedExpectedPropertyValue::unconditional(exp)
-                    }
-                    PropertyValue::Conditional(val) => {
-                        let ConditionalValue {
-                            conditions,
-                            fallback,
-                        } = val;
-                        if conditions.is_empty() {
-                            FullyExpandedExpectedPropertyValue::unconditional(fallback.expect(
+        fn conditional<T>(
+            emitter: &mut Emitter<Rich<'_, char>>,
+            span: SimpleSpan,
+            ident: &str,
+            val: &mut Option<FullyExpandedPropertyValue<T>>,
+            incoming: PropertyValue<Applicability, T>,
+        ) where
+            T: Clone + Default,
+        {
+            if val.is_some() {
+                emitter.emit(Rich::custom(
+                    span,
+                    format!("duplicate `{ident}` key detected"),
+                ));
+                return;
+            }
+            val.replace(match incoming {
+                PropertyValue::Unconditional(val) => FullyExpandedPropertyValue::unconditional(val),
+                PropertyValue::Conditional(val) => {
+                    let ConditionalValue {
+                        conditions,
+                        fallback,
+                    } = val;
+                    if conditions.is_empty() {
+                        let fallback = fallback.unwrap_or_else(|| {
+                            panic!(
                                 concat!(
                                     "at least one condition or fallback not present ",
-                                    "in conditional `expected` property value"
+                                    "in conditional `{}` property value"
                                 ),
-                            ))
-                        } else {
-                            let fallback = fallback.unwrap_or_default();
-                            FullyExpandedExpectedPropertyValue::from_query(|p, bp| {
-                                let mut matched = None;
+                                ident
+                            )
+                        });
+                        FullyExpandedPropertyValue::unconditional(fallback)
+                    } else {
+                        let fallback = fallback.unwrap_or_default();
+                        FullyExpandedPropertyValue::from_query(|p, bp| {
+                            let mut matched = None;
 
-                                for (applicability, val) in &conditions {
-                                    let Applicability {
-                                        platform,
-                                        build_profile,
-                                    } = applicability;
-                                    if platform.as_ref().map_or(true, |p2| *p2 == p)
-                                        && build_profile.as_ref().map_or(true, |bp2| *bp2 == bp)
-                                    {
-                                        matched = Some(*val);
-                                    }
+                            for (applicability, val) in &*conditions {
+                                let Applicability {
+                                    platform,
+                                    build_profile,
+                                } = applicability;
+                                if platform.as_ref().map_or(true, |p2| *p2 == p)
+                                    && build_profile.as_ref().map_or(true, |bp2| *bp2 == bp)
+                                {
+                                    matched = Some(val.clone());
                                 }
-                                matched.unwrap_or(fallback)
-                            })
-                        }
+                            }
+                            matched.unwrap_or(fallback.clone())
+                        })
                     }
-                });
-            }
+                }
+            });
+        }
+
+        match kind {
+            TestPropKind::Expected(val) => conditional(emitter, span, "expected", expected, val),
             TestPropKind::Disabled => {
                 if *is_disabled {
                     emitter.emit(Rich::custom(span, "duplicate `disabled` key detected"))
