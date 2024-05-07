@@ -66,7 +66,7 @@ where
     /// conditional expression(s), and value.
     type ParsedProperty: Clone + Debug;
 
-    /// Retrieve a parser for a single property that [`Self::insert`] can accept.
+    /// Retrieve a parser for a single property that [`Self::add_property`] can accept.
     fn property_parser(
         helper: &mut PropertiesParseHelper<'a>,
     ) -> Boxed<'a, 'a, &'a str, Self::ParsedProperty, ParseError<'a>>;
