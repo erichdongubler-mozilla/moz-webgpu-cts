@@ -180,7 +180,7 @@ impl<'a> Properties<'a> for FileProps {
             FileProp::ImplementationStatus(new_impl_status) => check_dupe_then_insert!(
                 new_impl_status,
                 implementation_status,
-                "implementation-status"
+                ImplementationStatus::IDENT
             ),
             FileProp::Prefs(new_prefs) => check_dupe_then_insert!(new_prefs, prefs, "prefs"),
             FileProp::Tags(new_tags) => check_dupe_then_insert!(new_tags, tags, "tags"),
@@ -521,7 +521,7 @@ fn format_file_properties(props: &FileProps) -> impl Display + '_ {
 
         if let Some(implementation_status) = implementation_status {
             write_prop_val(
-                "implementation-status",
+                ImplementationStatus::IDENT,
                 implementation_status,
                 Display::fmt,
                 f,
@@ -580,25 +580,30 @@ impl Display for ImplementationStatus {
             f,
             "{}",
             match self {
-                Self::Implementing => "implementing",
-                Self::Backlog => "backlog",
-                Self::NotImplementing => "not-implementing",
+                Self::Implementing => Self::IMPLEMENTING,
+                Self::Backlog => Self::BACKLOG,
+                Self::NotImplementing => Self::NOT_IMPLEMENTING,
             }
         )
     }
 }
 
 impl ImplementationStatus {
+    const IDENT: &'static str = "implementation-status";
+    const IMPLEMENTING: &'static str = "implementing";
+    const BACKLOG: &'static str = "backlog";
+    const NOT_IMPLEMENTING: &'static str = "not-implementing";
+
     fn property_ident_parser<'a>() -> impl Parser<'a, &'a str, (), ParseError<'a>> {
-        just("implementation-status").to(())
+        just(Self::IDENT).to(())
     }
 
     fn property_value_parser<'a>(
     ) -> impl Clone + Parser<'a, &'a str, ImplementationStatus, ParseError<'a>> {
         choice((
-            just("backlog").to(ImplementationStatus::Backlog),
-            just("implementing").to(ImplementationStatus::Implementing),
-            just("not-implementing").to(ImplementationStatus::NotImplementing),
+            just(Self::BACKLOG).to(ImplementationStatus::Backlog),
+            just(Self::IMPLEMENTING).to(ImplementationStatus::Implementing),
+            just(Self::NOT_IMPLEMENTING).to(ImplementationStatus::NotImplementing),
         ))
     }
 }
