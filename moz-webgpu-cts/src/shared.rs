@@ -228,8 +228,8 @@ where
     }
 }
 
-/// A completely flat representation of [`NormalizedExpectedPropertyValueData`] suitable for
-/// byte representation in memory.
+/// A completely flat representation of [`NormalizedPropertyValue`] suitable for byte
+/// representation in memory.
 #[derive(Debug, Default, Clone, Copy, Eq, PartialEq)]
 pub struct ExpandedPropertyValue<T>(ExpandedPropertyValueData<T>);
 
@@ -414,8 +414,11 @@ pub type Normalized<K, V> = MaybeCollapsed<V, BTreeMap<K, V>>;
 
 /// A single symbolic path to a test and its metadata.
 ///
-/// This API is useful as a common representation of a path for [`crate::report::ExecutionReport`]s
-/// and [`crate::metadata::File`]s.
+/// This API is useful as a common representation of a path for [`ExecutionReport`]s and
+/// [`metadata::File`]s.
+///
+/// [`ExecutionReport`]: crate::report::ExecutionReport
+/// [`metadata::File`]: crate::metadata::File
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(crate) struct TestPath<'a> {
     pub scope: TestScope,
