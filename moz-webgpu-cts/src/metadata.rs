@@ -746,6 +746,7 @@ where
         let TestProps {
             is_disabled,
             expected,
+            implementation_status,
         } = property;
 
         if *is_disabled {
@@ -826,6 +827,15 @@ where
             Ok(())
         }
 
+        if let Some(implementation_status) = implementation_status {
+            write_normalized(
+                f,
+                &indent,
+                ImplementationStatus::IDENT,
+                implementation_status,
+            )?;
+        }
+
         if let Some(exps) = expected {
             write_normalized(f, &indent, EXPECTED_IDENT, exps)?;
         }
@@ -854,6 +864,7 @@ where
 {
     pub is_disabled: bool,
     pub expected: Option<ExpandedPropertyValue<Expected<Out>>>,
+    pub implementation_status: Option<ExpandedPropertyValue<ImplementationStatus>>,
 }
 
 impl<'a, Out> TestProps<Out>
@@ -864,6 +875,7 @@ where
         let Self {
             is_disabled,
             expected,
+            implementation_status,
         } = self;
 
         let TestProp { kind, span } = prop;
@@ -935,6 +947,13 @@ where
                 }
                 *is_disabled = true;
             }
+            TestPropKind::ImplementationStatus(val) => conditional(
+                emitter,
+                span,
+                ImplementationStatus::IDENT,
+                implementation_status,
+                val,
+            ),
         }
     }
 }
@@ -961,6 +980,7 @@ where
 {
     Expected(PropertyValue<Applicability, Expected<Out>>),
     Disabled,
+    ImplementationStatus(PropertyValue<Applicability, ImplementationStatus>),
 }
 
 impl<Out> TestProp<Out>
@@ -1117,7 +1137,7 @@ where
             helper
                 .parser(
                     just(DISABLED_IDENT).to(()),
-                    conditional_term,
+                    conditional_term.clone(),
                     just("true").to(()),
                 )
                 .validate(|((), val), e, emitter| {
@@ -1134,6 +1154,16 @@ where
                         span: e.span(),
                         kind: TestPropKind::Disabled,
                     }
+                }),
+            helper
+                .parser(
+                    ImplementationStatus::property_ident_parser(),
+                    conditional_term,
+                    ImplementationStatus::property_value_parser(),
+                )
+                .map_with(|((), val), e| TestProp {
+                    span: e.span(),
+                    kind: TestPropKind::ImplementationStatus(val),
                 }),
         ))
     }
@@ -1292,6 +1322,7 @@ r#"
                         properties: TestProps {
                             is_disabled: false,
                             expected: None,
+                            implementation_status: None,
                         },
                         subtests: {},
                     },
@@ -1325,12 +1356,14 @@ r#"
                         properties: TestProps {
                             is_disabled: false,
                             expected: None,
+                            implementation_status: None,
                         },
                         subtests: {
                             "blarg": Subtest {
                                 properties: TestProps {
                                     is_disabled: false,
                                     expected: None,
+                                    implementation_status: None,
                                 },
                             },
                         },
@@ -1366,6 +1399,7 @@ r#"
                         properties: TestProps {
                             is_disabled: false,
                             expected: None,
+                            implementation_status: None,
                         },
                         subtests: {
                             "blarg": Subtest {
@@ -1401,6 +1435,7 @@ r#"
                                             },
                                         ),
                                     ),
+                                    implementation_status: None,
                                 },
                             },
                         },
@@ -1450,6 +1485,7 @@ r#"
                     properties: TestProps {
                         is_disabled: false,
                         expected: None,
+                        implementation_status: None,
                     },
                     subtests: {
                         "blarg": Subtest {
@@ -1491,6 +1527,7 @@ r#"
                                         },
                                     ),
                                 ),
+                                implementation_status: None,
                             },
                         },
                     },
@@ -1549,6 +1586,7 @@ r#"
                                 },
                             ),
                         ),
+                        implementation_status: None,
                     },
                     subtests: {
                         "blarg": Subtest {
@@ -1584,6 +1622,7 @@ r#"
                                         },
                                     ),
                                 ),
+                                implementation_status: None,
                             },
                         },
                     },
@@ -1613,6 +1652,7 @@ r#"
                     properties: TestProps {
                         is_disabled: false,
                         expected: None,
+                        implementation_status: None,
                     },
                     subtests: {
                         "blarg": Subtest {
@@ -1648,6 +1688,7 @@ r#"
                                         },
                                     ),
                                 ),
+                                implementation_status: None,
                             },
                         },
                     },
@@ -1678,6 +1719,7 @@ r#"
                     properties: TestProps {
                         is_disabled: false,
                         expected: None,
+                        implementation_status: None,
                     },
                     subtests: {
                         "blarg": Subtest {
@@ -1713,6 +1755,7 @@ r#"
                                         },
                                     ),
                                 ),
+                                implementation_status: None,
                             },
                         },
                     },
@@ -1741,6 +1784,7 @@ r#"
                     properties: TestProps {
                         is_disabled: false,
                         expected: None,
+                        implementation_status: None,
                     },
                     subtests: {
                         ":": Subtest {
@@ -1776,6 +1820,7 @@ r#"
                                         },
                                     ),
                                 ),
+                                implementation_status: None,
                             },
                         },
                     },

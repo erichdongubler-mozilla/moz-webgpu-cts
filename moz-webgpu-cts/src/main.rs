@@ -960,6 +960,7 @@ fn run(cli: Cli) -> ExitCode {
                 let TestProps {
                     is_disabled,
                     expected,
+                    implementation_status: _,
                 } = properties;
 
                 let test_name = Arc::new(test_name);
@@ -1074,6 +1075,7 @@ fn run(cli: Cli) -> ExitCode {
                     let TestProps {
                         is_disabled,
                         expected,
+                        implementation_status: _,
                     } = properties;
 
                     if is_disabled {
