@@ -30,7 +30,8 @@ use whippit::{
 };
 
 use crate::shared::{
-    Expected, FullyExpandedExpectedPropertyValue, MaybeCollapsed, NormalizedExpectedPropertyValue,
+    Expected, FullyExpandedExpectedPropertyValue, FullyExpandedPropertyValue, MaybeCollapsed,
+    NormalizedPropertyValue,
 };
 
 #[cfg(test)]
@@ -737,46 +738,51 @@ where
             writeln!(f, "{indent}disabled: true")?;
         }
 
-        if let Some(exps) = expected {
-            fn if_not_default<Out>(
-                exp: &Expected<Out>,
-                f: impl FnOnce() -> fmt::Result,
-            ) -> fmt::Result
+        fn write_normalized<T>(
+            f: &mut Formatter<'_>,
+            indent: &dyn Display,
+            ident: &str,
+            prop: &FullyExpandedPropertyValue<T>,
+        ) -> fmt::Result
+        where
+            T: Clone + Default + Display + Eq,
+        {
+            fn if_not_default<T>(exp: &T, f: impl FnOnce() -> fmt::Result) -> fmt::Result
             where
-                Out: Default + EnumSetType + Eq + PartialEq,
+                T: Default + Eq,
             {
-                if exp != &Out::default() {
+                if exp != &T::default() {
                     f()
                 } else {
                     Ok(())
                 }
             }
 
-            let expected = lazy_format!("{indent}expected");
+            let ident = lazy_format!("{indent}{ident}");
             let r#if = lazy_format!("{indent}  if");
             let disp_build_profile = |build_profile| match build_profile {
                 BuildProfile::Debug => "debug",
                 BuildProfile::Optimized => "not debug",
             };
-            let exps = NormalizedExpectedPropertyValue::from_fully_expanded(*exps);
-            match exps.inner() {
-                MaybeCollapsed::Collapsed(exps) => match exps {
-                    MaybeCollapsed::Collapsed(exps) => {
-                        if_not_default(exps, || writeln!(f, "{expected}: {exps}"))?;
+            let normalized = NormalizedPropertyValue::from_fully_expanded(prop.clone());
+            match normalized.inner() {
+                MaybeCollapsed::Collapsed(t) => match t {
+                    MaybeCollapsed::Collapsed(t) => {
+                        if_not_default(t, || writeln!(f, "{ident}: {t}"))?;
                     }
                     MaybeCollapsed::Expanded(by_build_profile) => {
-                        writeln!(f, "{expected}:")?;
+                        writeln!(f, "{ident}:")?;
                         debug_assert!(!by_build_profile.is_empty());
-                        for (build_profile, exps) in by_build_profile {
+                        for (build_profile, t) in by_build_profile {
                             let build_profile = disp_build_profile(*build_profile);
-                            if_not_default(exps, || writeln!(f, "{if} {build_profile}: {exps}"))?;
+                            if_not_default(t, || writeln!(f, "{if} {build_profile}: {t}"))?;
                         }
                     }
                 },
                 MaybeCollapsed::Expanded(by_platform) => {
-                    writeln!(f, "{expected}:")?;
+                    writeln!(f, "{ident}:")?;
                     debug_assert!(!by_platform.is_empty());
-                    for (platform, exps) in by_platform {
+                    for (platform, t) in by_platform {
                         let platform = {
                             let platform_str = match platform {
                                 Platform::Windows => "win",
@@ -785,16 +791,16 @@ where
                             };
                             lazy_format!(move |f| write!(f, "os == {platform_str:?}"))
                         };
-                        match exps {
-                            MaybeCollapsed::Collapsed(exps) => {
-                                if_not_default(exps, || writeln!(f, "{if} {platform}: {exps}"))?
+                        match t {
+                            MaybeCollapsed::Collapsed(t) => {
+                                if_not_default(t, || writeln!(f, "{if} {platform}: {t}"))?
                             }
                             MaybeCollapsed::Expanded(by_build_profile) => {
                                 debug_assert!(!by_build_profile.is_empty());
-                                for (build_profile, exps) in by_build_profile {
+                                for (build_profile, t) in by_build_profile {
                                     let build_profile = disp_build_profile(*build_profile);
-                                    if_not_default(exps, || {
-                                        writeln!(f, "{if} {platform} and {build_profile}: {exps}")
+                                    if_not_default(t, || {
+                                        writeln!(f, "{if} {platform} and {build_profile}: {t}")
                                     })?;
                                 }
                             }
@@ -802,6 +808,12 @@ where
                     }
                 }
             }
+
+            Ok(())
+        }
+
+        if let Some(exps) = expected {
+            write_normalized(f, &indent, "expected", exps)?;
         }
 
         Ok(())

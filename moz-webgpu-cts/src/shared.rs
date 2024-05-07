@@ -417,10 +417,6 @@ pub type NormalizedPropertyValueData<T> = Normalized<Platform, Normalized<BuildP
 /// A value that is either `V` or a set of `V`s branched on by `K`.
 pub type Normalized<K, V> = MaybeCollapsed<V, BTreeMap<K, V>>;
 
-/// A normalized representation of [`Expected`]s in [`TestProps`]. See [`NormalizedPropertyValue`]
-/// for branching factors.
-pub type NormalizedExpectedPropertyValue<Out> = NormalizedPropertyValue<Expected<Out>>;
-
 /// A single symbolic path to a test and its metadata.
 ///
 /// This API is useful as a common representation of a path for [`crate::report::ExecutionReport`]s
