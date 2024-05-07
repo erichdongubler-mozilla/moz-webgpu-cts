@@ -312,16 +312,14 @@ impl<T> ExpandedPropertyValue<T> {
 
 pub type ExpandedPropertyValueData<T> = EnumMap<Platform, EnumMap<BuildProfile, T>>;
 
-pub type ExpandedExpectedPropertyValue<Out> = ExpandedPropertyValue<Expected<Out>>;
-
 #[test]
 fn expanded_expected_is_tiny() {
     use crate::metadata::{SubtestOutcome, TestOutcome};
     use std::mem::size_of;
 
-    assert_eq!(size_of::<ExpandedExpectedPropertyValue<TestOutcome>>(), 6);
+    assert_eq!(size_of::<ExpandedPropertyValue<Expected<TestOutcome>>>(), 6);
     assert_eq!(
-        size_of::<ExpandedExpectedPropertyValue<SubtestOutcome>>(),
+        size_of::<ExpandedPropertyValue<Expected<SubtestOutcome>>>(),
         6
     );
 }
