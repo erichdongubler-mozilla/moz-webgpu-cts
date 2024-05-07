@@ -12,7 +12,7 @@ use self::{
     report::{
         ExecutionReport, RunInfo, SubtestExecutionResult, TestExecutionEntry, TestExecutionResult,
     },
-    shared::{Expected, FullyExpandedExpectedPropertyValue, TestPath},
+    shared::{ExpandedPropertyValue, Expected, TestPath},
 };
 
 use std::{
@@ -546,11 +546,9 @@ fn run(cli: Cli) -> ExitCode {
                                     .copied()
                             };
                             let all_reported = || {
-                                FullyExpandedExpectedPropertyValue::from_query(
-                                    |platform, build_profile| {
-                                        reported(platform, build_profile).unwrap_or_default()
-                                    },
-                                )
+                                ExpandedPropertyValue::from_query(|platform, build_profile| {
+                                    reported(platform, build_profile).unwrap_or_default()
+                                })
                             };
                             let resolve = match preset {
                                 ReportProcessingPreset::ResetAll => {
@@ -568,14 +566,12 @@ fn run(cli: Cli) -> ExitCode {
                             };
 
                             if let Some(meta_expected) = meta_props.expected {
-                                FullyExpandedExpectedPropertyValue::from_query(
-                                    |platform, build_profile| {
-                                        resolve(
-                                            meta_expected.get(platform, build_profile),
-                                            reported(platform, build_profile),
-                                        )
-                                    },
-                                )
+                                ExpandedPropertyValue::from_query(|platform, build_profile| {
+                                    resolve(
+                                        meta_expected[(platform, build_profile)],
+                                        reported(platform, build_profile),
+                                    )
+                                })
                             } else {
                                 all_reported()
                             }
@@ -1065,7 +1061,7 @@ fn run(cli: Cli) -> ExitCode {
                             })
                         };
 
-                    for ((platform, _build_profile), expected) in expected.iter() {
+                    for ((platform, _build_profile), expected) in expected.into_iter() {
                         apply_to_specific_platforms(&mut analysis, platform, expected)
                     }
                 }
@@ -1139,7 +1135,7 @@ fn run(cli: Cli) -> ExitCode {
                                 })
                             };
 
-                        for ((platform, _build_profile), expected) in expected.iter() {
+                        for ((platform, _build_profile), expected) in expected.into_iter() {
                             apply_to_specific_platforms(&mut analysis, platform, expected)
                         }
                     }

@@ -29,9 +29,7 @@ use whippit::{
     },
 };
 
-use crate::shared::{
-    Expected, FullyExpandedExpectedPropertyValue, MaybeCollapsed, NormalizedExpectedPropertyValue,
-};
+use crate::shared::{ExpandedPropertyValue, Expected, MaybeCollapsed, NormalizedPropertyValue};
 
 #[cfg(test)]
 use insta::assert_debug_snapshot;
@@ -737,46 +735,51 @@ where
             writeln!(f, "{indent}disabled: true")?;
         }
 
-        if let Some(exps) = expected {
-            fn if_not_default<Out>(
-                exp: &Expected<Out>,
-                f: impl FnOnce() -> fmt::Result,
-            ) -> fmt::Result
+        fn write_normalized<T>(
+            f: &mut Formatter<'_>,
+            indent: &dyn Display,
+            ident: &str,
+            prop: &ExpandedPropertyValue<T>,
+        ) -> fmt::Result
+        where
+            T: Clone + Default + Display + Eq,
+        {
+            fn if_not_default<T>(exp: &T, f: impl FnOnce() -> fmt::Result) -> fmt::Result
             where
-                Out: Default + EnumSetType + Eq + PartialEq,
+                T: Default + Eq,
             {
-                if exp != &Out::default() {
+                if exp != &T::default() {
                     f()
                 } else {
                     Ok(())
                 }
             }
 
-            let expected = lazy_format!("{indent}expected");
+            let ident = lazy_format!("{indent}{ident}");
             let r#if = lazy_format!("{indent}  if");
             let disp_build_profile = |build_profile| match build_profile {
                 BuildProfile::Debug => "debug",
                 BuildProfile::Optimized => "not debug",
             };
-            let exps = NormalizedExpectedPropertyValue::from_fully_expanded(*exps);
-            match exps.inner() {
-                MaybeCollapsed::Collapsed(exps) => match exps {
-                    MaybeCollapsed::Collapsed(exps) => {
-                        if_not_default(exps, || writeln!(f, "{expected}: {exps}"))?;
+            let normalized = NormalizedPropertyValue::from_expanded(prop.clone());
+            match normalized.inner() {
+                MaybeCollapsed::Collapsed(t) => match t {
+                    MaybeCollapsed::Collapsed(t) => {
+                        if_not_default(t, || writeln!(f, "{ident}: {t}"))?;
                     }
                     MaybeCollapsed::Expanded(by_build_profile) => {
-                        writeln!(f, "{expected}:")?;
+                        writeln!(f, "{ident}:")?;
                         debug_assert!(!by_build_profile.is_empty());
-                        for (build_profile, exps) in by_build_profile {
+                        for (build_profile, t) in by_build_profile {
                             let build_profile = disp_build_profile(*build_profile);
-                            if_not_default(exps, || writeln!(f, "{if} {build_profile}: {exps}"))?;
+                            if_not_default(t, || writeln!(f, "{if} {build_profile}: {t}"))?;
                         }
                     }
                 },
                 MaybeCollapsed::Expanded(by_platform) => {
-                    writeln!(f, "{expected}:")?;
+                    writeln!(f, "{ident}:")?;
                     debug_assert!(!by_platform.is_empty());
-                    for (platform, exps) in by_platform {
+                    for (platform, t) in by_platform {
                         let platform = {
                             let platform_str = match platform {
                                 Platform::Windows => "win",
@@ -785,16 +788,16 @@ where
                             };
                             lazy_format!(move |f| write!(f, "os == {platform_str:?}"))
                         };
-                        match exps {
-                            MaybeCollapsed::Collapsed(exps) => {
-                                if_not_default(exps, || writeln!(f, "{if} {platform}: {exps}"))?
+                        match t {
+                            MaybeCollapsed::Collapsed(t) => {
+                                if_not_default(t, || writeln!(f, "{if} {platform}: {t}"))?
                             }
                             MaybeCollapsed::Expanded(by_build_profile) => {
                                 debug_assert!(!by_build_profile.is_empty());
-                                for (build_profile, exps) in by_build_profile {
+                                for (build_profile, t) in by_build_profile {
                                     let build_profile = disp_build_profile(*build_profile);
-                                    if_not_default(exps, || {
-                                        writeln!(f, "{if} {platform} and {build_profile}: {exps}")
+                                    if_not_default(t, || {
+                                        writeln!(f, "{if} {platform} and {build_profile}: {t}")
                                     })?;
                                 }
                             }
@@ -802,6 +805,12 @@ where
                     }
                 }
             }
+
+            Ok(())
+        }
+
+        if let Some(exps) = expected {
+            write_normalized(f, &indent, "expected", exps)?;
         }
 
         Ok(())
@@ -821,25 +830,13 @@ pub enum BuildProfile {
     Optimized,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct TestProps<Out>
 where
     Out: EnumSetType,
 {
     pub is_disabled: bool,
-    pub expected: Option<FullyExpandedExpectedPropertyValue<Out>>,
-}
-
-impl<Out> Default for TestProps<Out>
-where
-    Out: EnumSetType,
-{
-    fn default() -> Self {
-        Self {
-            is_disabled: false,
-            expected: None,
-        }
-    }
+    pub expected: Option<ExpandedPropertyValue<Expected<Out>>>,
 }
 
 impl<'a, Out> TestProps<Out>
@@ -854,48 +851,65 @@ where
 
         let TestProp { kind, span } = prop;
 
-        match kind {
-            TestPropKind::Expected(val) => {
-                if expected.is_some() {
-                    emitter.emit(Rich::custom(span, "duplicate `expected` key detected"));
-                    return;
-                }
-                expected.replace(match val {
-                    PropertyValue::Unconditional(exp) => {
-                        FullyExpandedExpectedPropertyValue::uniform(exp)
-                    }
-                    PropertyValue::Conditional(val) => {
-                        let ConditionalValue {
-                            conditions,
-                            fallback,
-                        } = val;
-                        if conditions.is_empty() {
-                            FullyExpandedExpectedPropertyValue::uniform(fallback.expect(concat!(
-                                "at least one condition or fallback not present ",
-                                "in conditional `expected` property value"
-                            )))
-                        } else {
-                            let fallback = fallback.unwrap_or_default();
-                            FullyExpandedExpectedPropertyValue::from_query(|p, bp| {
-                                let mut matched = None;
-
-                                for (applicability, val) in &conditions {
-                                    let Applicability {
-                                        platform,
-                                        build_profile,
-                                    } = applicability;
-                                    if platform.as_ref().map_or(true, |p2| *p2 == p)
-                                        && build_profile.as_ref().map_or(true, |bp2| *bp2 == bp)
-                                    {
-                                        matched = Some(*val);
-                                    }
-                                }
-                                matched.unwrap_or(fallback)
-                            })
-                        }
-                    }
-                });
+        fn conditional<T>(
+            emitter: &mut Emitter<Rich<'_, char>>,
+            span: SimpleSpan,
+            ident: &str,
+            val: &mut Option<ExpandedPropertyValue<T>>,
+            incoming: PropertyValue<Applicability, T>,
+        ) where
+            T: Clone + Default,
+        {
+            if val.is_some() {
+                emitter.emit(Rich::custom(
+                    span,
+                    format!("duplicate `{ident}` key detected"),
+                ));
+                return;
             }
+            val.replace(match incoming {
+                PropertyValue::Unconditional(val) => ExpandedPropertyValue::unconditional(val),
+                PropertyValue::Conditional(val) => {
+                    let ConditionalValue {
+                        conditions,
+                        fallback,
+                    } = val;
+                    if conditions.is_empty() {
+                        let fallback = fallback.unwrap_or_else(|| {
+                            panic!(
+                                concat!(
+                                    "at least one condition or fallback not present ",
+                                    "in conditional `{}` property value"
+                                ),
+                                ident
+                            )
+                        });
+                        ExpandedPropertyValue::unconditional(fallback)
+                    } else {
+                        let fallback = fallback.unwrap_or_default();
+                        ExpandedPropertyValue::from_query(|p, bp| {
+                            let mut matched = None;
+
+                            for (applicability, val) in &*conditions {
+                                let Applicability {
+                                    platform,
+                                    build_profile,
+                                } = applicability;
+                                if platform.as_ref().map_or(true, |p2| *p2 == p)
+                                    && build_profile.as_ref().map_or(true, |bp2| *bp2 == bp)
+                                {
+                                    matched = Some(val.clone());
+                                }
+                            }
+                            matched.unwrap_or(fallback.clone())
+                        })
+                    }
+                }
+            });
+        }
+
+        match kind {
+            TestPropKind::Expected(val) => conditional(emitter, span, "expected", expected, val),
             TestPropKind::Disabled => {
                 if *is_disabled {
                     emitter.emit(Rich::custom(span, "duplicate `disabled` key detected"))
@@ -1329,7 +1343,7 @@ r#"
                                 properties: TestProps {
                                     is_disabled: false,
                                     expected: Some(
-                                        FullyExpandedExpectedPropertyValue(
+                                        ExpandedPropertyValue(
                                             {
                                                 Windows: {
                                                     Debug: [
@@ -1413,7 +1427,7 @@ r#"
                             properties: TestProps {
                                 is_disabled: false,
                                 expected: Some(
-                                    FullyExpandedExpectedPropertyValue(
+                                    ExpandedPropertyValue(
                                         {
                                             Windows: {
                                                 Debug: [
@@ -1477,7 +1491,7 @@ r#"
                     properties: TestProps {
                         is_disabled: false,
                         expected: Some(
-                            FullyExpandedExpectedPropertyValue(
+                            ExpandedPropertyValue(
                                 {
                                     Windows: {
                                         Debug: [
@@ -1512,7 +1526,7 @@ r#"
                             properties: TestProps {
                                 is_disabled: false,
                                 expected: Some(
-                                    FullyExpandedExpectedPropertyValue(
+                                    ExpandedPropertyValue(
                                         {
                                             Windows: {
                                                 Debug: [
@@ -1576,7 +1590,7 @@ r#"
                             properties: TestProps {
                                 is_disabled: false,
                                 expected: Some(
-                                    FullyExpandedExpectedPropertyValue(
+                                    ExpandedPropertyValue(
                                         {
                                             Windows: {
                                                 Debug: [
@@ -1641,7 +1655,7 @@ r#"
                             properties: TestProps {
                                 is_disabled: false,
                                 expected: Some(
-                                    FullyExpandedExpectedPropertyValue(
+                                    ExpandedPropertyValue(
                                         {
                                             Windows: {
                                                 Debug: [
@@ -1704,7 +1718,7 @@ r#"
                             properties: TestProps {
                                 is_disabled: false,
                                 expected: Some(
-                                    FullyExpandedExpectedPropertyValue(
+                                    ExpandedPropertyValue(
                                         {
                                             Windows: {
                                                 Debug: [

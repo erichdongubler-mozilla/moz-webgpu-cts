@@ -12,8 +12,8 @@ use camino::{Utf8Component, Utf8Path};
 use enum_map::EnumMap;
 use enumset::{EnumSet, EnumSetType};
 use format::lazy_format;
+use itertools::Itertools;
 use joinery::JoinableIterator;
-use strum::IntoEnumIterator;
 
 use crate::metadata::{BuildProfile, Platform};
 
@@ -230,37 +230,18 @@ where
 
 /// A completely flat representation of [`NormalizedExpectedPropertyValueData`] suitable for
 /// byte representation in memory.
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub struct FullyExpandedExpectedPropertyValue<Out>(
-    EnumMap<Platform, EnumMap<BuildProfile, Expected<Out>>>,
-)
-where
-    Out: EnumSetType;
+#[derive(Debug, Default, Clone, Copy, Eq, PartialEq)]
+pub struct ExpandedPropertyValue<T>(ExpandedPropertyValueData<T>);
 
-impl<Out> Default for FullyExpandedExpectedPropertyValue<Out>
-where
-    Out: Default + EnumSetType,
-{
-    fn default() -> Self {
-        Self(Default::default())
-    }
-}
-
-impl<Out> Index<(Platform, BuildProfile)> for FullyExpandedExpectedPropertyValue<Out>
-where
-    Out: EnumSetType,
-{
-    type Output = Expected<Out>;
+impl<T> Index<(Platform, BuildProfile)> for ExpandedPropertyValue<T> {
+    type Output = T;
 
     fn index(&self, (platform, build_profile): (Platform, BuildProfile)) -> &Self::Output {
         &self.0[platform][build_profile]
     }
 }
 
-impl<Out> IndexMut<(Platform, BuildProfile)> for FullyExpandedExpectedPropertyValue<Out>
-where
-    Out: EnumSetType,
-{
+impl<Out> IndexMut<(Platform, BuildProfile)> for ExpandedPropertyValue<Out> {
     fn index_mut(
         &mut self,
         (platform, build_profile): (Platform, BuildProfile),
@@ -269,76 +250,82 @@ where
     }
 }
 
-impl<Out> FullyExpandedExpectedPropertyValue<Out>
+impl<T> ExpandedPropertyValue<T>
 where
-    Out: EnumSetType,
+    T: Clone,
 {
-    pub fn uniform(expected: Expected<Out>) -> Self {
-        Self(EnumMap::from_fn(|_idx| EnumMap::from_fn(|_idx| expected)))
-    }
-
-    pub fn get(&self, platform: Platform, build_profile: BuildProfile) -> Expected<Out> {
-        self.0[platform][build_profile]
-    }
-
-    pub(crate) fn iter(
-        &self,
-    ) -> impl Iterator<Item = ((Platform, BuildProfile), Expected<Out>)> + '_ {
-        self.0.iter().flat_map(|(platform, exps_by_bp)| {
-            exps_by_bp
-                .iter()
-                .map(move |(build_profile, expected)| ((platform, build_profile), *expected))
-        })
-    }
-
-    pub(crate) fn iter_mut(
-        &mut self,
-    ) -> impl Iterator<Item = ((Platform, BuildProfile), &mut Expected<Out>)> + '_ {
-        self.0.iter_mut().flat_map(|(platform, exps_by_bp)| {
-            exps_by_bp
-                .iter_mut()
-                .map(move |(build_profile, expected)| ((platform, build_profile), expected))
-        })
+    pub fn unconditional(value: T) -> Self {
+        Self::from_query(|_, _| value.clone())
     }
 }
 
-impl<Out> FullyExpandedExpectedPropertyValue<Out>
-where
-    Out: Default + EnumSetType,
-{
+impl<T> ExpandedPropertyValue<T> {
+    pub(crate) fn into_iter(self) -> impl Iterator<Item = ((Platform, BuildProfile), T)> {
+        let Self(inner) = self;
+        inner.into_iter().flat_map(|(platform, outcomes)| {
+            outcomes
+                .into_iter()
+                .map(move |(build_profile, outcomes)| ((platform, build_profile), outcomes))
+        })
+    }
+
+    pub(crate) fn iter(&self) -> impl Iterator<Item = ((Platform, BuildProfile), &T)> {
+        self.inner().iter().flat_map(|(platform, outcomes)| {
+            outcomes
+                .iter()
+                .map(move |(build_profile, outcomes)| ((platform, build_profile), outcomes))
+        })
+    }
+
+    pub(crate) fn iter_mut(&mut self) -> impl Iterator<Item = ((Platform, BuildProfile), &mut T)> {
+        self.inner_mut()
+            .iter_mut()
+            .flat_map(|(platform, outcomes)| {
+                outcomes
+                    .iter_mut()
+                    .map(move |(build_profile, outcomes)| ((platform, build_profile), outcomes))
+            })
+    }
+
+    pub(crate) fn inner(&self) -> &ExpandedPropertyValueData<T> {
+        let Self(inner) = self;
+        inner
+    }
+
+    fn inner_mut(&mut self) -> &mut ExpandedPropertyValueData<T> {
+        let Self(inner) = self;
+        inner
+    }
+}
+
+impl<T> ExpandedPropertyValue<T> {
     pub fn from_query<F>(f: F) -> Self
     where
-        F: FnMut(Platform, BuildProfile) -> Expected<Out>,
+        F: FnMut(Platform, BuildProfile) -> T,
     {
         let mut f = f;
-        let mut this = Self::default();
-        for platform in Platform::iter() {
-            let by_plat = &mut this.0[platform];
-            for build_profile in BuildProfile::iter() {
-                by_plat[build_profile] = f(platform, build_profile);
-            }
-        }
-        this
+        Self(EnumMap::from_fn(|platform| {
+            EnumMap::from_fn(|build_profile| f(platform, build_profile))
+        }))
     }
 }
 
+pub type ExpandedPropertyValueData<T> = EnumMap<Platform, EnumMap<BuildProfile, T>>;
+
 #[test]
-fn fully_expanded_is_tiny() {
+fn expanded_expected_is_tiny() {
     use crate::metadata::{SubtestOutcome, TestOutcome};
     use std::mem::size_of;
 
+    assert_eq!(size_of::<ExpandedPropertyValue<Expected<TestOutcome>>>(), 6);
     assert_eq!(
-        size_of::<FullyExpandedExpectedPropertyValue<TestOutcome>>(),
-        6
-    );
-    assert_eq!(
-        size_of::<FullyExpandedExpectedPropertyValue<SubtestOutcome>>(),
+        size_of::<ExpandedPropertyValue<Expected<SubtestOutcome>>>(),
         6
     );
 }
 
-/// A normalized representation of [`Expected`]s in [`TestProps`], which collapses
-/// backwards along the following branching factors:
+/// A normalized representation of a property in [`TestProps`], which collapses backwards along the
+/// following branching factors:
 ///
 /// * [`Platform`]
 /// * [`BuildProfile`]
@@ -347,22 +334,11 @@ fn fully_expanded_is_tiny() {
 ///
 /// [`TestProps`]: crate::metadata::TestProps
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct NormalizedExpectedPropertyValue<Out>(NormalizedExpectatedPropertyValueData<Out>)
+pub struct NormalizedPropertyValue<T>(NormalizedPropertyValueData<T>);
+
+impl<T> Default for NormalizedPropertyValue<T>
 where
-    Out: EnumSetType;
-
-pub type NormalizedExpectedByBuildProfile<Out> =
-    MaybeCollapsed<Expected<Out>, BTreeMap<BuildProfile, Expected<Out>>>;
-
-/// Data from a [`NormalizedExpectedPropertyValue`].
-pub type NormalizedExpectatedPropertyValueData<Out> = MaybeCollapsed<
-    NormalizedExpectedByBuildProfile<Out>,
-    BTreeMap<Platform, NormalizedExpectedByBuildProfile<Out>>,
->;
-
-impl<Out> Default for NormalizedExpectedPropertyValue<Out>
-where
-    Out: Default + EnumSetType,
+    T: Default,
 {
     fn default() -> Self {
         Self(MaybeCollapsed::Collapsed(MaybeCollapsed::Collapsed(
@@ -371,42 +347,37 @@ where
     }
 }
 
-impl<Out> NormalizedExpectedPropertyValue<Out>
-where
-    Out: EnumSetType,
-{
-    pub fn inner(&self) -> &NormalizedExpectatedPropertyValueData<Out> {
+impl<T> NormalizedPropertyValue<T> {
+    pub fn inner(&self) -> &NormalizedPropertyValueData<T> {
         let Self(inner) = self;
         inner
     }
+}
 
-    pub(crate) fn from_fully_expanded(outcomes: FullyExpandedExpectedPropertyValue<Out>) -> Self {
-        fn same_value<T>(iter: impl IntoIterator<Item = T>) -> Option<T>
-        where
-            T: Eq,
-        {
-            let mut iter = iter.into_iter();
-            let first = iter.next()?;
-            for next in iter {
-                if first != next {
-                    return None;
-                }
-            }
-            Some(first)
-        }
-
+impl<T> NormalizedPropertyValue<T>
+where
+    T: Clone + Eq,
+{
+    pub(crate) fn from_expanded(outcomes: ExpandedPropertyValue<T>) -> Self {
         Self(
-            if let Some(uniform) = same_value(outcomes.iter().map(|(_, outcomes)| outcomes)) {
-                MaybeCollapsed::Collapsed(MaybeCollapsed::Collapsed(uniform))
+            if let Ok(uniform) = outcomes
+                .iter()
+                .map(|(_, outcome)| outcome)
+                .all_equal_value()
+            {
+                MaybeCollapsed::Collapsed(MaybeCollapsed::Collapsed(uniform.clone()))
             } else {
                 let per_bp = |outcomes_by_bp: &EnumMap<_, _>| {
                     outcomes_by_bp
                         .iter()
-                        .map(|(bp, outcomes)| (bp, *outcomes))
+                        .map(|(bp, outcomes): (_, &T)| (bp, outcomes.clone()))
                         .collect()
                 };
-                if let Some(uniform_per_platform) =
-                    same_value(outcomes.0.iter().map(|(_, outcomes_by_bp)| outcomes_by_bp))
+                if let Ok(uniform_per_platform) = outcomes
+                    .inner()
+                    .iter()
+                    .map(|(_, outcomes)| outcomes)
+                    .all_equal_value()
                 {
                     MaybeCollapsed::Collapsed(MaybeCollapsed::Expanded(per_bp(
                         uniform_per_platform,
@@ -414,11 +385,13 @@ where
                 } else {
                     MaybeCollapsed::Expanded(
                         outcomes
-                            .0
+                            .inner()
                             .iter()
                             .map(|(platform, outcomes_by_bp)| {
-                                if let Some(uniform_per_bp) =
-                                    same_value(outcomes_by_bp.iter().map(|(_, outcomes)| *outcomes))
+                                if let Ok(uniform_per_bp) = outcomes_by_bp
+                                    .iter()
+                                    .map(|(_, outcomes)| outcomes.clone())
+                                    .all_equal_value()
                                 {
                                     (platform, MaybeCollapsed::Collapsed(uniform_per_bp))
                                 } else {
@@ -432,6 +405,12 @@ where
         )
     }
 }
+
+/// Data from a [`NormalizedPropertyValue`].
+pub type NormalizedPropertyValueData<T> = Normalized<Platform, Normalized<BuildProfile, T>>;
+
+/// A value that is either `V` or a set of `V`s branched on by `K`.
+pub type Normalized<K, V> = MaybeCollapsed<V, BTreeMap<K, V>>;
 
 /// A single symbolic path to a test and its metadata.
 ///
