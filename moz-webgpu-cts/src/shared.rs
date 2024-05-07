@@ -278,7 +278,7 @@ where
         Self(EnumMap::from_fn(|_idx| EnumMap::from_fn(|_idx| expected)))
     }
 
-    pub(crate) fn iter(
+    pub(crate) fn into_iter(
         &self,
     ) -> impl Iterator<Item = ((Platform, BuildProfile), Expected<Out>)> + '_ {
         self.0.iter().flat_map(|(platform, exps_by_bp)| {
@@ -380,7 +380,7 @@ where
     pub(crate) fn from_fully_expanded(outcomes: FullyExpandedExpectedPropertyValue<Out>) -> Self {
         Self(
             if let Ok(uniform) = outcomes
-                .iter()
+                .into_iter()
                 .map(|(_, outcome)| outcome)
                 .all_equal_value()
             {

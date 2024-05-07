@@ -1065,7 +1065,7 @@ fn run(cli: Cli) -> ExitCode {
                             })
                         };
 
-                    for ((platform, _build_profile), expected) in expected.iter() {
+                    for ((platform, _build_profile), expected) in expected.into_iter() {
                         apply_to_specific_platforms(&mut analysis, platform, expected)
                     }
                 }
@@ -1139,7 +1139,7 @@ fn run(cli: Cli) -> ExitCode {
                                 })
                             };
 
-                        for ((platform, _build_profile), expected) in expected.iter() {
+                        for ((platform, _build_profile), expected) in expected.into_iter() {
                             apply_to_specific_platforms(&mut analysis, platform, expected)
                         }
                     }
