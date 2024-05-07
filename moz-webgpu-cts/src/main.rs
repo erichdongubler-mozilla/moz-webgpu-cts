@@ -12,7 +12,7 @@ use self::{
     report::{
         ExecutionReport, RunInfo, SubtestExecutionResult, TestExecutionEntry, TestExecutionResult,
     },
-    shared::{Expected, FullyExpandedExpectedPropertyValue, TestPath},
+    shared::{ExpandedExpectedPropertyValue, Expected, TestPath},
 };
 
 use std::{
@@ -546,7 +546,7 @@ fn run(cli: Cli) -> ExitCode {
                                     .copied()
                             };
                             let all_reported = || {
-                                FullyExpandedExpectedPropertyValue::from_query(
+                                ExpandedExpectedPropertyValue::from_query(
                                     |platform, build_profile| {
                                         reported(platform, build_profile).unwrap_or_default()
                                     },
@@ -568,7 +568,7 @@ fn run(cli: Cli) -> ExitCode {
                             };
 
                             if let Some(meta_expected) = meta_props.expected {
-                                FullyExpandedExpectedPropertyValue::from_query(
+                                ExpandedExpectedPropertyValue::from_query(
                                     |platform, build_profile| {
                                         resolve(
                                             meta_expected[(platform, build_profile)],

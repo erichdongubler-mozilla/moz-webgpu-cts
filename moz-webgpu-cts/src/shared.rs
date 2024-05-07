@@ -231,9 +231,9 @@ where
 /// A completely flat representation of [`NormalizedExpectedPropertyValueData`] suitable for
 /// byte representation in memory.
 #[derive(Debug, Default, Clone, Copy, Eq, PartialEq)]
-pub struct FullyExpandedPropertyValue<T>(FullyExpandedPropertyValueData<T>);
+pub struct ExpandedPropertyValue<T>(ExpandedPropertyValueData<T>);
 
-impl<T> Index<(Platform, BuildProfile)> for FullyExpandedPropertyValue<T> {
+impl<T> Index<(Platform, BuildProfile)> for ExpandedPropertyValue<T> {
     type Output = T;
 
     fn index(&self, (platform, build_profile): (Platform, BuildProfile)) -> &Self::Output {
@@ -241,7 +241,7 @@ impl<T> Index<(Platform, BuildProfile)> for FullyExpandedPropertyValue<T> {
     }
 }
 
-impl<Out> IndexMut<(Platform, BuildProfile)> for FullyExpandedPropertyValue<Out> {
+impl<Out> IndexMut<(Platform, BuildProfile)> for ExpandedPropertyValue<Out> {
     fn index_mut(
         &mut self,
         (platform, build_profile): (Platform, BuildProfile),
@@ -250,7 +250,7 @@ impl<Out> IndexMut<(Platform, BuildProfile)> for FullyExpandedPropertyValue<Out>
     }
 }
 
-impl<T> FullyExpandedPropertyValue<T>
+impl<T> ExpandedPropertyValue<T>
 where
     T: Clone,
 {
@@ -259,7 +259,7 @@ where
     }
 }
 
-impl<T> FullyExpandedPropertyValue<T> {
+impl<T> ExpandedPropertyValue<T> {
     pub(crate) fn into_iter(self) -> impl Iterator<Item = ((Platform, BuildProfile), T)> {
         let Self(inner) = self;
         inner.into_iter().flat_map(|(platform, outcomes)| {
@@ -287,18 +287,18 @@ impl<T> FullyExpandedPropertyValue<T> {
             })
     }
 
-    pub(crate) fn inner(&self) -> &FullyExpandedPropertyValueData<T> {
+    pub(crate) fn inner(&self) -> &ExpandedPropertyValueData<T> {
         let Self(inner) = self;
         inner
     }
 
-    fn inner_mut(&mut self) -> &mut FullyExpandedPropertyValueData<T> {
+    fn inner_mut(&mut self) -> &mut ExpandedPropertyValueData<T> {
         let Self(inner) = self;
         inner
     }
 }
 
-impl<T> FullyExpandedPropertyValue<T> {
+impl<T> ExpandedPropertyValue<T> {
     pub fn from_query<F>(f: F) -> Self
     where
         F: FnMut(Platform, BuildProfile) -> T,
@@ -310,21 +310,18 @@ impl<T> FullyExpandedPropertyValue<T> {
     }
 }
 
-pub type FullyExpandedPropertyValueData<T> = EnumMap<Platform, EnumMap<BuildProfile, T>>;
+pub type ExpandedPropertyValueData<T> = EnumMap<Platform, EnumMap<BuildProfile, T>>;
 
-pub type FullyExpandedExpectedPropertyValue<Out> = FullyExpandedPropertyValue<Expected<Out>>;
+pub type ExpandedExpectedPropertyValue<Out> = ExpandedPropertyValue<Expected<Out>>;
 
 #[test]
-fn fully_expanded_expected_is_tiny() {
+fn expanded_expected_is_tiny() {
     use crate::metadata::{SubtestOutcome, TestOutcome};
     use std::mem::size_of;
 
+    assert_eq!(size_of::<ExpandedExpectedPropertyValue<TestOutcome>>(), 6);
     assert_eq!(
-        size_of::<FullyExpandedExpectedPropertyValue<TestOutcome>>(),
-        6
-    );
-    assert_eq!(
-        size_of::<FullyExpandedExpectedPropertyValue<SubtestOutcome>>(),
+        size_of::<ExpandedExpectedPropertyValue<SubtestOutcome>>(),
         6
     );
 }
@@ -363,7 +360,7 @@ impl<T> NormalizedPropertyValue<T>
 where
     T: Clone + Eq,
 {
-    pub(crate) fn from_fully_expanded(outcomes: FullyExpandedPropertyValue<T>) -> Self {
+    pub(crate) fn from_expanded(outcomes: ExpandedPropertyValue<T>) -> Self {
         Self(
             if let Ok(uniform) = outcomes
                 .iter()

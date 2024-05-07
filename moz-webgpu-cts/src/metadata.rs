@@ -29,9 +29,7 @@ use whippit::{
     },
 };
 
-use crate::shared::{
-    Expected, FullyExpandedPropertyValue, MaybeCollapsed, NormalizedPropertyValue,
-};
+use crate::shared::{ExpandedPropertyValue, Expected, MaybeCollapsed, NormalizedPropertyValue};
 
 #[cfg(test)]
 use insta::assert_debug_snapshot;
@@ -741,7 +739,7 @@ where
             f: &mut Formatter<'_>,
             indent: &dyn Display,
             ident: &str,
-            prop: &FullyExpandedPropertyValue<T>,
+            prop: &ExpandedPropertyValue<T>,
         ) -> fmt::Result
         where
             T: Clone + Default + Display + Eq,
@@ -763,7 +761,7 @@ where
                 BuildProfile::Debug => "debug",
                 BuildProfile::Optimized => "not debug",
             };
-            let normalized = NormalizedPropertyValue::from_fully_expanded(prop.clone());
+            let normalized = NormalizedPropertyValue::from_expanded(prop.clone());
             match normalized.inner() {
                 MaybeCollapsed::Collapsed(t) => match t {
                     MaybeCollapsed::Collapsed(t) => {
@@ -838,7 +836,7 @@ where
     Out: EnumSetType,
 {
     pub is_disabled: bool,
-    pub expected: Option<FullyExpandedPropertyValue<Expected<Out>>>,
+    pub expected: Option<ExpandedPropertyValue<Expected<Out>>>,
 }
 
 impl<Out> Default for TestProps<Out>
@@ -869,7 +867,7 @@ where
             emitter: &mut Emitter<Rich<'_, char>>,
             span: SimpleSpan,
             ident: &str,
-            val: &mut Option<FullyExpandedPropertyValue<T>>,
+            val: &mut Option<ExpandedPropertyValue<T>>,
             incoming: PropertyValue<Applicability, T>,
         ) where
             T: Clone + Default,
@@ -882,7 +880,7 @@ where
                 return;
             }
             val.replace(match incoming {
-                PropertyValue::Unconditional(val) => FullyExpandedPropertyValue::unconditional(val),
+                PropertyValue::Unconditional(val) => ExpandedPropertyValue::unconditional(val),
                 PropertyValue::Conditional(val) => {
                     let ConditionalValue {
                         conditions,
@@ -898,10 +896,10 @@ where
                                 ident
                             )
                         });
-                        FullyExpandedPropertyValue::unconditional(fallback)
+                        ExpandedPropertyValue::unconditional(fallback)
                     } else {
                         let fallback = fallback.unwrap_or_default();
-                        FullyExpandedPropertyValue::from_query(|p, bp| {
+                        ExpandedPropertyValue::from_query(|p, bp| {
                             let mut matched = None;
 
                             for (applicability, val) in &*conditions {
@@ -1357,7 +1355,7 @@ r#"
                                 properties: TestProps {
                                     is_disabled: false,
                                     expected: Some(
-                                        FullyExpandedPropertyValue(
+                                        ExpandedPropertyValue(
                                             {
                                                 Windows: {
                                                     Debug: [
@@ -1441,7 +1439,7 @@ r#"
                             properties: TestProps {
                                 is_disabled: false,
                                 expected: Some(
-                                    FullyExpandedPropertyValue(
+                                    ExpandedPropertyValue(
                                         {
                                             Windows: {
                                                 Debug: [
@@ -1505,7 +1503,7 @@ r#"
                     properties: TestProps {
                         is_disabled: false,
                         expected: Some(
-                            FullyExpandedPropertyValue(
+                            ExpandedPropertyValue(
                                 {
                                     Windows: {
                                         Debug: [
@@ -1540,7 +1538,7 @@ r#"
                             properties: TestProps {
                                 is_disabled: false,
                                 expected: Some(
-                                    FullyExpandedPropertyValue(
+                                    ExpandedPropertyValue(
                                         {
                                             Windows: {
                                                 Debug: [
@@ -1604,7 +1602,7 @@ r#"
                             properties: TestProps {
                                 is_disabled: false,
                                 expected: Some(
-                                    FullyExpandedPropertyValue(
+                                    ExpandedPropertyValue(
                                         {
                                             Windows: {
                                                 Debug: [
@@ -1669,7 +1667,7 @@ r#"
                             properties: TestProps {
                                 is_disabled: false,
                                 expected: Some(
-                                    FullyExpandedPropertyValue(
+                                    ExpandedPropertyValue(
                                         {
                                             Windows: {
                                                 Debug: [
@@ -1732,7 +1730,7 @@ r#"
                             properties: TestProps {
                                 is_disabled: false,
                                 expected: Some(
-                                    FullyExpandedPropertyValue(
+                                    ExpandedPropertyValue(
                                         {
                                             Windows: {
                                                 Debug: [
