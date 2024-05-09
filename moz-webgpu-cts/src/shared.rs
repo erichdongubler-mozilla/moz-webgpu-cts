@@ -690,7 +690,16 @@ fn report_meta_match() {
                 TestPath::from_execution_report($test_run_path).unwrap(),
                 TestPath::from_fx_metadata_test(Path::new($rel_meta_path), $test_section_header)
                     .unwrap()
-            )
+            );
+            assert_eq!(
+                format!(
+                    "/{}",
+                    TestPath::from_execution_report($test_run_path)
+                        .unwrap()
+                        .runner_url_path()
+                ),
+                $test_run_path,
+            );
         };
     }
 
