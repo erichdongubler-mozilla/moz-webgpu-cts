@@ -662,18 +662,22 @@ impl Display for MetadataTestPathError<'_> {
     }
 }
 
+/// A browser supported by [super::main], used for [`TestPath`]s.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, ValueEnum)]
 pub(crate) enum Browser {
     Firefox,
     Servo,
 }
 
+/// Symbolically represents a file root from which tests and metadata are based. Scopes are based
+/// on a specific [`Browser`].
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(crate) enum TestScope {
     Firefox(FirefoxTestScope),
     Servo(ServoTestScope),
 }
 
+/// Subset of [`TestScope`] for [`Browser::Firefox`].
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(crate) enum FirefoxTestScope {
     /// A public test available at some point in the history of [WPT upstream]. Note that while
@@ -691,8 +695,10 @@ impl From<FirefoxTestScope> for TestScope {
     }
 }
 
+/// Subset of [`TestScope`] for [`Browser::Servo`].
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(crate) enum ServoTestScope {
+    /// A WebGPU CTS test vendored into Servo's source tree.
     WebGpu,
 }
 
