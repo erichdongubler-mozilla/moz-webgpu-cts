@@ -537,7 +537,7 @@ impl<'a> TestPath<'a> {
 
         Ok(Self {
             scope,
-            path: Utf8Path::new(path).into(),
+            path: path.into(),
             variant: variant.map(Into::into),
         })
     }
