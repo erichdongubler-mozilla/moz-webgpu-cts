@@ -454,14 +454,12 @@ impl<'a> TestPath<'a> {
                 .strip_prefix(prefix)
                 .map(|stripped| (visibility, stripped))
         };
-        let vis_and_path = match browser {
+        let (visibility, path) = match browser {
             Browser::Firefox => strip_prefix("/_mozilla/", TestVisibility::Private),
             Browser::Servo => strip_prefix("/_webgpu/", TestVisibility::Public),
         }
-        .or_else(|| strip_prefix("/", TestVisibility::Public));
-        let Some((visibility, path)) = vis_and_path else {
-            return Err(err());
-        };
+        .or_else(|| strip_prefix("/", TestVisibility::Public))
+        .ok_or_else(err)?;
         let scope = TestScope {
             browser,
             visibility,
