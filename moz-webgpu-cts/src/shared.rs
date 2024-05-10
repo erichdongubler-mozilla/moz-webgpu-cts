@@ -449,17 +449,9 @@ impl<'a> TestPath<'a> {
     ) -> Result<Self, ExecutionReportPathError<'a>> {
         let err = || ExecutionReportPathError { test_url_path };
 
-        let strip_prefix = |prefix, scope| {
-            test_url_path
-                .strip_prefix(prefix)
-                .map(|stripped| (scope, stripped))
-        };
-        let (scope, path) = match browser {
-            Browser::Firefox => strip_prefix("/_mozilla/", FirefoxTestScope::Mozilla.into())
-                .or_else(|| strip_prefix("/", FirefoxTestScope::Upstream.into())),
-            Browser::Servo => strip_prefix("/_webgpu/", ServoTestScope::WebGpu.into()),
-        }
-        .ok_or_else(err)?;
+        let (scope, path) = browser
+            .strip_scope_url_prefix(test_url_path)
+            .ok_or_else(err)?;
 
         if path.contains('\\') {
             return Err(err());
@@ -504,22 +496,9 @@ impl<'a> TestPath<'a> {
                 .ok_or(err())?,
         );
 
-        let strip_prefix = |prefix, scope| {
-            rel_meta_file_path
-                .strip_prefix(prefix)
-                .map(|stripped| (scope, stripped))
-        };
-        let (scope, path) = match browser {
-            Browser::Firefox => {
-                strip_prefix(SCOPE_DIR_FX_MOZILLA_STR, FirefoxTestScope::Mozilla.into()).or_else(
-                    |_| strip_prefix(SCOPE_DIR_FX_UPSTREAM_STR, FirefoxTestScope::Upstream.into()),
-                )
-            }
-            Browser::Servo => {
-                strip_prefix(SCOPE_DIR_SERVO_WEBGPU_STR, ServoTestScope::WebGpu.into())
-            }
-        }
-        .map_err(|_e| err())?;
+        let (scope, path) = browser
+            .strip_scope_metadata_parent_path(rel_meta_file_path)
+            .map_err(|_e| err())?;
 
         let Ok(path) = path.strip_prefix("meta/") else {
             return Err(err());
@@ -586,14 +565,12 @@ impl<'a> TestPath<'a> {
             scope,
         } = self;
         lazy_format!(move |f| {
-            let scope_prefix = match scope {
-                TestScope::Firefox(scope) => match scope {
-                    FirefoxTestScope::Upstream => "",
-                    FirefoxTestScope::Mozilla => "_mozilla/",
-                },
-                TestScope::Servo(ServoTestScope::WebGpu) => "_webgpu/",
-            };
-            write!(f, "{scope_prefix}{}", path.components().join_with('/'))?;
+            write!(
+                f,
+                "{}{}",
+                scope.url_prefix(),
+                path.components().join_with('/')
+            )?;
             if let Some(variant) = variant.as_ref() {
                 write!(f, "{}", variant)?;
             }
@@ -608,16 +585,10 @@ impl<'a> TestPath<'a> {
             scope,
         } = self;
 
-        let scope_dir = match scope {
-            TestScope::Firefox(scope) => match scope {
-                FirefoxTestScope::Upstream => SCOPE_DIR_FX_UPSTREAM_COMPONENTS,
-                FirefoxTestScope::Mozilla => SCOPE_DIR_FX_MOZILLA_COMPONENTS,
-            },
-            TestScope::Servo(ServoTestScope::WebGpu) => SCOPE_DIR_SERVO_WEBGPU_COMPONENTS,
-        }
-        .iter()
-        .chain(&["meta"])
-        .join_with(std::path::MAIN_SEPARATOR);
+        let scope_dir = scope
+            .metadata_parent_path_components()
+            .chain(["meta"].iter().cloned())
+            .join_with(std::path::MAIN_SEPARATOR);
 
         lazy_format!(move |f| { write!(f, "{scope_dir}{}{path}.ini", std::path::MAIN_SEPARATOR) })
     }
@@ -669,12 +640,76 @@ pub(crate) enum Browser {
     Servo,
 }
 
+impl Browser {
+    /// NOTE: Keep this implementation in sync with [`TestScope::url_prefix`].
+    pub(crate) fn strip_scope_url_prefix<'a>(
+        &self,
+        url_path: &'a str,
+    ) -> Option<(TestScope, &'a str)> {
+        let strip_prefix = |prefix, scope| {
+            url_path
+                .strip_prefix(prefix)
+                .map(|stripped| (scope, stripped))
+        };
+        match self {
+            Browser::Firefox => strip_prefix("/_mozilla/", FirefoxTestScope::Mozilla.into())
+                .or_else(|| strip_prefix("/", FirefoxTestScope::Upstream.into())),
+            Browser::Servo => strip_prefix("/_webgpu/", ServoTestScope::WebGpu.into()),
+        }
+    }
+
+    /// NOTE: Keep this implementation in sync with [`TestScope::metadata_parent_path_components`].
+    pub(crate) fn strip_scope_metadata_parent_path<'a>(
+        &self,
+        path: &'a Utf8Path,
+    ) -> Result<(TestScope, &'a Utf8Path), std::path::StripPrefixError> {
+        let strip_prefix =
+            |prefix, scope| path.strip_prefix(prefix).map(|stripped| (scope, stripped));
+        match self {
+            Browser::Firefox => {
+                strip_prefix(SCOPE_DIR_FX_MOZILLA_STR, FirefoxTestScope::Mozilla.into()).or_else(
+                    |_| strip_prefix(SCOPE_DIR_FX_UPSTREAM_STR, FirefoxTestScope::Upstream.into()),
+                )
+            }
+            Browser::Servo => {
+                strip_prefix(SCOPE_DIR_SERVO_WEBGPU_STR, ServoTestScope::WebGpu.into())
+            }
+        }
+    }
+}
+
 /// Symbolically represents a file root from which tests and metadata are based. Scopes are based
 /// on a specific [`Browser`].
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(crate) enum TestScope {
     Firefox(FirefoxTestScope),
     Servo(ServoTestScope),
+}
+
+impl TestScope {
+    /// NOTE: Keep this implementation in sync with [`Browser::strip_scope_url_prefix`].
+    fn url_prefix(&self) -> &str {
+        match self {
+            TestScope::Firefox(scope) => match scope {
+                FirefoxTestScope::Upstream => "",
+                FirefoxTestScope::Mozilla => "_mozilla/",
+            },
+            TestScope::Servo(ServoTestScope::WebGpu) => "_webgpu/",
+        }
+    }
+
+    /// NOTE: Keep this implementation in sync with [`Browser::strip_scope_metadata_parent_path`].
+    fn metadata_parent_path_components(&self) -> impl Iterator<Item = &str> + Clone {
+        match self {
+            TestScope::Firefox(scope) => match scope {
+                FirefoxTestScope::Upstream => SCOPE_DIR_FX_UPSTREAM_COMPONENTS,
+                FirefoxTestScope::Mozilla => SCOPE_DIR_FX_MOZILLA_COMPONENTS,
+            },
+            TestScope::Servo(ServoTestScope::WebGpu) => SCOPE_DIR_SERVO_WEBGPU_COMPONENTS,
+        }
+        .iter()
+        .cloned()
+    }
 }
 
 /// Subset of [`TestScope`] for [`Browser::Firefox`].
