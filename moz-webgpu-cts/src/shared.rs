@@ -435,12 +435,12 @@ pub(crate) struct TestPath<'a> {
     pub variant: Option<Cow<'a, str>>,
 }
 
-const SCOPE_DIR_FX_PRIVATE_STR: &str = "testing/web-platform/mozilla";
-const SCOPE_DIR_FX_PRIVATE_COMPONENTS: &[&str] = &["testing", "web-platform", "mozilla"];
-const SCOPE_DIR_FX_PUBLIC_STR: &str = "testing/web-platform";
-const SCOPE_DIR_FX_PUBLIC_COMPONENTS: &[&str] = &["testing", "web-platform"];
-const SCOPE_DIR_SERVO_PUBLIC_STR: &str = "tests/wpt/webgpu";
-const SCOPE_DIR_SERVO_PUBLIC_COMPONENTS: &[&str] = &["tests", "wpt", "webgpu"];
+const SCOPE_DIR_FX_MOZILLA_STR: &str = "testing/web-platform/mozilla";
+const SCOPE_DIR_FX_MOZILLA_COMPONENTS: &[&str] = &["testing", "web-platform", "mozilla"];
+const SCOPE_DIR_FX_UPSTREAM_STR: &str = "testing/web-platform";
+const SCOPE_DIR_FX_UPSTREAM_COMPONENTS: &[&str] = &["testing", "web-platform"];
+const SCOPE_DIR_SERVO_WEBGPU_STR: &str = "tests/wpt/webgpu";
+const SCOPE_DIR_SERVO_WEBGPU_COMPONENTS: &[&str] = &["tests", "wpt", "webgpu"];
 
 impl<'a> TestPath<'a> {
     pub fn from_execution_report(
@@ -511,8 +511,8 @@ impl<'a> TestPath<'a> {
         );
 
         let (private_path, public_path) = match browser {
-            Browser::Firefox => (SCOPE_DIR_FX_PRIVATE_STR, SCOPE_DIR_FX_PUBLIC_STR),
-            Browser::Servo => (SCOPE_DIR_FX_PRIVATE_STR, SCOPE_DIR_SERVO_PUBLIC_STR),
+            Browser::Firefox => (SCOPE_DIR_FX_MOZILLA_STR, SCOPE_DIR_FX_UPSTREAM_STR),
+            Browser::Servo => (SCOPE_DIR_FX_MOZILLA_STR, SCOPE_DIR_SERVO_WEBGPU_STR),
         };
         let (visibility, path) = if let Ok(path) = rel_meta_file_path.strip_prefix(private_path) {
             (TestVisibility::Private, path)
@@ -621,9 +621,9 @@ impl<'a> TestPath<'a> {
             visibility,
         } = scope;
         let scope_dir = match (browser, visibility) {
-            (Browser::Firefox, TestVisibility::Public) => SCOPE_DIR_FX_PUBLIC_COMPONENTS,
-            (Browser::Firefox, TestVisibility::Private) => SCOPE_DIR_FX_PRIVATE_COMPONENTS,
-            (Browser::Servo, TestVisibility::Public) => SCOPE_DIR_SERVO_PUBLIC_COMPONENTS,
+            (Browser::Firefox, TestVisibility::Public) => SCOPE_DIR_FX_UPSTREAM_COMPONENTS,
+            (Browser::Firefox, TestVisibility::Private) => SCOPE_DIR_FX_MOZILLA_COMPONENTS,
+            (Browser::Servo, TestVisibility::Public) => SCOPE_DIR_SERVO_WEBGPU_COMPONENTS,
             (Browser::Servo, TestVisibility::Private) => todo!(),
         }
         .iter()
