@@ -594,6 +594,7 @@ impl<'a> TestPath<'a> {
     }
 }
 
+/// An error encountered during [`TestPath::from_execution_report`].
 #[derive(Debug)]
 pub struct ExecutionReportPathError<'a> {
     test_url_path: &'a str,
@@ -613,6 +614,7 @@ impl Display for ExecutionReportPathError<'_> {
     }
 }
 
+/// An error encountered during [`TestPath::from_metadata_test`].
 #[derive(Debug)]
 pub struct MetadataTestPathError<'a> {
     rel_meta_file_path: &'a Path,
