@@ -449,16 +449,16 @@ impl<'a> TestPath<'a> {
     ) -> Result<Self, ExecutionReportPathError<'a>> {
         let err = || ExecutionReportPathError { test_url_path };
 
-        let try_strip_with = |prefix, visibility| {
+        let strip_prefix = |prefix, visibility| {
             test_url_path
                 .strip_prefix(prefix)
                 .map(|stripped| (visibility, stripped))
         };
         let vis_and_path = match browser {
-            Browser::Firefox => try_strip_with("/_mozilla/", TestVisibility::Private),
-            Browser::Servo => try_strip_with("/_webgpu/", TestVisibility::Public),
+            Browser::Firefox => strip_prefix("/_mozilla/", TestVisibility::Private),
+            Browser::Servo => strip_prefix("/_webgpu/", TestVisibility::Public),
         }
-        .or_else(|| try_strip_with("/", TestVisibility::Public));
+        .or_else(|| strip_prefix("/", TestVisibility::Public));
         let Some((visibility, path)) = vis_and_path else {
             return Err(err());
         };
