@@ -46,6 +46,8 @@ use whippit::{
     reexport::chumsky::{self, prelude::Rich},
 };
 
+/// An extremely fast (but opinionated) tool for working with WPT metadata while developing an
+/// implementation of WebGPU in a web browser.
 #[derive(Debug, Parser)]
 #[command(about, version)]
 struct Cli {
@@ -74,7 +76,7 @@ enum Subcommand {
     ///    --preset=same-fx …` against the runs' new reports. Repeat as necessary.
     ///
     /// With both steps, you may delete the local copies of these reports after being processed
-    /// with `process-reports`. You should not need to re-process them unless you have made an
+    /// with `update-expected`. You should not need to re-process them unless you have made an
     /// error in following these steps.
     #[clap(alias = "process-reports")]
     UpdateExpected {
