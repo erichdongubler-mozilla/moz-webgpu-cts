@@ -508,17 +508,18 @@ impl<'a> TestPath<'a> {
                 .ok_or(err())?,
         );
 
+        let strip_prefix = |prefix, visibility| {
+            rel_meta_file_path
+                .strip_prefix(prefix)
+                .map(|stripped| (visibility, stripped))
+        };
         let (private_path, public_path) = match browser {
             Browser::Firefox => (SCOPE_DIR_FX_MOZILLA_STR, SCOPE_DIR_FX_UPSTREAM_STR),
             Browser::Servo => (SCOPE_DIR_FX_MOZILLA_STR, SCOPE_DIR_SERVO_WEBGPU_STR),
         };
-        let (visibility, path) = if let Ok(path) = rel_meta_file_path.strip_prefix(private_path) {
-            (TestVisibility::Private, path)
-        } else if let Ok(path) = rel_meta_file_path.strip_prefix(public_path) {
-            (TestVisibility::Public, path)
-        } else {
-            return Err(err());
-        };
+        let (visibility, path) = strip_prefix(private_path, TestVisibility::Private)
+            .or_else(|_| strip_prefix(public_path, TestVisibility::Public))
+            .map_err(|_e| err())?;
         let scope = TestScope {
             browser,
             visibility,
