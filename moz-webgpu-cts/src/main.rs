@@ -139,7 +139,7 @@ fn run(cli: Cli) -> ExitCode {
         subcommand,
     } = cli;
 
-    let checkout = match checkout.map(Ok).unwrap_or_else(search_for_moz_central_ckt) {
+    let checkout = match checkout.map(Ok).unwrap_or_else(search_for_repo_root) {
         Ok(ckt_path) => ckt_path,
         Err(AlreadyReportedToCommandline) => return ExitCode::FAILURE,
     };
@@ -1501,11 +1501,11 @@ fn read_files_at(
         .chain(file_read_iter.into_iter().flatten())
 }
 
-/// Search for a `mozilla-central` checkout either via Mercurial or Git, iterating from the CWD to
+/// Search for source code repository root either via Mercurial or Git, iterating from the CWD to
 /// its parent directories.
 ///
 /// This function reports to `log` automatically, so no meaningful [`Err`] value is returned.
-fn search_for_moz_central_ckt() -> Result<PathBuf, AlreadyReportedToCommandline> {
+fn search_for_repo_root() -> Result<PathBuf, AlreadyReportedToCommandline> {
     use lets_find_up::{find_up_with, FindUpKind, FindUpOptions};
 
     let find_up_opts = || FindUpOptions {
@@ -1513,7 +1513,7 @@ fn search_for_moz_central_ckt() -> Result<PathBuf, AlreadyReportedToCommandline>
         kind: FindUpKind::Dir,
     };
     let find_up = |repo_tech_name, root_dir_name| {
-        log::debug!("searching for {repo_tech_name} checkout of `mozilla-central`…");
+        log::debug!("searching for {repo_tech_name} repository root…");
         let err = || {
             miette!(
                 "failed to find a {} repository ({:?}) in {}",
@@ -1540,13 +1540,13 @@ fn search_for_moz_central_ckt() -> Result<PathBuf, AlreadyReportedToCommandline>
             Err(e2) => {
                 log::warn!("{e:?}");
                 log::warn!("{e2:?}");
-                log::error!("failed to find a Gecko repository root");
+                log::error!("failed to automatically find a repository root");
                 Err(AlreadyReportedToCommandline)
             }
         })?;
 
     log::info!(
-        "detected Gecko repository root at {}",
+        "detected repository root at {}",
         gecko_source_root.display()
     );
 
