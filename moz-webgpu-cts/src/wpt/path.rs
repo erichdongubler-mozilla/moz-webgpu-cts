@@ -227,6 +227,13 @@ pub(crate) struct TestEntryPath<'a> {
 }
 
 impl<'a> TestEntryPath<'a> {
+    /// Constructs [`Self`] from the URL path of a test entry in a WPT execution report.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    ///
+    /// ```
     pub fn from_execution_report(
         browser: Browser,
         test_url_path: &'a str,
@@ -273,6 +280,14 @@ impl<'a> TestEntryPath<'a> {
         })
     }
 
+    /// Constructs [`Self`] by parsing the path of a WPT test metadata file (file extension:
+    /// `*.ini`).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    ///
+    /// ```
     pub fn from_metadata_test(
         browser: Browser,
         rel_meta_file_path: &'a Path,
@@ -375,6 +390,15 @@ impl<'a> TestEntryPath<'a> {
         }
     }
 
+    /// Provides a [`Display`]-implementing value that prints the name of this test. This is
+    /// typically observed as the top-level section key in WPT metadata, i.e., the
+    /// `test.https.html` in `[test.https.html]` in the `test.https.html.ini` metadata file.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    ///
+    /// ```
     pub(crate) fn test_name(&self) -> impl Display + '_ {
         let Self {
             spec_path:
@@ -401,6 +425,14 @@ impl<'a> TestEntryPath<'a> {
         })
     }
 
+    /// Provides a [`Display`]-implementing value that prints the URL path after the manifest root of
+    /// this test, not including the leading `'/'`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    ///
+    /// ```
     pub(crate) fn runner_url_path(&self) -> impl Display + '_ {
         let Self {
             spec_path:
@@ -420,6 +452,13 @@ impl<'a> TestEntryPath<'a> {
         ))
     }
 
+    /// Provides a [`Display`]-implementing value that prints the path of this test, relative to
+    /// root of the source code repository it's found in.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// ```
     pub(crate) fn rel_metadata_path(&self) -> impl Display + '_ {
         let Self {
             spec_path:
