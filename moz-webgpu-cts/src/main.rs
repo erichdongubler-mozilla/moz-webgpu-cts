@@ -63,20 +63,20 @@ struct Cli {
 #[derive(Debug, Parser)]
 enum Subcommand {
     /// Adjust expected test outcomes in metadata, optionally using `wptreport.json` reports from
-    /// CI runs covering Firefox's implementation of WebGPU.
+    /// CI runs covering your browser's implementation of WebGPU.
     ///
-    /// As Firefox's behavior changes, one generally expects CTS test outcomes to change. When you
-    /// are testing your own changes in CI, you can use this subcommand to update expected outcomes
-    /// automatically with the following steps:
+    /// As your browser's behavior changes, one generally expects CTS test outcomes to change. When
+    /// you are testing your own changes in CI, you can use this subcommand to update expected
+    /// outcomes automatically with the following steps:
     ///
-    /// 1. Run `moz-webgpu-cts update-expected --preset=new-fx …` against the first complete set of
-    ///    reports you gather from CI with your new Firefox build. This will adjust for new
+    /// 1. Run `moz-webgpu-cts update-expected --preset=new-build …` against the first complete set
+    ///    of reports you gather from CI with your new browser build. This will adjust for new
     ///    permanent outcomes, and may capture some (but not all) intermittent outcomes.
     ///
     /// 2. There may still exist intermittent issues that you do not discover in CI run(s) from the
     ///    previous step. As you discover them in further CI runs on the same build of Firefox,
     ///    adjust expected outcomes to match by running `moz-webgpu-cts update-expected
-    ///    --preset=same-fx …` against the runs' new reports. Repeat as necessary.
+    ///    --preset=same-build …` against the runs' new reports. Repeat as necessary.
     ///
     /// With both steps, you may delete the local copies of these reports after being processed
     /// with `update-expected`. You should not need to re-process them unless you have made an
@@ -110,9 +110,11 @@ enum Subcommand {
 enum ReportProcessingPreset {
     /// alias: `new-fx`
     #[value(alias("new-fx"))]
+    #[value(alias("new-build"))]
     ResetContradictory,
     /// alias: `same-fx`
     #[value(alias("same-fx"))]
+    #[value(alias("same-build"))]
     Merge,
     ResetAll,
 }
