@@ -46,6 +46,8 @@ use whippit::{
     reexport::chumsky::{self, prelude::Rich},
 };
 
+/// An extremely fast (but opinionated) tool for working with WPT metadata while developing an
+/// implementation of WebGPU in a web browser.
 #[derive(Debug, Parser)]
 #[command(about, version)]
 struct Cli {
