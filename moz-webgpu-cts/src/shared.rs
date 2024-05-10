@@ -669,6 +669,12 @@ pub(crate) enum Browser {
 }
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(crate) enum TestScope {
+    Firefox(FirefoxTestScope),
+    Servo(ServoTestScope),
+}
+
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(crate) enum FirefoxTestScope {
     /// A public test available at some point in the history of [WPT upstream]. Note that while
     /// a test may be public, metadata associated with it is in a private location.
@@ -694,13 +700,6 @@ impl From<ServoTestScope> for TestScope {
     fn from(value: ServoTestScope) -> Self {
         Self::Servo(value)
     }
-}
-
-/// Symbolically represents a file root from which tests and metadata are based.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) enum TestScope {
-    Firefox(FirefoxTestScope),
-    Servo(ServoTestScope),
 }
 
 #[test]
