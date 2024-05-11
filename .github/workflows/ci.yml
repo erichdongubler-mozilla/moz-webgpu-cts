@@ -1,10 +1,19 @@
-name: CI (push)
+name: CI
 
-on: [push]
-
+on: [push, pull_request]
 jobs:
+
+  block-autosquash-commits:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.0.0
+      - name: Block merging fixup commits
+        uses: ErichDonGubler/block-fixup-merge-action@patch-1
+
   check:
     name: Check
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -29,6 +38,7 @@ jobs:
 
   test:
     name: Test Suite
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -53,6 +63,7 @@ jobs:
 
   fmt:
     name: Rustfmt
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -77,6 +88,7 @@ jobs:
 
   clippy:
     name: Clippy
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -102,6 +114,7 @@ jobs:
 
   rustdoc:
     name: Documentation
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -128,6 +141,7 @@ jobs:
           args: --all-features --no-deps
 
   cargo-deny:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4.0.0

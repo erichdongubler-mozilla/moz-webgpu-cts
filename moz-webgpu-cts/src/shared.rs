@@ -9,6 +9,7 @@ use std::{
 
 use camino::{Utf8Component, Utf8Path};
 
+use clap::ValueEnum;
 use enum_map::EnumMap;
 use enumset::{EnumSet, EnumSetType};
 use format::lazy_format;
@@ -437,22 +438,32 @@ const SCOPE_DIR_FX_PRIVATE_STR: &str = "testing/web-platform/mozilla";
 const SCOPE_DIR_FX_PRIVATE_COMPONENTS: &[&str] = &["testing", "web-platform", "mozilla"];
 const SCOPE_DIR_FX_PUBLIC_STR: &str = "testing/web-platform";
 const SCOPE_DIR_FX_PUBLIC_COMPONENTS: &[&str] = &["testing", "web-platform"];
+const SCOPE_DIR_SERVO_PUBLIC_STR: &str = "tests/wpt/webgpu";
+const SCOPE_DIR_SERVO_PUBLIC_COMPONENTS: &[&str] = &["tests", "wpt", "webgpu"];
 
 impl<'a> TestPath<'a> {
     pub fn from_execution_report(
+        browser: Browser,
         test_url_path: &'a str,
     ) -> Result<Self, ExecutionReportPathError<'a>> {
         let err = || ExecutionReportPathError { test_url_path };
-        let Some((scope, path)) = test_url_path
-            .strip_prefix("/_mozilla/")
-            .map(|stripped| (TestScope::FirefoxPrivate, stripped))
-            .or_else(|| {
-                test_url_path
-                    .strip_prefix('/')
-                    .map(|stripped| (TestScope::Public, stripped))
-            })
-        else {
+
+        let try_strip_with = |prefix, visibility| {
+            test_url_path
+                .strip_prefix(prefix)
+                .map(|stripped| (visibility, stripped))
+        };
+        let vis_and_path = match browser {
+            Browser::Firefox => try_strip_with("/_mozilla/", TestVisibility::Private),
+            Browser::Servo => try_strip_with("/_webgpu/", TestVisibility::Public),
+        }
+        .or_else(|| try_strip_with("/", TestVisibility::Public));
+        let Some((visibility, path)) = vis_and_path else {
             return Err(err());
+        };
+        let scope = TestScope {
+            browser,
+            visibility,
         };
 
         if path.contains('\\') {
@@ -477,7 +488,8 @@ impl<'a> TestPath<'a> {
         })
     }
 
-    pub fn from_fx_metadata_test(
+    pub fn from_metadata_test(
+        browser: Browser,
         rel_meta_file_path: &'a Path,
         test_name: &'a str,
     ) -> Result<Self, MetadataTestPathError<'a>> {
@@ -497,15 +509,22 @@ impl<'a> TestPath<'a> {
                 .ok_or(err())?,
         );
 
-        let (scope, path) = {
-            if let Ok(path) = rel_meta_file_path.strip_prefix(SCOPE_DIR_FX_PRIVATE_STR) {
-                (TestScope::FirefoxPrivate, path)
-            } else if let Ok(path) = rel_meta_file_path.strip_prefix(SCOPE_DIR_FX_PUBLIC_STR) {
-                (TestScope::Public, path)
-            } else {
-                return Err(err());
-            }
+        let (private_path, public_path) = match browser {
+            Browser::Firefox => (SCOPE_DIR_FX_PRIVATE_STR, SCOPE_DIR_FX_PUBLIC_STR),
+            Browser::Servo => (SCOPE_DIR_FX_PRIVATE_STR, SCOPE_DIR_SERVO_PUBLIC_STR),
         };
+        let (visibility, path) = if let Ok(path) = rel_meta_file_path.strip_prefix(private_path) {
+            (TestVisibility::Private, path)
+        } else if let Ok(path) = rel_meta_file_path.strip_prefix(public_path) {
+            (TestVisibility::Public, path)
+        } else {
+            return Err(err());
+        };
+        let scope = TestScope {
+            browser,
+            visibility,
+        };
+
         let Ok(path) = path.strip_prefix("meta/") else {
             return Err(err());
         };
@@ -571,9 +590,15 @@ impl<'a> TestPath<'a> {
             scope,
         } = self;
         lazy_format!(move |f| {
-            let scope_prefix = match scope {
-                TestScope::Public => "",
-                TestScope::FirefoxPrivate => "_mozilla/",
+            let TestScope {
+                browser,
+                visibility,
+            } = scope;
+            let scope_prefix = match (browser, visibility) {
+                (Browser::Firefox, TestVisibility::Public) => "",
+                (Browser::Firefox, TestVisibility::Private) => "_mozilla/",
+                (Browser::Servo, TestVisibility::Public) => "_webgpu/",
+                (Browser::Servo, TestVisibility::Private) => todo!(),
             };
             write!(f, "{scope_prefix}{}", path.components().join_with('/'))?;
             if let Some(variant) = variant.as_ref() {
@@ -583,16 +608,22 @@ impl<'a> TestPath<'a> {
         })
     }
 
-    pub(crate) fn rel_metadata_path_fx(&self) -> impl Display + '_ {
+    pub(crate) fn rel_metadata_path(&self) -> impl Display + '_ {
         let Self {
             path,
             variant: _,
             scope,
         } = self;
 
-        let scope_dir = match scope {
-            TestScope::Public => SCOPE_DIR_FX_PUBLIC_COMPONENTS,
-            TestScope::FirefoxPrivate => SCOPE_DIR_FX_PRIVATE_COMPONENTS,
+        let TestScope {
+            browser,
+            visibility,
+        } = scope;
+        let scope_dir = match (browser, visibility) {
+            (Browser::Firefox, TestVisibility::Public) => SCOPE_DIR_FX_PUBLIC_COMPONENTS,
+            (Browser::Firefox, TestVisibility::Private) => SCOPE_DIR_FX_PRIVATE_COMPONENTS,
+            (Browser::Servo, TestVisibility::Public) => SCOPE_DIR_SERVO_PUBLIC_COMPONENTS,
+            (Browser::Servo, TestVisibility::Private) => todo!(),
         }
         .iter()
         .chain(&["meta"])
@@ -641,43 +672,80 @@ impl Display for MetadataTestPathError<'_> {
     }
 }
 
-/// Symbolically represents a file root from which tests and metadata are based.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) enum TestScope {
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, ValueEnum)]
+pub(crate) enum Browser {
+    Firefox,
+    Servo,
+}
+
+#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(crate) enum TestVisibility {
     /// A public test available at some point in the history of [WPT upstream]. Note that while
     /// a test may be public, metadata associated with it is in a private location.
     ///
     /// [WPT upstream]: https://github.com/web-platform-tests/wpt
     Public,
-    /// A private test specific to Firefox.
-    FirefoxPrivate,
+    /// A private test specific to browser.
+    Private,
+}
+
+/// Symbolically represents a file root from which tests and metadata are based.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(crate) struct TestScope {
+    browser: Browser,
+    visibility: TestVisibility,
 }
 
 #[test]
 fn parse_test_path() {
     assert_eq!(
-        TestPath::from_fx_metadata_test(
+        TestPath::from_metadata_test(
+            Browser::Firefox,
             Path::new("testing/web-platform/mozilla/meta/blarg/cts.https.html.ini"),
             "cts.https.html?stuff=things"
         )
         .unwrap(),
         TestPath {
-            scope: TestScope::FirefoxPrivate,
+            scope: TestScope {
+                browser: Browser::Firefox,
+                visibility: TestVisibility::Private
+            },
             path: Utf8Path::new("blarg/cts.https.html").into(),
             variant: Some("?stuff=things".into()),
         }
     );
 
     assert_eq!(
-        TestPath::from_fx_metadata_test(
+        TestPath::from_metadata_test(
+            Browser::Firefox,
             Path::new("testing/web-platform/meta/stuff/things/cts.https.html.ini"),
             "cts.https.html"
         )
         .unwrap(),
         TestPath {
-            scope: TestScope::Public,
+            scope: TestScope {
+                browser: Browser::Firefox,
+                visibility: TestVisibility::Public
+            },
             path: Utf8Path::new("stuff/things/cts.https.html").into(),
             variant: None,
+        }
+    );
+
+    assert_eq!(
+        TestPath::from_metadata_test(
+            Browser::Servo,
+            Path::new("tests/wpt/webgpu/meta/webgpu/cts.https.html.ini"),
+            "cts.https.html?stuff=things"
+        )
+        .unwrap(),
+        TestPath {
+            scope: TestScope {
+                browser: Browser::Servo,
+                visibility: TestVisibility::Public
+            },
+            path: Utf8Path::new("webgpu/cts.https.html").into(),
+            variant: Some("?stuff=things".into()),
         }
     );
 }
@@ -685,16 +753,20 @@ fn parse_test_path() {
 #[test]
 fn report_meta_match() {
     macro_rules! assert_test_matches_meta {
-        ($test_run_path:expr, $rel_meta_path:expr, $test_section_header:expr) => {
+        ($browser:expr, $test_run_path:expr, $rel_meta_path:expr, $test_section_header:expr) => {
             assert_eq!(
-                TestPath::from_execution_report($test_run_path).unwrap(),
-                TestPath::from_fx_metadata_test(Path::new($rel_meta_path), $test_section_header)
-                    .unwrap()
+                TestPath::from_execution_report($browser, $test_run_path).unwrap(),
+                TestPath::from_metadata_test(
+                    $browser,
+                    Path::new($rel_meta_path),
+                    $test_section_header
+                )
+                .unwrap()
             );
             assert_eq!(
                 format!(
                     "/{}",
-                    TestPath::from_execution_report($test_run_path)
+                    TestPath::from_execution_report($browser, $test_run_path)
                         .unwrap()
                         .runner_url_path()
                 ),
@@ -704,14 +776,23 @@ fn report_meta_match() {
     }
 
     assert_test_matches_meta!(
+        Browser::Firefox,
         "/_mozilla/blarg/cts.https.html?stuff=things",
         "testing/web-platform/mozilla/meta/blarg/cts.https.html.ini",
         "cts.https.html?stuff=things"
     );
 
     assert_test_matches_meta!(
+        Browser::Firefox,
         "/blarg/cts.https.html?stuff=things",
         "testing/web-platform/meta/blarg/cts.https.html.ini",
+        "cts.https.html?stuff=things"
+    );
+
+    assert_test_matches_meta!(
+        Browser::Servo,
+        "/_webgpu/webgpu/cts.https.html?stuff=things",
+        "tests/wpt/webgpu/meta/webgpu/cts.https.html.ini",
         "cts.https.html?stuff=things"
     );
 }
@@ -719,16 +800,26 @@ fn report_meta_match() {
 #[test]
 fn report_meta_reject() {
     macro_rules! assert_test_rejects_meta {
-        ($test_run_path:expr, $rel_meta_path:expr, $test_section_header:expr) => {
+        (
+            $browser: expr,
+            $test_run_path:expr,
+            $rel_meta_path:expr,
+            $test_section_header:expr
+        ) => {
             assert_ne!(
-                TestPath::from_execution_report($test_run_path).unwrap(),
-                TestPath::from_fx_metadata_test(Path::new($rel_meta_path), $test_section_header)
-                    .unwrap()
+                TestPath::from_execution_report($browser, $test_run_path).unwrap(),
+                TestPath::from_metadata_test(
+                    $browser,
+                    Path::new($rel_meta_path),
+                    $test_section_header
+                )
+                .unwrap()
             )
         };
     }
 
     assert_test_rejects_meta!(
+        Browser::Firefox,
         "/blarg/cts.https.html?stuff=things",
         // Wrong: the `mozilla` component shouldn't be after `web-platform`
         "testing/web-platform/mozilla/meta/blarg/cts.https.html.ini",
@@ -736,6 +827,7 @@ fn report_meta_reject() {
     );
 
     assert_test_rejects_meta!(
+        Browser::Firefox,
         "/_mozilla/blarg/cts.https.html?stuff=things",
         // Wrong: missing the `mozilla` component after `web-platform`
         "testing/web-platform/meta/blarg/cts.https.html.ini",
@@ -746,7 +838,8 @@ fn report_meta_reject() {
 #[test]
 fn runner_url_path() {
     assert_eq!(
-        TestPath::from_fx_metadata_test(
+        TestPath::from_metadata_test(
+            Browser::Firefox,
             Path::new("testing/web-platform/meta/blarg/stuff.https.html.ini"),
             "stuff.https.html"
         )
@@ -757,7 +850,8 @@ fn runner_url_path() {
     );
 
     assert_eq!(
-        TestPath::from_fx_metadata_test(
+        TestPath::from_metadata_test(
+            Browser::Firefox,
             Path::new("testing/web-platform/meta/blarg/stuff.https.html.ini"),
             "stuff.https.html?win"
         )
@@ -768,7 +862,8 @@ fn runner_url_path() {
     );
 
     assert_eq!(
-        TestPath::from_fx_metadata_test(
+        TestPath::from_metadata_test(
+            Browser::Firefox,
             Path::new("testing/web-platform/mozilla/meta/blarg/stuff.https.html.ini"),
             "stuff.https.html"
         )
@@ -779,7 +874,8 @@ fn runner_url_path() {
     );
 
     assert_eq!(
-        TestPath::from_fx_metadata_test(
+        TestPath::from_metadata_test(
+            Browser::Firefox,
             Path::new("testing/web-platform/mozilla/meta/blarg/stuff.https.html.ini"),
             "stuff.https.html?win"
         )
@@ -787,5 +883,17 @@ fn runner_url_path() {
         .runner_url_path()
         .to_string(),
         "_mozilla/blarg/stuff.https.html?win",
+    );
+
+    assert_eq!(
+        TestPath::from_metadata_test(
+            Browser::Servo,
+            Path::new("tests/wpt/webgpu/meta/webgpu/cts.https.html.ini"),
+            "cts.https.html?win"
+        )
+        .unwrap()
+        .runner_url_path()
+        .to_string(),
+        "_webgpu/webgpu/cts.https.html?win",
     );
 }
