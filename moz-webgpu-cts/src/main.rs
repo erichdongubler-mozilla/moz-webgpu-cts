@@ -111,6 +111,9 @@ enum Subcommand {
         /// The heuristic to use for identifying tests that can be promoted.
         preset: UpdateBacklogPreset,
     },
+    /// Dump all metadata as JSON. Do so at your own risk; no guarantees are made about the
+    /// schema of this JSON, for now.
+    DumpJson,
 }
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
@@ -1462,6 +1465,44 @@ fn run(cli: Cli) -> ExitCode {
                 ExitCode::FAILURE
             } else {
                 ExitCode::SUCCESS
+            }
+        }
+        Subcommand::DumpJson => {
+            let mut read_err_found = false;
+            let metadata = read_and_parse_all_metadata(browser, &checkout)
+                .map_ok(|(path, file)| {
+                    let path = match Utf8PathBuf::from_path_buf(Arc::try_unwrap(path).unwrap()) {
+                        Ok(path) => path,
+                        Err(path) => panic!("ofrick, this ain't a UTF-8 path: {}", path.display()),
+                    };
+                    (path, file)
+                })
+                .filter_map(|res| match res {
+                    Ok(ok) => Some(ok),
+                    Err(AlreadyReportedToCommandline) => {
+                        read_err_found = true;
+                        None
+                    }
+                })
+                .collect::<BTreeMap<_, _>>();
+            if read_err_found {
+                log::error!(concat!(
+                    "found one or more failures while reading metadata, ",
+                    "see above for more details"
+                ));
+                return ExitCode::FAILURE;
+            }
+
+            log::debug!("dumping all metadata to JSON…");
+            match serde_json::to_writer(io::stdout().lock(), &metadata)
+                .into_diagnostic()
+                .wrap_err("error while writing JSON to `stdout`")
+            {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(e) => {
+                    log::error!("{e:?}");
+                    ExitCode::FAILURE
+                }
             }
         }
     }
