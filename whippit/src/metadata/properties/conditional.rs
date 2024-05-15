@@ -265,6 +265,7 @@ fn test_conditional_fallback() {
 
 /// Values placed into a [`super::PropertyValue::Conditional`].
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[cfg_attr(feature = "serde1", derive(serde::Deserialize, serde::Serialize))]
 pub struct ConditionalValue<C, V> {
     /// Conditional clauses and their resulting values if evaluated to true.
     pub conditions: Vec<(C, V)>,

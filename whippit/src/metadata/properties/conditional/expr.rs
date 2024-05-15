@@ -15,6 +15,7 @@ use crate::metadata::ParseError;
 
 /// Values that can be placed into [`Value::Literal`].
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[cfg_attr(feature = "serde1", derive(serde::Deserialize, serde::Serialize))]
 pub enum Literal<'a> {
     /// At time of writing, no escaping is used for string values in this implementation.
     String(Cow<'a, str>),
@@ -42,6 +43,7 @@ impl<'a> Literal<'a> {
 /// Variable and literal values supported by [WPT metadata
 /// properties](crate::metadata::properties). Usually the terminal of a [`Expr`] expression.
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[cfg_attr(feature = "serde1", derive(serde::Deserialize, serde::Serialize))]
 pub enum Value<'a> {
     Variable(Cow<'a, str>),
     Literal(Literal<'a>),
@@ -74,6 +76,7 @@ impl<'a> Value<'a> {
 /// [`Properties`]: crate::metadata::properties::Properties
 /// [`Properties::property_parser`]: crate::metadata::properties::Properties::property_parser
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[cfg_attr(feature = "serde1", derive(serde::Deserialize, serde::Serialize))]
 pub enum Expr<V> {
     Value(V),
     And(Box<Expr<V>>, Box<Expr<V>>),

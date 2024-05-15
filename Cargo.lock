@@ -1047,6 +1047,7 @@ dependencies = [
  "format",
  "indexmap",
  "insta",
+ "serde",
 ]
 
 [[package]]
