@@ -106,6 +106,8 @@ enum ReportProcessingPreset {
     #[value(alias("same-fx"))]
     Merge,
     ResetAll,
+    /// Set's only reported results to new value
+    Set,
     /// Resets only bad->good
     SetGood,
 }
@@ -630,6 +632,10 @@ fn run(cli: Cli) -> ExitCode {
                                     Some(rep) => meta | rep,
                                     None => meta,
                                 },
+                                ReportProcessingPreset::Set => |meta, rep| match rep {
+                                    Some(rep) => rep,
+                                    None => meta,
+                                },
                                 ReportProcessingPreset::SetGood => {
                                     |meta: Expectation<_>, rep: Option<Expectation<_>>| match rep {
                                         Some(rep) => {
@@ -684,7 +690,7 @@ fn run(cli: Cli) -> ExitCode {
 
                     if test_entry.reported.is_empty() {
                         match preset {
-                            ReportProcessingPreset::Merge => {
+                            ReportProcessingPreset::Merge | ReportProcessingPreset::Set => {
                                 log::warn!("no entries found in reports for {test_path:?}")
                             }
                             ReportProcessingPreset::ResetAll
