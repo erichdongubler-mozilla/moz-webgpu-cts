@@ -1533,26 +1533,22 @@ fn search_for_repo_root() -> Result<PathBuf, AlreadyReportedToCommandline> {
                 dir
             })
     };
-    let gecko_source_root =
-        find_up("Mercurial", ".hg").or_else(|e| match find_up("Git", ".git") {
-            Ok(path) => {
-                log::debug!("{e:?}");
-                Ok(path)
-            }
-            Err(e2) => {
-                log::warn!("{e:?}");
-                log::warn!("{e2:?}");
-                log::error!("failed to automatically find a repository root");
-                Err(AlreadyReportedToCommandline)
-            }
-        })?;
+    let source_root = find_up("Mercurial", ".hg").or_else(|e| match find_up("Git", ".git") {
+        Ok(path) => {
+            log::debug!("{e:?}");
+            Ok(path)
+        }
+        Err(e2) => {
+            log::warn!("{e:?}");
+            log::warn!("{e2:?}");
+            log::error!("failed to automatically find a repository root");
+            Err(AlreadyReportedToCommandline)
+        }
+    })?;
 
-    log::info!(
-        "detected repository root at {}",
-        gecko_source_root.display()
-    );
+    log::info!("detected repository root at {}", source_root.display());
 
-    Ok(gecko_source_root)
+    Ok(source_root)
 }
 
 struct AlreadyReportedToCommandline;
