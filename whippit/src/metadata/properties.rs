@@ -29,6 +29,7 @@ use crate::metadata::{indent, ParseError};
 /// [`Test`]: crate::metadata::Test
 /// [`Subtest`]: crate::metadata::Subtest
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[cfg_attr(feature = "serde1", derive(serde::Deserialize, serde::Serialize))]
 pub enum PropertyValue<C, V> {
     /// A property value that is only ever a specific value.
     Unconditional(V),

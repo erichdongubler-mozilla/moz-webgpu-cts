@@ -8,7 +8,7 @@ use enum_map::Enum;
 use enumset::EnumSetType;
 use format::lazy_format;
 use joinery::JoinableIterator;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use strum::EnumIter;
 use whippit::{
     metadata::{
@@ -34,7 +34,7 @@ use crate::shared::{ExpandedPropertyValue, Expected, MaybeCollapsed, NormalizedP
 #[cfg(test)]
 use insta::assert_debug_snapshot;
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Serialize)]
 pub struct File {
     pub properties: FileProps,
     pub tests: BTreeMap<SectionHeader, Test>,
@@ -56,7 +56,7 @@ impl<'a> metadata::File<'a> for File {
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Serialize)]
 pub struct FileProps {
     pub is_disabled: Option<PropertyValue<Expr<Value<'static>>, String>>,
     #[allow(clippy::type_complexity)]
@@ -562,7 +562,7 @@ fn format_file_properties(props: &FileProps) -> impl Display + '_ {
     })
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]
 pub enum ImplementationStatus {
     /// Indicates that functionality governing test(s) is implemented or currently being
     /// implemented, and generally expected to conform to tests.
@@ -631,7 +631,7 @@ impl<'a> metadata::Tests<'a> for Tests {
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Serialize)]
 pub struct Test {
     pub properties: TestProps<TestOutcome>,
     pub subtests: BTreeMap<SectionHeader, Subtest>,
@@ -678,7 +678,7 @@ impl<'a> metadata::Subtests<'a> for Subtests {
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Serialize)]
 pub struct Subtest {
     pub properties: TestProps<SubtestOutcome>,
 }
@@ -844,20 +844,20 @@ where
     })
 }
 
-#[derive(Clone, Copy, Debug, Enum, EnumIter, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Enum, EnumIter, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub enum Platform {
     Windows,
     Linux,
     MacOs,
 }
 
-#[derive(Clone, Copy, Debug, Enum, EnumIter, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Enum, EnumIter, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub enum BuildProfile {
     Debug,
     Optimized,
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
 pub struct TestProps<Out>
 where
     Out: EnumSetType,
@@ -1179,7 +1179,9 @@ pub(crate) const CRASH: &str = "CRASH";
 pub(crate) const OK: &str = "OK";
 pub(crate) const ERROR: &str = "ERROR";
 
-#[derive(Debug, Deserialize, EnumSetType, Hash)]
+#[derive(Debug, Deserialize, EnumSetType, Hash, Serialize)]
+#[enumset(serialize_repr = "list")]
+#[enumset(serialize_deny_unknown)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum TestOutcome {
     Ok,
@@ -1234,7 +1236,9 @@ impl<'a> Properties<'a> for TestProps<TestOutcome> {
     }
 }
 
-#[derive(Debug, Deserialize, EnumSetType, Hash)]
+#[derive(Debug, Deserialize, EnumSetType, Hash, Serialize)]
+#[enumset(serialize_repr = "list")]
+#[enumset(serialize_deny_unknown)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum SubtestOutcome {
     Pass,

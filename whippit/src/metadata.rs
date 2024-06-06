@@ -1140,6 +1140,7 @@ fn test_indent() {
 }
 
 #[derive(Clone, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "serde1", derive(serde::Deserialize, serde::Serialize))]
 pub struct SectionHeader(pub String);
 
 impl Debug for SectionHeader {

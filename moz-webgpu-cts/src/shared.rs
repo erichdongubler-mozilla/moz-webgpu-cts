@@ -15,6 +15,7 @@ use enumset::{EnumSet, EnumSetType};
 use format::lazy_format;
 use itertools::Itertools;
 use joinery::JoinableIterator;
+use serde::Serialize;
 
 use crate::metadata::{BuildProfile, Platform};
 
@@ -25,7 +26,7 @@ use crate::metadata::{BuildProfile, Platform};
 ///
 /// [`Test`]: crate::metadata::Test
 /// [`Subtest`]: crate::metadata::Subtest
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Serialize)]
 pub struct Expected<Out>(EnumSet<Out>)
 where
     Out: EnumSetType;
@@ -231,7 +232,7 @@ where
 
 /// A completely flat representation of [`NormalizedPropertyValue`] suitable for byte
 /// representation in memory.
-#[derive(Debug, Default, Clone, Copy, Eq, PartialEq)]
+#[derive(Debug, Default, Clone, Copy, Eq, PartialEq, Serialize)]
 pub struct ExpandedPropertyValue<T>(ExpandedPropertyValueData<T>);
 
 impl<T> Index<(Platform, BuildProfile)> for ExpandedPropertyValue<T> {
