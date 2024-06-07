@@ -560,22 +560,17 @@ fn run(cli: Cli) -> ExitCode {
                     ) where
                         Out: Debug + Default + EnumSetType,
                     {
-                        let reconciled = 'resolve: {
+                        let reconciled = {
                             let reported = |platform, build_profile| {
                                 reported
                                     .get(&platform)
                                     .and_then(|rep| rep.get(&build_profile))
                                     .copied()
                             };
-                            let all_reported = || {
-                                ExpandedPropertyValue::from_query(|platform, build_profile| {
-                                    reported(platform, build_profile).unwrap_or_default()
-                                })
-                            };
                             if let Some(meta_expected) = meta_props.expected {
                                 let resolve = match preset {
                                     ReportProcessingPreset::ResetAll => {
-                                        break 'resolve all_reported();
+                                        |_meta, rep: Option<_>| rep.unwrap_or_default()
                                     }
                                     ReportProcessingPreset::ResetContradictory => {
                                         |meta: Expected<_>, rep: Option<Expected<_>>| {
@@ -595,7 +590,9 @@ fn run(cli: Cli) -> ExitCode {
                                     )
                                 })
                             } else {
-                                all_reported()
+                                ExpandedPropertyValue::from_query(|platform, build_profile| {
+                                    reported(platform, build_profile).unwrap_or_default()
+                                })
                             }
                         };
                         meta_props.expected = Some(reconciled);
