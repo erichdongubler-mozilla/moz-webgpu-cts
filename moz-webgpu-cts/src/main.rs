@@ -675,17 +675,24 @@ fn run(cli: Cli) -> ExitCode {
                         }
 
                         let Entry {
-                            meta_props: properties,
+                            meta_props: subtest_properties,
                             reported: subtest_reported,
                         } = subtest;
 
-                        let mut properties = properties.unwrap_or_default();
-                        reconcile(&mut properties, subtest_reported, preset);
-                        for (_, expected) in properties.expected.as_mut().unwrap().iter_mut() {
+                        let mut subtest_properties = subtest_properties.unwrap_or_default();
+                        reconcile(&mut subtest_properties, subtest_reported, preset);
+                        for (_, expected) in
+                            subtest_properties.expected.as_mut().unwrap().iter_mut()
+                        {
                             taint_subtest_timeouts_by_suspicion(expected);
                         }
 
-                        subtests.insert(subtest_name, Subtest { properties });
+                        subtests.insert(
+                            subtest_name,
+                            Subtest {
+                                properties: subtest_properties,
+                            },
+                        );
                     }
 
                     if subtests.is_empty() && properties == Default::default() {
