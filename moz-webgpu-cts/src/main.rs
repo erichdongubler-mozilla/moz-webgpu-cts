@@ -572,22 +572,22 @@ fn run(cli: Cli) -> ExitCode {
                                     reported(platform, build_profile).unwrap_or_default()
                                 })
                             };
-                            let resolve = match preset {
-                                ReportProcessingPreset::ResetAll => {
-                                    break 'resolve all_reported();
-                                }
-                                ReportProcessingPreset::ResetContradictory => {
-                                    |meta: Expected<_>, rep: Option<Expected<_>>| {
-                                        rep.filter(|rep| !meta.is_superset(rep)).unwrap_or(meta)
-                                    }
-                                }
-                                ReportProcessingPreset::Merge => |meta, rep| match rep {
-                                    Some(rep) => meta | rep,
-                                    None => meta,
-                                },
-                            };
-
                             if let Some(meta_expected) = meta_props.expected {
+                                let resolve = match preset {
+                                    ReportProcessingPreset::ResetAll => {
+                                        break 'resolve all_reported();
+                                    }
+                                    ReportProcessingPreset::ResetContradictory => {
+                                        |meta: Expected<_>, rep: Option<Expected<_>>| {
+                                            rep.filter(|rep| !meta.is_superset(rep)).unwrap_or(meta)
+                                        }
+                                    }
+                                    ReportProcessingPreset::Merge => |meta, rep| match rep {
+                                        Some(rep) => meta | rep,
+                                        None => meta,
+                                    },
+                                };
+
                                 ExpandedPropertyValue::from_query(|platform, build_profile| {
                                     resolve(
                                         meta_expected[(platform, build_profile)],
