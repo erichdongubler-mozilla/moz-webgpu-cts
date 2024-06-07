@@ -435,12 +435,12 @@ pub(crate) struct TestPath<'a> {
     pub variant: Option<Cow<'a, str>>,
 }
 
-const SCOPE_DIR_FX_PRIVATE_STR: &str = "testing/web-platform/mozilla";
-const SCOPE_DIR_FX_PRIVATE_COMPONENTS: &[&str] = &["testing", "web-platform", "mozilla"];
-const SCOPE_DIR_FX_PUBLIC_STR: &str = "testing/web-platform";
-const SCOPE_DIR_FX_PUBLIC_COMPONENTS: &[&str] = &["testing", "web-platform"];
-const SCOPE_DIR_SERVO_PUBLIC_STR: &str = "tests/wpt/webgpu";
-const SCOPE_DIR_SERVO_PUBLIC_COMPONENTS: &[&str] = &["tests", "wpt", "webgpu"];
+const SCOPE_DIR_FX_MOZILLA_STR: &str = "testing/web-platform/mozilla";
+const SCOPE_DIR_FX_MOZILLA_COMPONENTS: &[&str] = &["testing", "web-platform", "mozilla"];
+const SCOPE_DIR_FX_UPSTREAM_STR: &str = "testing/web-platform";
+const SCOPE_DIR_FX_UPSTREAM_COMPONENTS: &[&str] = &["testing", "web-platform"];
+const SCOPE_DIR_SERVO_WEBGPU_STR: &str = "tests/wpt/webgpu";
+const SCOPE_DIR_SERVO_WEBGPU_COMPONENTS: &[&str] = &["tests", "wpt", "webgpu"];
 
 impl<'a> TestPath<'a> {
     pub fn from_execution_report(
@@ -449,23 +449,9 @@ impl<'a> TestPath<'a> {
     ) -> Result<Self, ExecutionReportPathError<'a>> {
         let err = || ExecutionReportPathError { test_url_path };
 
-        let try_strip_with = |prefix, visibility| {
-            test_url_path
-                .strip_prefix(prefix)
-                .map(|stripped| (visibility, stripped))
-        };
-        let vis_and_path = match browser {
-            Browser::Firefox => try_strip_with("/_mozilla/", TestVisibility::Private),
-            Browser::Servo => try_strip_with("/_webgpu/", TestVisibility::Public),
-        }
-        .or_else(|| try_strip_with("/", TestVisibility::Public));
-        let Some((visibility, path)) = vis_and_path else {
-            return Err(err());
-        };
-        let scope = TestScope {
-            browser,
-            visibility,
-        };
+        let (scope, path) = browser
+            .strip_scope_url_prefix(test_url_path)
+            .ok_or_else(err)?;
 
         if path.contains('\\') {
             return Err(err());
@@ -510,21 +496,9 @@ impl<'a> TestPath<'a> {
                 .ok_or(err())?,
         );
 
-        let (private_path, public_path) = match browser {
-            Browser::Firefox => (SCOPE_DIR_FX_PRIVATE_STR, SCOPE_DIR_FX_PUBLIC_STR),
-            Browser::Servo => (SCOPE_DIR_FX_PRIVATE_STR, SCOPE_DIR_SERVO_PUBLIC_STR),
-        };
-        let (visibility, path) = if let Ok(path) = rel_meta_file_path.strip_prefix(private_path) {
-            (TestVisibility::Private, path)
-        } else if let Ok(path) = rel_meta_file_path.strip_prefix(public_path) {
-            (TestVisibility::Public, path)
-        } else {
-            return Err(err());
-        };
-        let scope = TestScope {
-            browser,
-            visibility,
-        };
+        let (scope, path) = browser
+            .strip_scope_metadata_parent_path(rel_meta_file_path)
+            .map_err(|_e| err())?;
 
         let Ok(path) = path.strip_prefix("meta/") else {
             return Err(err());
@@ -538,7 +512,7 @@ impl<'a> TestPath<'a> {
 
         Ok(Self {
             scope,
-            path: Utf8Path::new(path).into(),
+            path: path.into(),
             variant: variant.map(Into::into),
         })
     }
@@ -591,17 +565,12 @@ impl<'a> TestPath<'a> {
             scope,
         } = self;
         lazy_format!(move |f| {
-            let TestScope {
-                browser,
-                visibility,
-            } = scope;
-            let scope_prefix = match (browser, visibility) {
-                (Browser::Firefox, TestVisibility::Public) => "",
-                (Browser::Firefox, TestVisibility::Private) => "_mozilla/",
-                (Browser::Servo, TestVisibility::Public) => "_webgpu/",
-                (Browser::Servo, TestVisibility::Private) => todo!(),
-            };
-            write!(f, "{scope_prefix}{}", path.components().join_with('/'))?;
+            write!(
+                f,
+                "{}{}",
+                scope.url_prefix(),
+                path.components().join_with('/')
+            )?;
             if let Some(variant) = variant.as_ref() {
                 write!(f, "{}", variant)?;
             }
@@ -616,24 +585,16 @@ impl<'a> TestPath<'a> {
             scope,
         } = self;
 
-        let TestScope {
-            browser,
-            visibility,
-        } = scope;
-        let scope_dir = match (browser, visibility) {
-            (Browser::Firefox, TestVisibility::Public) => SCOPE_DIR_FX_PUBLIC_COMPONENTS,
-            (Browser::Firefox, TestVisibility::Private) => SCOPE_DIR_FX_PRIVATE_COMPONENTS,
-            (Browser::Servo, TestVisibility::Public) => SCOPE_DIR_SERVO_PUBLIC_COMPONENTS,
-            (Browser::Servo, TestVisibility::Private) => todo!(),
-        }
-        .iter()
-        .chain(&["meta"])
-        .join_with(std::path::MAIN_SEPARATOR);
+        let scope_dir = scope
+            .metadata_parent_path_components()
+            .chain(["meta"].iter().cloned())
+            .join_with(std::path::MAIN_SEPARATOR);
 
         lazy_format!(move |f| { write!(f, "{scope_dir}{}{path}.ini", std::path::MAIN_SEPARATOR) })
     }
 }
 
+/// An error encountered during [`TestPath::from_execution_report`].
 #[derive(Debug)]
 pub struct ExecutionReportPathError<'a> {
     test_url_path: &'a str,
@@ -653,6 +614,7 @@ impl Display for ExecutionReportPathError<'_> {
     }
 }
 
+/// An error encountered during [`TestPath::from_metadata_test`].
 #[derive(Debug)]
 pub struct MetadataTestPathError<'a> {
     rel_meta_file_path: &'a Path,
@@ -673,28 +635,114 @@ impl Display for MetadataTestPathError<'_> {
     }
 }
 
+/// A browser supported by [super::main], used for [`TestPath`]s.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, ValueEnum)]
 pub(crate) enum Browser {
     Firefox,
     Servo,
 }
 
-#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) enum TestVisibility {
+impl Browser {
+    /// NOTE: Keep this implementation in sync with [`TestScope::url_prefix`].
+    pub(crate) fn strip_scope_url_prefix<'a>(
+        &self,
+        url_path: &'a str,
+    ) -> Option<(TestScope, &'a str)> {
+        let strip_prefix = |prefix, scope| {
+            url_path
+                .strip_prefix(prefix)
+                .map(|stripped| (scope, stripped))
+        };
+        match self {
+            Browser::Firefox => strip_prefix("/_mozilla/", FirefoxTestScope::Mozilla.into())
+                .or_else(|| strip_prefix("/", FirefoxTestScope::Upstream.into())),
+            Browser::Servo => strip_prefix("/_webgpu/", ServoTestScope::WebGpu.into()),
+        }
+    }
+
+    /// NOTE: Keep this implementation in sync with [`TestScope::metadata_parent_path_components`].
+    pub(crate) fn strip_scope_metadata_parent_path<'a>(
+        &self,
+        path: &'a Utf8Path,
+    ) -> Result<(TestScope, &'a Utf8Path), std::path::StripPrefixError> {
+        let strip_prefix =
+            |prefix, scope| path.strip_prefix(prefix).map(|stripped| (scope, stripped));
+        match self {
+            Browser::Firefox => {
+                strip_prefix(SCOPE_DIR_FX_MOZILLA_STR, FirefoxTestScope::Mozilla.into()).or_else(
+                    |_| strip_prefix(SCOPE_DIR_FX_UPSTREAM_STR, FirefoxTestScope::Upstream.into()),
+                )
+            }
+            Browser::Servo => {
+                strip_prefix(SCOPE_DIR_SERVO_WEBGPU_STR, ServoTestScope::WebGpu.into())
+            }
+        }
+    }
+}
+
+/// Symbolically represents a file root from which tests and metadata are based. Scopes are based
+/// on a specific [`Browser`].
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(crate) enum TestScope {
+    Firefox(FirefoxTestScope),
+    Servo(ServoTestScope),
+}
+
+impl TestScope {
+    /// NOTE: Keep this implementation in sync with [`Browser::strip_scope_url_prefix`].
+    fn url_prefix(&self) -> &str {
+        match self {
+            TestScope::Firefox(scope) => match scope {
+                FirefoxTestScope::Upstream => "",
+                FirefoxTestScope::Mozilla => "_mozilla/",
+            },
+            TestScope::Servo(ServoTestScope::WebGpu) => "_webgpu/",
+        }
+    }
+
+    /// NOTE: Keep this implementation in sync with [`Browser::strip_scope_metadata_parent_path`].
+    fn metadata_parent_path_components(&self) -> impl Iterator<Item = &str> + Clone {
+        match self {
+            TestScope::Firefox(scope) => match scope {
+                FirefoxTestScope::Upstream => SCOPE_DIR_FX_UPSTREAM_COMPONENTS,
+                FirefoxTestScope::Mozilla => SCOPE_DIR_FX_MOZILLA_COMPONENTS,
+            },
+            TestScope::Servo(ServoTestScope::WebGpu) => SCOPE_DIR_SERVO_WEBGPU_COMPONENTS,
+        }
+        .iter()
+        .cloned()
+    }
+}
+
+/// Subset of [`TestScope`] for [`Browser::Firefox`].
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(crate) enum FirefoxTestScope {
     /// A public test available at some point in the history of [WPT upstream]. Note that while
     /// a test may be public, metadata associated with it is in a private location.
     ///
     /// [WPT upstream]: https://github.com/web-platform-tests/wpt
-    Public,
-    /// A private test specific to browser.
-    Private,
+    Upstream,
+    /// A private test specific to Firefox.
+    Mozilla,
 }
 
-/// Symbolically represents a file root from which tests and metadata are based.
+impl From<FirefoxTestScope> for TestScope {
+    fn from(value: FirefoxTestScope) -> Self {
+        Self::Firefox(value)
+    }
+}
+
+/// Subset of [`TestScope`] for [`Browser::Servo`].
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) struct TestScope {
-    browser: Browser,
-    visibility: TestVisibility,
+pub(crate) enum ServoTestScope {
+    /// A WebGPU CTS test vendored into Servo's source tree.
+    WebGpu,
+}
+
+impl From<ServoTestScope> for TestScope {
+    fn from(value: ServoTestScope) -> Self {
+        Self::Servo(value)
+    }
 }
 
 #[test]
@@ -707,10 +755,7 @@ fn parse_test_path() {
         )
         .unwrap(),
         TestPath {
-            scope: TestScope {
-                browser: Browser::Firefox,
-                visibility: TestVisibility::Private
-            },
+            scope: FirefoxTestScope::Mozilla.into(),
             path: Utf8Path::new("blarg/cts.https.html").into(),
             variant: Some("?stuff=things".into()),
         }
@@ -724,10 +769,7 @@ fn parse_test_path() {
         )
         .unwrap(),
         TestPath {
-            scope: TestScope {
-                browser: Browser::Firefox,
-                visibility: TestVisibility::Public
-            },
+            scope: FirefoxTestScope::Upstream.into(),
             path: Utf8Path::new("stuff/things/cts.https.html").into(),
             variant: None,
         }
@@ -741,10 +783,7 @@ fn parse_test_path() {
         )
         .unwrap(),
         TestPath {
-            scope: TestScope {
-                browser: Browser::Servo,
-                visibility: TestVisibility::Public
-            },
+            scope: ServoTestScope::WebGpu.into(),
             path: Utf8Path::new("webgpu/cts.https.html").into(),
             variant: Some("?stuff=things".into()),
         }
