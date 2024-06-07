@@ -561,7 +561,7 @@ fn run(cli: Cli) -> ExitCode {
                         Out: Debug + Default + EnumSetType,
                     {
                         let reconciled = {
-                            let reported = |platform, build_profile| {
+                            let reported = |(platform, build_profile)| {
                                 reported
                                     .get(&platform)
                                     .and_then(|rep| rep.get(&build_profile))
@@ -584,14 +584,12 @@ fn run(cli: Cli) -> ExitCode {
                                 };
 
                                 ExpandedPropertyValue::from_query(|platform, build_profile| {
-                                    resolve(
-                                        meta_expected[(platform, build_profile)],
-                                        reported(platform, build_profile),
-                                    )
+                                    let key = (platform, build_profile);
+                                    resolve(meta_expected[key], reported(key))
                                 })
                             } else {
                                 ExpandedPropertyValue::from_query(|platform, build_profile| {
-                                    reported(platform, build_profile).unwrap_or_default()
+                                    reported((platform, build_profile)).unwrap_or_default()
                                 })
                             }
                         };
