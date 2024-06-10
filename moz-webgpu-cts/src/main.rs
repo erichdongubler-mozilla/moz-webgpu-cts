@@ -38,6 +38,7 @@ use format::lazy_format;
 use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
 use joinery::JoinableIterator;
+use metadata::ImplementationStatus;
 use miette::{miette, Diagnostic, IntoDiagnostic, NamedSource, Report, SourceSpan, WrapErr};
 use path_dsl::path;
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
@@ -97,6 +98,9 @@ enum Subcommand {
         /// The heuristic for resolving differences between current metadata and processed reports.
         #[clap(long, default_value = "reset-contradictory")]
         preset: ReportProcessingPreset,
+        /// The `implementation-status` that changes should be applied to.
+        #[clap(value_enum, long, default_value_t = ImplementationStatus::Backlog)]
+        implementation_status: ImplementationStatus,
     },
     /// Parse test metadata, apply automated fixups, and re-emit it in normalized form.
     #[clap(name = "fixup", alias = "fmt")]
@@ -167,6 +171,7 @@ fn run(cli: Cli) -> ExitCode {
             report_globs,
             report_paths,
             preset,
+            implementation_status,
         } => {
             let report_globs = {
                 let mut found_glob_parse_err = false;
@@ -553,49 +558,63 @@ fn run(cli: Cli) -> ExitCode {
             let recombined_tests_iter = entries_by_cts_path
                 .chain(other_entries_by_test)
                 .filter_map(|(test_path, test_entry)| {
+                    /// Reconciles `meta_props` with `reported` if they match
+                    /// `implementation_status_filter`.
+                    ///
+                    /// For subtests, `parent_implementation_status` should be specified so the
+                    /// parent test's implementation status can be used for filtering.
                     fn reconcile<Out>(
+                        parent_implementation_status: Option<
+                            &ExpandedPropertyValue<ImplementationStatus>,
+                        >,
                         meta_props: &mut TestProps<Out>,
                         reported: BTreeMap<Platform, BTreeMap<BuildProfile, Expected<Out>>>,
                         preset: ReportProcessingPreset,
+                        implementation_status_filter: ImplementationStatus,
                     ) where
                         Out: Debug + Default + EnumSetType,
                     {
-                        let reconciled = 'resolve: {
-                            let reported = |platform, build_profile| {
+                        let implementation_status = meta_props
+                            .implementation_status
+                            .or(parent_implementation_status.cloned())
+                            .unwrap_or_default();
+                        let should_apply_changes =
+                            |key| implementation_status[key] == implementation_status_filter;
+                        let reconciled = {
+                            let reported = |(platform, build_profile)| {
                                 reported
                                     .get(&platform)
                                     .and_then(|rep| rep.get(&build_profile))
                                     .copied()
                             };
-                            let all_reported = || {
-                                ExpandedPropertyValue::from_query(|platform, build_profile| {
-                                    reported(platform, build_profile).unwrap_or_default()
-                                })
-                            };
-                            let resolve = match preset {
-                                ReportProcessingPreset::ResetAll => {
-                                    break 'resolve all_reported();
-                                }
-                                ReportProcessingPreset::ResetContradictory => {
-                                    |meta: Expected<_>, rep: Option<Expected<_>>| {
-                                        rep.filter(|rep| !meta.is_superset(rep)).unwrap_or(meta)
-                                    }
-                                }
-                                ReportProcessingPreset::Merge => |meta, rep| match rep {
-                                    Some(rep) => meta | rep,
-                                    None => meta,
-                                },
-                            };
-
                             if let Some(meta_expected) = meta_props.expected {
+                                let resolve = match preset {
+                                    ReportProcessingPreset::ResetAll => {
+                                        |_meta, rep: Option<_>| rep.unwrap_or_default()
+                                    }
+                                    ReportProcessingPreset::ResetContradictory => {
+                                        |meta: Expected<_>, rep: Option<Expected<_>>| {
+                                            rep.filter(|rep| !meta.is_superset(rep)).unwrap_or(meta)
+                                        }
+                                    }
+                                    ReportProcessingPreset::Merge => |meta, rep| match rep {
+                                        Some(rep) => meta | rep,
+                                        None => meta,
+                                    },
+                                };
+
                                 ExpandedPropertyValue::from_query(|platform, build_profile| {
-                                    resolve(
-                                        meta_expected[(platform, build_profile)],
-                                        reported(platform, build_profile),
-                                    )
+                                    let key = (platform, build_profile);
+                                    if should_apply_changes(key) {
+                                        resolve(meta_expected[key], reported(key))
+                                    } else {
+                                        meta_expected[key]
+                                    }
                                 })
                             } else {
-                                all_reported()
+                                ExpandedPropertyValue::from_query(|platform, build_profile| {
+                                    reported((platform, build_profile)).unwrap_or_default()
+                                })
                             }
                         };
                         meta_props.expected = Some(reconciled);
@@ -664,7 +683,13 @@ fn run(cli: Cli) -> ExitCode {
                         }
                     }
 
-                    reconcile(&mut properties, test_reported, preset);
+                    reconcile(
+                        None,
+                        &mut properties,
+                        test_reported,
+                        preset,
+                        implementation_status,
+                    );
 
                     let mut subtests = BTreeMap::new();
                     for (subtest_name, subtest) in subtest_entries {
@@ -675,17 +700,30 @@ fn run(cli: Cli) -> ExitCode {
                         }
 
                         let Entry {
-                            meta_props: properties,
+                            meta_props: subtest_properties,
                             reported: subtest_reported,
                         } = subtest;
 
-                        let mut properties = properties.unwrap_or_default();
-                        reconcile(&mut properties, subtest_reported, preset);
-                        for (_, expected) in properties.expected.as_mut().unwrap().iter_mut() {
+                        let mut subtest_properties = subtest_properties.unwrap_or_default();
+                        reconcile(
+                            properties.implementation_status.as_ref(),
+                            &mut subtest_properties,
+                            subtest_reported,
+                            preset,
+                            implementation_status,
+                        );
+                        for (_, expected) in
+                            subtest_properties.expected.as_mut().unwrap().iter_mut()
+                        {
                             taint_subtest_timeouts_by_suspicion(expected);
                         }
 
-                        subtests.insert(subtest_name, Subtest { properties });
+                        subtests.insert(
+                            subtest_name,
+                            Subtest {
+                                properties: subtest_properties,
+                            },
+                        );
                     }
 
                     if subtests.is_empty() && properties == Default::default() {
