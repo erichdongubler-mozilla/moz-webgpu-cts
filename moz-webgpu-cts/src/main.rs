@@ -296,7 +296,7 @@ fn run(cli: Cli) -> ExitCode {
             let mut other_entries_by_test = IndexMap::<TestPath<'_>, TestEntry>::default();
             let old_meta_file_paths = meta_files_by_path.keys().cloned().collect::<Vec<_>>();
 
-            log::info!("loading metadata for comparison to reports…");
+            log::debug!("loading metadata for comparison to reports…");
             for (path, file) in meta_files_by_path {
                 let File { properties, tests } = file;
 
@@ -378,7 +378,7 @@ fn run(cli: Cli) -> ExitCode {
                 }
             }
 
-            log::info!("gathering reported test outcomes for reconciliation with metadata…");
+            log::debug!("gathering reported test outcomes for reconciliation with metadata…");
 
             let using_reports = !exec_report_paths.is_empty();
 
@@ -534,7 +534,7 @@ fn run(cli: Cli) -> ExitCode {
                 }
             }
 
-            log::info!("metadata and reports gathered, now reconciling outcomes…");
+            log::debug!("metadata and reports gathered, now reconciling outcomes…");
 
             let mut found_reconciliation_err = false;
             let entries_by_cts_path = entries_by_cts_path.into_iter().map(|(_name, entry)| {
@@ -749,7 +749,7 @@ fn run(cli: Cli) -> ExitCode {
                     }
                 });
 
-            log::info!(
+            log::debug!(
                 "outcome reconciliation complete, gathering tests back into new metadata files…"
             );
 
@@ -801,7 +801,7 @@ fn run(cli: Cli) -> ExitCode {
                 !is_empty
             });
 
-            log::info!("gathering of new metadata files completed, writing to file system…");
+            log::debug!("gathering of new metadata files completed, writing to file system…");
 
             for (path, file) in files {
                 log::debug!("writing new metadata to {}", path.display());
@@ -1586,7 +1586,7 @@ fn read_and_parse_all_metadata(
             let file_contents = Arc::new(file_contents);
 
             if !started_parsing {
-                log::info!("parsing metadata…");
+                log::debug!("parsing metadata…");
                 started_parsing = true;
             }
 
@@ -1651,7 +1651,7 @@ fn read_files_at(
     base: &Path,
     glob_pattern: &str,
 ) -> impl Iterator<Item = Result<(PathBuf, String), AlreadyReportedToCommandline>> {
-    log::info!("reading {glob_pattern} files at {}", base.display());
+    log::debug!("reading {glob_pattern} files at {}", base.display());
     let mut found_read_err = false;
     let mut paths = Glob::new(glob_pattern)
         .unwrap()
@@ -1751,7 +1751,7 @@ fn search_for_repo_root() -> Result<PathBuf, AlreadyReportedToCommandline> {
         }
     })?;
 
-    log::info!("detected repository root at {}", source_root.display());
+    log::debug!("detected repository root at {}", source_root.display());
 
     Ok(source_root)
 }
@@ -1802,7 +1802,7 @@ fn taint_subtest_timeouts_by_suspicion(expected: &mut Expected<SubtestOutcome>) 
         static PRINTED_WARNING: AtomicBool = AtomicBool::new(false);
         let already_printed_warning = PRINTED_WARNING.swap(true, atomic::Ordering::Relaxed);
         if !already_printed_warning {
-            log::info!("encountered at least one case where taint-by-suspicion is being applied…")
+            log::debug!("encountered at least one case where taint-by-suspicion is being applied…")
         }
         *expected |= SubtestOutcome::Timeout | SubtestOutcome::NotRun;
     }
