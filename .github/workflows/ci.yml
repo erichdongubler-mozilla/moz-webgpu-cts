@@ -37,6 +37,7 @@ jobs:
 
   test:
     name: Test Suite
+    needs: [check]
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
     runs-on: ${{ matrix.os }}
     continue-on-error: ${{ matrix.rust != 'stable' }}
@@ -86,6 +87,7 @@ jobs:
 
   clippy:
     name: Clippy
+    needs: [check]
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
     runs-on: ubuntu-latest
     continue-on-error: ${{ matrix.rust != 'stable' }}
@@ -111,6 +113,7 @@ jobs:
 
   rustdoc:
     name: Documentation
+    needs: [check]
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
     runs-on: ubuntu-latest
     continue-on-error: ${{ matrix.rust != 'stable' }}
