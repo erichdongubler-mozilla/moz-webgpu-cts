@@ -30,7 +30,7 @@ serde_json = "1.0.107"
 strum = { version = "0.25.0", features = ["derive"] }
 thiserror = { workspace = true }
 wax = { version = "0.6.0", features = ["miette"], git = "https://github.com/ErichDonGubler/wax", branch = "static-miette-diags"}
-whippit = { version = "0.6.1", path = "../whippit", default-features = false, features = ["serde1"] }
+whippit = { version = "0.6.2", path = "../whippit", default-features = false, features = ["serde1"] }
 enum-map = { version = "2.7.3", features = ["serde"] }
 
 [dev-dependencies]
