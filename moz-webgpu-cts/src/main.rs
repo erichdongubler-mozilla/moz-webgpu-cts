@@ -801,7 +801,7 @@ fn run(cli: Cli) -> ExitCode {
                 !is_empty
             });
 
-            log::debug!("gathering of new metadata files completed, writing to file system…");
+            log::debug!("processing complete, writing new metadata to file system…");
 
             for (path, file) in files {
                 log::debug!("writing new metadata to {}", path.display());
