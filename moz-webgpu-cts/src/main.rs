@@ -392,6 +392,14 @@ fn run(cli: Cli) -> ExitCode {
                         .wrap_err("failed to open file")
                         .and_then(|reader| {
                             serde_json::from_reader::<_, ExecutionReport>(reader)
+                                .map(Some)
+                                .or_else(|e| {
+                                    if e.is_eof() && matches!((e.line(), e.column()), (1, 0)) {
+                                        Ok(None)
+                                    } else {
+                                        Err(e)
+                                    }
+                                })
                                 .into_diagnostic()
                                 .wrap_err("failed to parse JSON")
                         })
@@ -410,9 +418,17 @@ fn run(cli: Cli) -> ExitCode {
                 });
 
             for res in exec_reports_receiver {
-                let (_path, exec_report) = match res {
+                let (path, exec_report) = match res {
                     Ok(ok) => ok,
                     Err(AlreadyReportedToCommandline) => return ExitCode::FAILURE,
+                };
+
+                let exec_report = match exec_report {
+                    Some(some) => some,
+                    None => {
+                        log::warn!("empty report found: {}", path.display());
+                        continue;
+                    }
                 };
 
                 let ExecutionReport {
