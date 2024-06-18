@@ -29,7 +29,7 @@ use std::{
 
 use crate::wpt::path::Browser;
 use camino::Utf8PathBuf;
-use clap::{Parser, ValueEnum};
+use clap::{CommandFactory, Parser, ValueEnum};
 use enumset::{EnumSet, EnumSetType};
 use format::lazy_format;
 use indexmap::{IndexMap, IndexSet};
@@ -138,6 +138,8 @@ enum Subcommand {
     /// Dump all metadata as JSON. Do so at your own risk; no guarantees are made about the
     /// schema of this JSON, for now.
     DumpJson,
+    /// Generate completions for various supported shells.
+    GenerateCompletions { shell: CompletionShell },
 }
 
 #[derive(Clone, Debug, clap::Args)]
@@ -321,6 +323,11 @@ enum UpdateBacklogCriteria {
         #[clap(long)]
         only_across_all_platforms: bool,
     },
+}
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum CompletionShell {
+    Nushell,
 }
 
 fn main() -> ExitCode {
@@ -1180,6 +1187,20 @@ fn run(cli: Cli) -> ExitCode {
                     ExitCode::FAILURE
                 }
             }
+        }
+        Subcommand::GenerateCompletions { shell } => {
+            let generator = match shell {
+                CompletionShell::Nushell => clap_complete_nushell::Nushell,
+            };
+
+            clap_complete::generate(
+                generator,
+                &mut Cli::command(),
+                env!("CARGO_BIN_NAME"),
+                &mut io::stdout(),
+            );
+
+            ExitCode::SUCCESS
         }
     }
 }
