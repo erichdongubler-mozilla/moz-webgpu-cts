@@ -112,7 +112,7 @@ enum Subcommand {
     /// Identify and promote tests that are ready to come out of the `backlog` implementation
     /// status.
     UpdateBacklog {
-        /// The heuristic to use for identifying tests that can be promoted.
+        /// The mode to use for updating tests.
         preset: UpdateBacklogPreset,
     },
     /// Dump all metadata as JSON. Do so at your own risk; no guarantees are made about the
