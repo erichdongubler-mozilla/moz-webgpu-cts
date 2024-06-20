@@ -497,7 +497,7 @@ impl<'a> TestPath<'a> {
         );
 
         let (scope, path) = browser
-            .strip_scope_metadata_parent_path(rel_meta_file_path)
+            .strip_scope_parent_path(rel_meta_file_path)
             .map_err(|_e| err())?;
 
         let Ok(path) = path.strip_prefix("meta/") else {
@@ -661,7 +661,7 @@ impl Browser {
     }
 
     /// NOTE: Keep this implementation in sync with [`TestScope::metadata_parent_path_components`].
-    pub(crate) fn strip_scope_metadata_parent_path<'a>(
+    pub(crate) fn strip_scope_parent_path<'a>(
         &self,
         path: &'a Utf8Path,
     ) -> Result<(TestScope, &'a Utf8Path), std::path::StripPrefixError> {
