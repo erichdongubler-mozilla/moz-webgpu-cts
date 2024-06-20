@@ -493,7 +493,7 @@ impl<'a> TestPath<'a> {
             rel_meta_file_path
                 .as_str()
                 .strip_suffix(".ini")
-                .ok_or(err())?,
+                .ok_or_else(err)?,
         );
 
         let (scope, path) = browser
