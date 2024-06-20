@@ -2,9 +2,8 @@ use std::collections::BTreeMap;
 
 use enumset::EnumSetType;
 
-use crate::{
-    metadata::{BuildProfile, Platform, SubtestOutcome, TestOutcome, TestProps},
-    shared::Expected,
+use crate::wpt::metadata::{
+    properties::Expected, BuildProfile, Platform, SubtestOutcome, TestOutcome, TestProps,
 };
 
 #[derive(Debug, Default)]

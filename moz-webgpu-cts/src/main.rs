@@ -1,18 +1,21 @@
-mod metadata;
 mod process_reports;
 mod report;
-mod shared;
+mod wpt;
 
 use self::{
-    metadata::{
-        BuildProfile, File, FileProps, Platform, Subtest, SubtestOutcome, Test, TestOutcome,
-        TestProps,
-    },
     process_reports::{Entry, TestEntry},
     report::{
         ExecutionReport, RunInfo, SubtestExecutionResult, TestExecutionEntry, TestExecutionResult,
     },
-    shared::{ExpandedPropertyValue, Expected, TestPath},
+    wpt::{
+        metadata::{
+            self,
+            properties::{ExpandedPropertyValue, Expected},
+            BuildProfile, File, FileProps, ImplementationStatus, Platform, Subtest, SubtestOutcome,
+            Test, TestOutcome, TestProps,
+        },
+        path::TestPath,
+    },
 };
 
 use std::{
@@ -31,6 +34,7 @@ use std::{
     },
 };
 
+use crate::wpt::path::Browser;
 use camino::Utf8PathBuf;
 use clap::{Parser, ValueEnum};
 use enumset::EnumSetType;
@@ -38,11 +42,9 @@ use format::lazy_format;
 use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
 use joinery::JoinableIterator;
-use metadata::ImplementationStatus;
 use miette::{miette, Diagnostic, IntoDiagnostic, NamedSource, Report, SourceSpan, WrapErr};
 use path_dsl::path;
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
-use shared::Browser;
 use wax::Glob;
 use whippit::{
     metadata::SectionHeader,

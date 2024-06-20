@@ -9,6 +9,7 @@ use enum_map::Enum;
 use enumset::EnumSetType;
 use format::lazy_format;
 use joinery::JoinableIterator;
+use maybe_collapsed::MaybeCollapsed;
 use serde::{Deserialize, Serialize};
 use strum::EnumIter;
 use whippit::{
@@ -30,10 +31,13 @@ use whippit::{
     },
 };
 
-use crate::shared::{ExpandedPropertyValue, Expected, MaybeCollapsed, NormalizedPropertyValue};
+use crate::wpt::metadata::properties::{ExpandedPropertyValue, Expected, NormalizedPropertyValue};
 
 #[cfg(test)]
 use insta::assert_debug_snapshot;
+
+pub(crate) mod maybe_collapsed;
+pub(crate) mod properties;
 
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct File {
