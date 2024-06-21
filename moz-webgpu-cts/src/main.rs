@@ -290,11 +290,12 @@ fn run(cli: Cli) -> ExitCode {
 
             fn cts_path(test_entry_path: &TestEntryPath<'_>) -> Option<String> {
                 test_entry_path
+                    .test_entry
                     .variant
                     .as_ref()
                     .filter(|v| v.starts_with("?q=webgpu:"))
                     .map(|v| v.strip_prefix("?q=").unwrap().to_owned())
-                    .filter(|_q| test_entry_path.path.ends_with("cts.https.html"))
+                    .filter(|_q| test_entry_path.spec_path.path.ends_with("cts.https.html"))
             }
 
             let mut file_props_by_file = IndexMap::<Utf8PathBuf, FileProps>::default();

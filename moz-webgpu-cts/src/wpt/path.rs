@@ -52,18 +52,24 @@ impl Browser {
     }
 }
 
-/// A single symbolic path to a test and its metadata.
-///
-/// This API is useful as a common representation of a path for [`ExecutionReport`]s and
-/// [`metadata::File`]s.
+/// A symbolic path to a WPT test specification, which may contain one or more executed test
+/// entries (see also [`TestEntry`]). Includes methods for rendering paths to test and metadata
+/// files.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(crate) struct SpecPath<'a> {
+    pub root_dir: RootDir,
+    /// A relative offset into `root_dir`.
+    pub path: Cow<'a, Utf8Path>,
+}
+
+/// A symbolic path to an executed WPT test entry and its metadata, contained in a test
+/// specification (see also [`SpecPath`]). In combination with [`SpecPath`], this is useful for
+/// correlating entries from [`ExecutionReport`]s and [`metadata::File`]s.
 ///
 /// [`ExecutionReport`]: crate::report::ExecutionReport
 /// [`metadata::File`]: crate::wpt::metadata::File
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) struct TestEntryPath<'a> {
-    pub root_dir: RootDir,
-    /// A relative offset into `root_dir`.
-    pub path: Cow<'a, Utf8Path>,
+pub(crate) struct TestEntry<'a> {
     /// The variant of this particular test from this test's source code. If set, you should be
     /// able to correlate this with
     ///
@@ -79,6 +85,12 @@ const ROOT_DIR_FX_UPSTREAM_STR: &str = "testing/web-platform";
 const ROOT_DIR_FX_UPSTREAM_COMPONENTS: &[&str] = &["testing", "web-platform"];
 const ROOT_DIR_SERVO_WEBGPU_STR: &str = "tests/wpt/webgpu";
 const ROOT_DIR_SERVO_WEBGPU_COMPONENTS: &[&str] = &["tests", "wpt", "webgpu"];
+
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(crate) struct TestEntryPath<'a> {
+    pub spec_path: SpecPath<'a>,
+    pub test_entry: TestEntry<'a>,
+}
 
 impl<'a> TestEntryPath<'a> {
     pub fn from_execution_report(
@@ -107,9 +119,13 @@ impl<'a> TestEntryPath<'a> {
         };
 
         Ok(Self {
-            root_dir,
-            path: Utf8Path::new(path).into(),
-            variant: variant.map(Into::into),
+            spec_path: SpecPath {
+                root_dir,
+                path: Utf8Path::new(path).into(),
+            },
+            test_entry: TestEntry {
+                variant: variant.map(Into::into),
+            },
         })
     }
 
@@ -150,9 +166,13 @@ impl<'a> TestEntryPath<'a> {
         }
 
         Ok(Self {
-            root_dir,
-            path: path.into(),
-            variant: variant.map(Into::into),
+            spec_path: SpecPath {
+                root_dir,
+                path: path.into(),
+            },
+            test_entry: TestEntry {
+                variant: variant.map(Into::into),
+            },
         })
     }
 
@@ -168,23 +188,25 @@ impl<'a> TestEntryPath<'a> {
 
     pub fn into_owned(self) -> TestEntryPath<'static> {
         let Self {
-            root_dir,
-            path,
-            variant,
+            spec_path: SpecPath { root_dir, path },
+            test_entry: TestEntry { variant },
         } = self;
 
         TestEntryPath {
-            root_dir: root_dir.clone(),
-            path: path.clone().into_owned().into(),
-            variant: variant.clone().map(|v| v.into_owned().into()),
+            spec_path: SpecPath {
+                root_dir: root_dir.clone(),
+                path: path.clone().into_owned().into(),
+            },
+            test_entry: TestEntry {
+                variant: variant.clone().map(|v| v.into_owned().into()),
+            },
         }
     }
 
     pub(crate) fn test_name(&self) -> impl Display + '_ {
         let Self {
-            path,
-            variant,
-            root_dir: _,
+            spec_path: SpecPath { root_dir: _, path },
+            test_entry: TestEntry { variant },
         } = self;
         let base_name = path.file_name().unwrap();
 
@@ -199,9 +221,8 @@ impl<'a> TestEntryPath<'a> {
 
     pub(crate) fn runner_url_path(&self) -> impl Display + '_ {
         let Self {
-            path,
-            variant,
-            root_dir,
+            spec_path: SpecPath { root_dir, path },
+            test_entry: TestEntry { variant },
         } = self;
         lazy_format!(move |f| {
             write!(
@@ -219,9 +240,8 @@ impl<'a> TestEntryPath<'a> {
 
     pub(crate) fn rel_metadata_path(&self) -> impl Display + '_ {
         let Self {
-            path,
-            variant: _,
-            root_dir,
+            spec_path: SpecPath { root_dir, path },
+            test_entry: TestEntry { variant: _ },
         } = self;
 
         let root_dir_dir = root_dir
@@ -350,9 +370,13 @@ fn parse_test_entry_path() {
         )
         .unwrap(),
         TestEntryPath {
-            root_dir: FirefoxRootDir::Mozilla.into(),
-            path: Utf8Path::new("blarg/cts.https.html").into(),
-            variant: Some("?stuff=things".into()),
+            spec_path: SpecPath {
+                root_dir: FirefoxRootDir::Mozilla.into(),
+                path: Utf8Path::new("blarg/cts.https.html").into(),
+            },
+            test_entry: TestEntry {
+                variant: Some("?stuff=things".into()),
+            }
         }
     );
 
@@ -364,9 +388,11 @@ fn parse_test_entry_path() {
         )
         .unwrap(),
         TestEntryPath {
-            root_dir: FirefoxRootDir::Upstream.into(),
-            path: Utf8Path::new("stuff/things/cts.https.html").into(),
-            variant: None,
+            spec_path: SpecPath {
+                root_dir: FirefoxRootDir::Upstream.into(),
+                path: Utf8Path::new("stuff/things/cts.https.html").into(),
+            },
+            test_entry: TestEntry { variant: None }
         }
     );
 
@@ -378,9 +404,13 @@ fn parse_test_entry_path() {
         )
         .unwrap(),
         TestEntryPath {
-            root_dir: ServoRootDir::WebGpu.into(),
-            path: Utf8Path::new("webgpu/cts.https.html").into(),
-            variant: Some("?stuff=things".into()),
+            spec_path: SpecPath {
+                root_dir: ServoRootDir::WebGpu.into(),
+                path: Utf8Path::new("webgpu/cts.https.html").into(),
+            },
+            test_entry: TestEntry {
+                variant: Some("?stuff=things".into()),
+            }
         }
     );
 }
