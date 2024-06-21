@@ -5,10 +5,11 @@ use std::{
 };
 
 use camino::{Utf8Component, Utf8Path};
-
 use clap::ValueEnum;
 use format::lazy_format;
+use itertools::Itertools;
 use joinery::JoinableIterator;
+use strum::{EnumIter, IntoEnumIterator};
 
 /// A browser supported by [crate::main], used for [`TestEntryPath`]s.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, ValueEnum)]
@@ -63,8 +64,19 @@ pub(crate) struct SpecPath<'a> {
     pub r#type: SpecType,
 }
 
+/// The type of tests that can be specified in a [`SpecPath`].
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(crate) enum SpecType {
+    /// A JavaScript test.
+    ///
+    /// See also:
+    ///
+    /// * [WPT upstream docs.' "JavaScript Tests (`testharness.js`)" section][upstream] for
+    ///   background.
+    /// * [`JsExecScope`], which will be set in test entries specified in a file with this type.
+    ///
+    /// [upstream]: https://web-platform-tests.org/writing-tests/testharness.html
+    Js(JsSpecType),
     /// A catch-all for all `*.html` test spec. files. This is likely incorrect, but it works well
     /// enough for now!
     Html,
@@ -73,7 +85,7 @@ pub(crate) enum SpecType {
 
 impl SpecType {
     fn iter() -> impl Iterator<Item = Self> {
-        [Self::Html].into_iter()
+        [Self::Html, Self::Js(JsSpecType::DedicatedWorker)].into_iter()
     }
 
     pub fn from_base_name(base_name: &str) -> Option<(Self, &str)> {
@@ -82,12 +94,43 @@ impl SpecType {
         })
     }
 
+    pub fn validate_test_entry_base_name<'a>(
+        &self,
+        base_name: &'a str,
+    ) -> Option<(TestEntryType, &'a str)> {
+        let permitted_test_entry_types = match self {
+            Self::Js(JsSpecType::DedicatedWorker) => &[TestEntryType::Js {
+                exec_scope: JsExecScope::DedicatedWorker,
+            }],
+            Self::Html => &[TestEntryType::Html],
+        };
+        permitted_test_entry_types
+            .iter()
+            .copied()
+            .find_map(|test_entry_type| {
+                strip_suffix_with_value(
+                    base_name,
+                    test_entry_type.file_extension(),
+                    test_entry_type,
+                )
+            })
+    }
+
     pub fn file_extension(&self) -> &'static str {
         match self {
+            SpecType::Js(JsSpecType::DedicatedWorker) => ".worker.js",
             SpecType::Html => ".html",
         }
     }
 }
+
+/// A subtype of [`SpecType::Js`].
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(crate) enum JsSpecType {
+    /// A `*.worker.js` test.
+    DedicatedWorker,
+}
+
 /// A symbolic path to an executed WPT test entry and its metadata, contained in a test
 /// specification (see also [`SpecPath`]). In combination with [`SpecPath`], this is useful for
 /// correlating entries from [`ExecutionReport`]s and [`metadata::File`]s.
@@ -96,6 +139,8 @@ impl SpecType {
 /// [`metadata::File`]: crate::wpt::metadata::File
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(crate) struct TestEntry<'a> {
+    /// The type of this entry. Based on it's spec. file's type (see [`SpecPath::type`]).
+    pub r#type: TestEntryType,
     /// The variant of this particular test from this test's source code. If set, you should be
     /// able to correlate this with
     ///
@@ -103,6 +148,69 @@ pub(crate) struct TestEntry<'a> {
     /// a given `path`, there will be a single `variant: None`, or multiple tests with `variant:
     /// Some(…)`.
     pub variant: Option<Cow<'a, str>>,
+}
+
+/// The test entry analogue to [`SpecPath::type`].
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(crate) enum TestEntryType {
+    /// An HTML-authored test with no divergence from the base name of its corresponding spec.
+    /// file. Corresponds to [`SpecType::Html`].
+    Html,
+    /// Corresponds to [`SpecType::Js`]. The test entry will have slightly different naming from
+    /// its spec. file.
+    ///
+    /// JS tests are converted to `*.html` tests at test execution time and reported as such.
+    /// The set of values observable here are determined by this entry's spec.'s
+    /// [`SpecPath::type`] and its
+    ///
+    /// See also [WPT upstream's docs.' "Test Features" section][upstream]
+    ///
+    /// [upstream]: https://web-platform-tests.org/writing-tests/file-names.html#test-features
+    Js { exec_scope: JsExecScope },
+}
+
+impl TestEntryType {
+    fn iter() -> impl Iterator<Item = Self> {
+        // NOTE: `Html`'s file extension is less specific than other file extensions, so try
+        // matching it last.
+        JsExecScope::iter()
+            .map(|exec_scope| Self::Js { exec_scope })
+            .chain([Self::Html])
+    }
+
+    pub fn from_base_name(base_name: &str) -> Option<(Self, &str)> {
+        Self::iter().find_map(|variant| {
+            strip_suffix_with_value(base_name, variant.file_extension(), variant)
+        })
+    }
+
+    pub fn file_extension(self) -> &'static str {
+        match self {
+            Self::Html => ".html",
+            Self::Js { exec_scope } => match exec_scope {
+                JsExecScope::DedicatedWorker => ".worker.html",
+            },
+        }
+    }
+
+    pub fn spec_type(self) -> SpecType {
+        match self {
+            Self::Html => SpecType::Html,
+            Self::Js { exec_scope } => match exec_scope {
+                JsExecScope::DedicatedWorker => SpecType::Js(JsSpecType::DedicatedWorker),
+            },
+        }
+    }
+}
+
+/// An executed JS test entry's test type, viz.,
+#[derive(Clone, Copy, Debug, EnumIter, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(crate) enum JsExecScope {
+    /// A `*.worker.js` test. See also [WPT upstream docs.' "Dedicated worker test (`.worker.js`)"
+    /// section][upstream].
+    ///
+    /// [upstream]: https://web-platform-tests.org/writing-tests/testharness.html#dedicated-worker-tests-worker-js
+    DedicatedWorker,
 }
 
 const ROOT_DIR_FX_MOZILLA_STR: &str = "testing/web-platform/mozilla";
@@ -144,19 +252,22 @@ impl<'a> TestEntryPath<'a> {
             None => return Err(err()),
         };
 
-        let (spec_type, path) = if let Some(path) = path.strip_suffix(".html") {
-            (SpecType::Html, path)
-        } else {
-            return Err(err());
-        };
+        let mut path = Cow::<'_, Utf8Path>::from(Utf8Path::new(path));
+
+        let (test_entry_type, base_name) =
+            TestEntryType::from_base_name(path.file_name().ok_or_else(err)?).ok_or_else(err)?;
+        let spec_type = test_entry_type.spec_type();
+
+        path = path.with_file_name(base_name).into();
 
         Ok(Self {
             spec_path: SpecPath {
                 root_dir,
-                path: Utf8Path::new(path).into(),
+                path,
                 r#type: spec_type,
             },
             test_entry: TestEntry {
+                r#type: test_entry_type,
                 variant: variant.map(Into::into),
             },
         })
@@ -198,9 +309,9 @@ impl<'a> TestEntryPath<'a> {
 
         let (base_name, variant) = Self::split_test_base_name_from_variant(test_name);
 
-        let base_name = match spec_type {
-            SpecType::Html => base_name.strip_suffix(".html").ok_or_else(err)?,
-        };
+        let (js_exec_scope, base_name) = spec_type
+            .validate_test_entry_base_name(base_name)
+            .ok_or_else(err)?;
 
         if path.components().next_back() != Some(Utf8Component::Normal(base_name)) {
             return Err(err());
@@ -213,6 +324,7 @@ impl<'a> TestEntryPath<'a> {
                 r#type: spec_type,
             },
             test_entry: TestEntry {
+                r#type: js_exec_scope,
                 variant: variant.map(Into::into),
             },
         })
@@ -236,7 +348,11 @@ impl<'a> TestEntryPath<'a> {
                     path,
                     r#type,
                 },
-            test_entry: TestEntry { variant },
+            test_entry:
+                TestEntry {
+                    r#type: js_exec_scope,
+                    variant,
+                },
         } = self;
 
         TestEntryPath {
@@ -246,6 +362,7 @@ impl<'a> TestEntryPath<'a> {
                 r#type,
             },
             test_entry: TestEntry {
+                r#type: js_exec_scope,
                 variant: variant.clone().map(|v| v.into_owned().into()),
             },
         }
@@ -257,12 +374,16 @@ impl<'a> TestEntryPath<'a> {
                 SpecPath {
                     root_dir: _,
                     path,
-                    r#type,
+                    r#type: _,
                 },
-            test_entry: TestEntry { variant },
+            test_entry:
+                TestEntry {
+                    r#type: js_exec_scope,
+                    variant,
+                },
         } = self;
         let base_name = path.file_name().unwrap();
-        let file_extension = r#type.file_extension();
+        let file_extension = js_exec_scope.file_extension();
 
         lazy_format!(move |f| {
             write!(f, "{base_name}{file_extension}")?;
@@ -279,23 +400,17 @@ impl<'a> TestEntryPath<'a> {
                 SpecPath {
                     root_dir,
                     path,
-                    r#type,
+                    r#type: _,
                 },
-            test_entry: TestEntry { variant },
+            test_entry: _,
         } = self;
-        lazy_format!(move |f| {
-            write!(
-                f,
-                "{}{}{}",
-                root_dir.url_prefix(),
-                path.components().join_with('/'),
-                r#type.file_extension()
-            )?;
-            if let Some(variant) = variant.as_ref() {
-                write!(f, "{}", variant)?;
-            }
-            Ok(())
-        })
+        lazy_format!(move |f| write!(
+            f,
+            "{}{}/{}",
+            root_dir.url_prefix(),
+            path.components().dropping_back(1).join_with('/'),
+            self.test_name(),
+        ))
     }
 
     pub(crate) fn rel_metadata_path(&self) -> impl Display + '_ {
@@ -306,7 +421,11 @@ impl<'a> TestEntryPath<'a> {
                     path,
                     r#type,
                 },
-            test_entry: TestEntry { variant: _ },
+            test_entry:
+                TestEntry {
+                    r#type: _,
+                    variant: _,
+                },
         } = self;
 
         let root_dir_dir = root_dir
@@ -450,6 +569,7 @@ fn parse_test_entry_path() {
                 r#type: SpecType::Html,
             },
             test_entry: TestEntry {
+                r#type: TestEntryType::Html,
                 variant: Some("?stuff=things".into()),
             }
         }
@@ -468,7 +588,10 @@ fn parse_test_entry_path() {
                 path: Utf8Path::new("stuff/things/cts.https").into(),
                 r#type: SpecType::Html,
             },
-            test_entry: TestEntry { variant: None }
+            test_entry: TestEntry {
+                r#type: TestEntryType::Html,
+                variant: None
+            }
         }
     );
 
@@ -486,7 +609,52 @@ fn parse_test_entry_path() {
                 r#type: SpecType::Html,
             },
             test_entry: TestEntry {
+                r#type: TestEntryType::Html,
                 variant: Some("?stuff=things".into()),
+            }
+        }
+    );
+
+    assert_eq!(
+        TestEntryPath::from_metadata_test(
+            Browser::Servo,
+            Path::new("tests/wpt/webgpu/meta/webgpu/do_the_thing.worker.js.ini"),
+            "do_the_thing.worker.html"
+        )
+        .unwrap(),
+        TestEntryPath {
+            spec_path: SpecPath {
+                root_dir: ServoRootDir::WebGpu.into(),
+                path: Utf8Path::new("webgpu/do_the_thing").into(),
+                r#type: SpecType::Js(JsSpecType::DedicatedWorker),
+            },
+            test_entry: TestEntry {
+                r#type: TestEntryType::Js {
+                    exec_scope: JsExecScope::DedicatedWorker
+                },
+                variant: None,
+            }
+        }
+    );
+
+    assert_eq!(
+        TestEntryPath::from_metadata_test(
+            Browser::Servo,
+            Path::new("tests/wpt/webgpu/meta/webgpu/do_the_thing.worker.js.ini"),
+            "do_the_thing.worker.html?foo=bar"
+        )
+        .unwrap(),
+        TestEntryPath {
+            spec_path: SpecPath {
+                root_dir: ServoRootDir::WebGpu.into(),
+                path: Utf8Path::new("webgpu/do_the_thing").into(),
+                r#type: SpecType::Js(JsSpecType::DedicatedWorker),
+            },
+            test_entry: TestEntry {
+                r#type: TestEntryType::Js {
+                    exec_scope: JsExecScope::DedicatedWorker
+                },
+                variant: Some("?foo=bar".into()),
             }
         }
     );
