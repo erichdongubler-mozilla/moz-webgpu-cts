@@ -60,8 +60,36 @@ pub(crate) struct SpecPath<'a> {
     pub root_dir: RootDir,
     /// A relative offset into `root_dir`.
     pub path: Cow<'a, Utf8Path>,
+    pub r#type: SpecType,
 }
 
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(crate) enum SpecType {
+    /// A catch-all for all `*.html` test spec. files. This is likely incorrect, but it works well
+    /// enough for now!
+    Html,
+    // NOTE: Other types exist, but we haven't been forced to support them yet. 🙂
+}
+
+impl SpecType {
+    fn iter() -> impl Iterator<Item = Self> {
+        [Self::Html].into_iter()
+    }
+
+    pub fn from_base_name(base_name: &str) -> Option<(Self, &str)> {
+        Self::iter().find_map(|variant| {
+            base_name
+                .strip_suffix(variant.file_extension())
+                .map(|some| (variant, some))
+        })
+    }
+
+    pub fn file_extension(&self) -> &'static str {
+        match self {
+            SpecType::Html => ".html",
+        }
+    }
+}
 /// A symbolic path to an executed WPT test entry and its metadata, contained in a test
 /// specification (see also [`SpecPath`]). In combination with [`SpecPath`], this is useful for
 /// correlating entries from [`ExecutionReport`]s and [`metadata::File`]s.
@@ -118,10 +146,17 @@ impl<'a> TestEntryPath<'a> {
             None => return Err(err()),
         };
 
+        let (spec_type, path) = if let Some(path) = path.strip_suffix(".html") {
+            (SpecType::Html, path)
+        } else {
+            return Err(err());
+        };
+
         Ok(Self {
             spec_path: SpecPath {
                 root_dir,
                 path: Utf8Path::new(path).into(),
+                r#type: spec_type,
             },
             test_entry: TestEntry {
                 variant: variant.map(Into::into),
@@ -144,12 +179,16 @@ impl<'a> TestEntryPath<'a> {
             rel_meta_file_path: rel_meta_file_path.as_std_path(),
             test_name,
         };
-        let rel_meta_file_path = Utf8Path::new(
-            rel_meta_file_path
+        let (spec_type, rel_meta_file_path) = {
+            let test_base_name = rel_meta_file_path
                 .as_str()
                 .strip_suffix(".ini")
-                .ok_or_else(err)?,
-        );
+                .ok_or_else(err)?;
+
+            let (spec_type, stripped) = SpecType::from_base_name(test_base_name).ok_or_else(err)?;
+
+            (spec_type, Utf8Path::new(stripped))
+        };
 
         let (root_dir, path) = browser
             .strip_wpt_root_dir_prefix(rel_meta_file_path)
@@ -161,6 +200,10 @@ impl<'a> TestEntryPath<'a> {
 
         let (base_name, variant) = Self::split_test_base_name_from_variant(test_name);
 
+        let base_name = match spec_type {
+            SpecType::Html => base_name.strip_suffix(".html").ok_or_else(err)?,
+        };
+
         if path.components().next_back() != Some(Utf8Component::Normal(base_name)) {
             return Err(err());
         }
@@ -169,6 +212,7 @@ impl<'a> TestEntryPath<'a> {
             spec_path: SpecPath {
                 root_dir,
                 path: path.into(),
+                r#type: spec_type,
             },
             test_entry: TestEntry {
                 variant: variant.map(Into::into),
@@ -188,7 +232,12 @@ impl<'a> TestEntryPath<'a> {
 
     pub fn into_owned(self) -> TestEntryPath<'static> {
         let Self {
-            spec_path: SpecPath { root_dir, path },
+            spec_path:
+                SpecPath {
+                    root_dir,
+                    path,
+                    r#type,
+                },
             test_entry: TestEntry { variant },
         } = self;
 
@@ -196,6 +245,7 @@ impl<'a> TestEntryPath<'a> {
             spec_path: SpecPath {
                 root_dir: root_dir.clone(),
                 path: path.clone().into_owned().into(),
+                r#type,
             },
             test_entry: TestEntry {
                 variant: variant.clone().map(|v| v.into_owned().into()),
@@ -205,13 +255,19 @@ impl<'a> TestEntryPath<'a> {
 
     pub(crate) fn test_name(&self) -> impl Display + '_ {
         let Self {
-            spec_path: SpecPath { root_dir: _, path },
+            spec_path:
+                SpecPath {
+                    root_dir: _,
+                    path,
+                    r#type,
+                },
             test_entry: TestEntry { variant },
         } = self;
         let base_name = path.file_name().unwrap();
+        let file_extension = r#type.file_extension();
 
         lazy_format!(move |f| {
-            write!(f, "{base_name}")?;
+            write!(f, "{base_name}{file_extension}")?;
             if let Some(variant) = variant {
                 write!(f, "{variant}")?;
             }
@@ -221,15 +277,21 @@ impl<'a> TestEntryPath<'a> {
 
     pub(crate) fn runner_url_path(&self) -> impl Display + '_ {
         let Self {
-            spec_path: SpecPath { root_dir, path },
+            spec_path:
+                SpecPath {
+                    root_dir,
+                    path,
+                    r#type,
+                },
             test_entry: TestEntry { variant },
         } = self;
         lazy_format!(move |f| {
             write!(
                 f,
-                "{}{}",
+                "{}{}{}",
                 root_dir.url_prefix(),
-                path.components().join_with('/')
+                path.components().join_with('/'),
+                r#type.file_extension()
             )?;
             if let Some(variant) = variant.as_ref() {
                 write!(f, "{}", variant)?;
@@ -240,7 +302,12 @@ impl<'a> TestEntryPath<'a> {
 
     pub(crate) fn rel_metadata_path(&self) -> impl Display + '_ {
         let Self {
-            spec_path: SpecPath { root_dir, path },
+            spec_path:
+                SpecPath {
+                    root_dir,
+                    path,
+                    r#type,
+                },
             test_entry: TestEntry { variant: _ },
         } = self;
 
@@ -248,9 +315,14 @@ impl<'a> TestEntryPath<'a> {
             .components()
             .chain(["meta"].iter().cloned())
             .join_with(std::path::MAIN_SEPARATOR);
+        let file_extension = r#type.file_extension();
 
         lazy_format!(move |f| {
-            write!(f, "{root_dir_dir}{}{path}.ini", std::path::MAIN_SEPARATOR)
+            write!(
+                f,
+                "{root_dir_dir}{}{path}{file_extension}.ini",
+                std::path::MAIN_SEPARATOR
+            )
         })
     }
 }
@@ -372,7 +444,8 @@ fn parse_test_entry_path() {
         TestEntryPath {
             spec_path: SpecPath {
                 root_dir: FirefoxRootDir::Mozilla.into(),
-                path: Utf8Path::new("blarg/cts.https.html").into(),
+                path: Utf8Path::new("blarg/cts.https").into(),
+                r#type: SpecType::Html,
             },
             test_entry: TestEntry {
                 variant: Some("?stuff=things".into()),
@@ -390,7 +463,8 @@ fn parse_test_entry_path() {
         TestEntryPath {
             spec_path: SpecPath {
                 root_dir: FirefoxRootDir::Upstream.into(),
-                path: Utf8Path::new("stuff/things/cts.https.html").into(),
+                path: Utf8Path::new("stuff/things/cts.https").into(),
+                r#type: SpecType::Html,
             },
             test_entry: TestEntry { variant: None }
         }
@@ -406,7 +480,8 @@ fn parse_test_entry_path() {
         TestEntryPath {
             spec_path: SpecPath {
                 root_dir: ServoRootDir::WebGpu.into(),
-                path: Utf8Path::new("webgpu/cts.https.html").into(),
+                path: Utf8Path::new("webgpu/cts.https").into(),
+                r#type: SpecType::Html,
             },
             test_entry: TestEntry {
                 variant: Some("?stuff=things".into()),
