@@ -10,7 +10,7 @@ use clap::ValueEnum;
 use format::lazy_format;
 use joinery::JoinableIterator;
 
-/// A browser supported by [crate::main], used for [`TestPath`]s.
+/// A browser supported by [crate::main], used for [`TestEntryPath`]s.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, ValueEnum)]
 pub(crate) enum Browser {
     Firefox,
@@ -60,7 +60,7 @@ impl Browser {
 /// [`ExecutionReport`]: crate::report::ExecutionReport
 /// [`metadata::File`]: crate::wpt::metadata::File
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) struct TestPath<'a> {
+pub(crate) struct TestEntryPath<'a> {
     pub root_dir: RootDir,
     /// A relative offset into `root_dir`.
     pub path: Cow<'a, Utf8Path>,
@@ -80,7 +80,7 @@ const ROOT_DIR_FX_UPSTREAM_COMPONENTS: &[&str] = &["testing", "web-platform"];
 const ROOT_DIR_SERVO_WEBGPU_STR: &str = "tests/wpt/webgpu";
 const ROOT_DIR_SERVO_WEBGPU_COMPONENTS: &[&str] = &["tests", "wpt", "webgpu"];
 
-impl<'a> TestPath<'a> {
+impl<'a> TestEntryPath<'a> {
     pub fn from_execution_report(
         browser: Browser,
         test_url_path: &'a str,
@@ -117,13 +117,14 @@ impl<'a> TestPath<'a> {
         browser: Browser,
         rel_meta_file_path: &'a Path,
         test_name: &'a str,
-    ) -> Result<Self, MetadataTestPathError<'a>> {
-        let rel_meta_file_path =
-            Utf8Path::new(rel_meta_file_path.to_str().ok_or(MetadataTestPathError {
+    ) -> Result<Self, MetadataTestEntryPathError<'a>> {
+        let rel_meta_file_path = Utf8Path::new(rel_meta_file_path.to_str().ok_or(
+            MetadataTestEntryPathError {
                 rel_meta_file_path,
                 test_name,
-            })?);
-        let err = || MetadataTestPathError {
+            },
+        )?);
+        let err = || MetadataTestEntryPathError {
             rel_meta_file_path: rel_meta_file_path.as_std_path(),
             test_name,
         };
@@ -165,14 +166,14 @@ impl<'a> TestPath<'a> {
         }
     }
 
-    pub fn into_owned(self) -> TestPath<'static> {
+    pub fn into_owned(self) -> TestEntryPath<'static> {
         let Self {
             root_dir,
             path,
             variant,
         } = self;
 
-        TestPath {
+        TestEntryPath {
             root_dir: root_dir.clone(),
             path: path.clone().into_owned().into(),
             variant: variant.clone().map(|v| v.into_owned().into()),
@@ -234,7 +235,7 @@ impl<'a> TestPath<'a> {
     }
 }
 
-/// An error encountered during [`TestPath::from_execution_report`].
+/// An error encountered during [`TestEntryPath::from_execution_report`].
 #[derive(Debug)]
 pub struct ExecutionReportPathError<'a> {
     test_url_path: &'a str,
@@ -254,14 +255,14 @@ impl Display for ExecutionReportPathError<'_> {
     }
 }
 
-/// An error encountered during [`TestPath::from_metadata_test`].
+/// An error encountered during [`TestEntryPath::from_metadata_test`].
 #[derive(Debug)]
-pub struct MetadataTestPathError<'a> {
+pub struct MetadataTestEntryPathError<'a> {
     rel_meta_file_path: &'a Path,
     test_name: &'a str,
 }
 
-impl Display for MetadataTestPathError<'_> {
+impl Display for MetadataTestEntryPathError<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let Self {
             rel_meta_file_path,
@@ -340,15 +341,15 @@ impl From<ServoRootDir> for RootDir {
 }
 
 #[test]
-fn parse_test_path() {
+fn parse_test_entry_path() {
     assert_eq!(
-        TestPath::from_metadata_test(
+        TestEntryPath::from_metadata_test(
             Browser::Firefox,
             Path::new("testing/web-platform/mozilla/meta/blarg/cts.https.html.ini"),
             "cts.https.html?stuff=things"
         )
         .unwrap(),
-        TestPath {
+        TestEntryPath {
             root_dir: FirefoxRootDir::Mozilla.into(),
             path: Utf8Path::new("blarg/cts.https.html").into(),
             variant: Some("?stuff=things".into()),
@@ -356,13 +357,13 @@ fn parse_test_path() {
     );
 
     assert_eq!(
-        TestPath::from_metadata_test(
+        TestEntryPath::from_metadata_test(
             Browser::Firefox,
             Path::new("testing/web-platform/meta/stuff/things/cts.https.html.ini"),
             "cts.https.html"
         )
         .unwrap(),
-        TestPath {
+        TestEntryPath {
             root_dir: FirefoxRootDir::Upstream.into(),
             path: Utf8Path::new("stuff/things/cts.https.html").into(),
             variant: None,
@@ -370,13 +371,13 @@ fn parse_test_path() {
     );
 
     assert_eq!(
-        TestPath::from_metadata_test(
+        TestEntryPath::from_metadata_test(
             Browser::Servo,
             Path::new("tests/wpt/webgpu/meta/webgpu/cts.https.html.ini"),
             "cts.https.html?stuff=things"
         )
         .unwrap(),
-        TestPath {
+        TestEntryPath {
             root_dir: ServoRootDir::WebGpu.into(),
             path: Utf8Path::new("webgpu/cts.https.html").into(),
             variant: Some("?stuff=things".into()),
@@ -389,8 +390,8 @@ fn report_meta_match() {
     macro_rules! assert_test_matches_meta {
         ($browser:expr, $test_run_path:expr, $rel_meta_path:expr, $test_section_header:expr) => {
             assert_eq!(
-                TestPath::from_execution_report($browser, $test_run_path).unwrap(),
-                TestPath::from_metadata_test(
+                TestEntryPath::from_execution_report($browser, $test_run_path).unwrap(),
+                TestEntryPath::from_metadata_test(
                     $browser,
                     Path::new($rel_meta_path),
                     $test_section_header
@@ -400,7 +401,7 @@ fn report_meta_match() {
             assert_eq!(
                 format!(
                     "/{}",
-                    TestPath::from_execution_report($browser, $test_run_path)
+                    TestEntryPath::from_execution_report($browser, $test_run_path)
                         .unwrap()
                         .runner_url_path()
                 ),
@@ -441,8 +442,8 @@ fn report_meta_reject() {
             $test_section_header:expr
         ) => {
             assert_ne!(
-                TestPath::from_execution_report($browser, $test_run_path).unwrap(),
-                TestPath::from_metadata_test(
+                TestEntryPath::from_execution_report($browser, $test_run_path).unwrap(),
+                TestEntryPath::from_metadata_test(
                     $browser,
                     Path::new($rel_meta_path),
                     $test_section_header
@@ -472,7 +473,7 @@ fn report_meta_reject() {
 #[test]
 fn runner_url_path() {
     assert_eq!(
-        TestPath::from_metadata_test(
+        TestEntryPath::from_metadata_test(
             Browser::Firefox,
             Path::new("testing/web-platform/meta/blarg/stuff.https.html.ini"),
             "stuff.https.html"
@@ -484,7 +485,7 @@ fn runner_url_path() {
     );
 
     assert_eq!(
-        TestPath::from_metadata_test(
+        TestEntryPath::from_metadata_test(
             Browser::Firefox,
             Path::new("testing/web-platform/meta/blarg/stuff.https.html.ini"),
             "stuff.https.html?win"
@@ -496,7 +497,7 @@ fn runner_url_path() {
     );
 
     assert_eq!(
-        TestPath::from_metadata_test(
+        TestEntryPath::from_metadata_test(
             Browser::Firefox,
             Path::new("testing/web-platform/mozilla/meta/blarg/stuff.https.html.ini"),
             "stuff.https.html"
@@ -508,7 +509,7 @@ fn runner_url_path() {
     );
 
     assert_eq!(
-        TestPath::from_metadata_test(
+        TestEntryPath::from_metadata_test(
             Browser::Firefox,
             Path::new("testing/web-platform/mozilla/meta/blarg/stuff.https.html.ini"),
             "stuff.https.html?win"
@@ -520,7 +521,7 @@ fn runner_url_path() {
     );
 
     assert_eq!(
-        TestPath::from_metadata_test(
+        TestEntryPath::from_metadata_test(
             Browser::Servo,
             Path::new("tests/wpt/webgpu/meta/webgpu/cts.https.html.ini"),
             "cts.https.html?win"
