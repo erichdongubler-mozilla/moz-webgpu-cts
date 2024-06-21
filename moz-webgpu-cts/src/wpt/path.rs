@@ -18,39 +18,36 @@ pub(crate) enum Browser {
 }
 
 impl Browser {
-    /// NOTE: Keep this implementation in sync with [`TestScope::url_prefix`].
-    pub(crate) fn strip_scope_url_prefix<'a>(
-        &self,
-        url_path: &'a str,
-    ) -> Option<(TestScope, &'a str)> {
-        let strip_prefix = |prefix, scope| {
+    /// NOTE: Keep this implementation in sync with [`RootDir::url_prefix`].
+    pub(crate) fn strip_wpt_url_prefix<'a>(&self, url_path: &'a str) -> Option<(RootDir, &'a str)> {
+        let strip_prefix = |prefix, root_dir| {
             url_path
                 .strip_prefix(prefix)
-                .map(|stripped| (scope, stripped))
+                .map(|stripped| (root_dir, stripped))
         };
         match self {
-            Browser::Firefox => strip_prefix("/_mozilla/", FirefoxTestScope::Mozilla.into())
-                .or_else(|| strip_prefix("/", FirefoxTestScope::Upstream.into())),
-            Browser::Servo => strip_prefix("/_webgpu/", ServoTestScope::WebGpu.into()),
+            Browser::Firefox => strip_prefix("/_mozilla/", FirefoxRootDir::Mozilla.into())
+                .or_else(|| strip_prefix("/", FirefoxRootDir::Upstream.into())),
+            Browser::Servo => strip_prefix("/_webgpu/", ServoRootDir::WebGpu.into()),
         }
     }
 
-    /// NOTE: Keep this implementation in sync with [`TestScope::metadata_parent_path_components`].
-    pub(crate) fn strip_scope_parent_path<'a>(
+    /// NOTE: Keep this implementation in sync with [`RootDir::components`].
+    pub(crate) fn strip_wpt_root_dir_prefix<'a>(
         &self,
         path: &'a Utf8Path,
-    ) -> Result<(TestScope, &'a Utf8Path), std::path::StripPrefixError> {
-        let strip_prefix =
-            |prefix, scope| path.strip_prefix(prefix).map(|stripped| (scope, stripped));
+    ) -> Result<(RootDir, &'a Utf8Path), std::path::StripPrefixError> {
+        let strip_prefix = |prefix, root_dir| {
+            path.strip_prefix(prefix)
+                .map(|stripped| (root_dir, stripped))
+        };
         match self {
             Browser::Firefox => {
-                strip_prefix(SCOPE_DIR_FX_MOZILLA_STR, FirefoxTestScope::Mozilla.into()).or_else(
-                    |_| strip_prefix(SCOPE_DIR_FX_UPSTREAM_STR, FirefoxTestScope::Upstream.into()),
+                strip_prefix(ROOT_DIR_FX_MOZILLA_STR, FirefoxRootDir::Mozilla.into()).or_else(
+                    |_| strip_prefix(ROOT_DIR_FX_UPSTREAM_STR, FirefoxRootDir::Upstream.into()),
                 )
             }
-            Browser::Servo => {
-                strip_prefix(SCOPE_DIR_SERVO_WEBGPU_STR, ServoTestScope::WebGpu.into())
-            }
+            Browser::Servo => strip_prefix(ROOT_DIR_SERVO_WEBGPU_STR, ServoRootDir::WebGpu.into()),
         }
     }
 }
@@ -64,8 +61,8 @@ impl Browser {
 /// [`metadata::File`]: crate::wpt::metadata::File
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(crate) struct TestPath<'a> {
-    pub scope: TestScope,
-    /// A relative offset into `scope`.
+    pub root_dir: RootDir,
+    /// A relative offset into `root_dir`.
     pub path: Cow<'a, Utf8Path>,
     /// The variant of this particular test from this test's source code. If set, you should be
     /// able to correlate this with
@@ -76,12 +73,12 @@ pub(crate) struct TestPath<'a> {
     pub variant: Option<Cow<'a, str>>,
 }
 
-const SCOPE_DIR_FX_MOZILLA_STR: &str = "testing/web-platform/mozilla";
-const SCOPE_DIR_FX_MOZILLA_COMPONENTS: &[&str] = &["testing", "web-platform", "mozilla"];
-const SCOPE_DIR_FX_UPSTREAM_STR: &str = "testing/web-platform";
-const SCOPE_DIR_FX_UPSTREAM_COMPONENTS: &[&str] = &["testing", "web-platform"];
-const SCOPE_DIR_SERVO_WEBGPU_STR: &str = "tests/wpt/webgpu";
-const SCOPE_DIR_SERVO_WEBGPU_COMPONENTS: &[&str] = &["tests", "wpt", "webgpu"];
+const ROOT_DIR_FX_MOZILLA_STR: &str = "testing/web-platform/mozilla";
+const ROOT_DIR_FX_MOZILLA_COMPONENTS: &[&str] = &["testing", "web-platform", "mozilla"];
+const ROOT_DIR_FX_UPSTREAM_STR: &str = "testing/web-platform";
+const ROOT_DIR_FX_UPSTREAM_COMPONENTS: &[&str] = &["testing", "web-platform"];
+const ROOT_DIR_SERVO_WEBGPU_STR: &str = "tests/wpt/webgpu";
+const ROOT_DIR_SERVO_WEBGPU_COMPONENTS: &[&str] = &["tests", "wpt", "webgpu"];
 
 impl<'a> TestPath<'a> {
     pub fn from_execution_report(
@@ -90,8 +87,8 @@ impl<'a> TestPath<'a> {
     ) -> Result<Self, ExecutionReportPathError<'a>> {
         let err = || ExecutionReportPathError { test_url_path };
 
-        let (scope, path) = browser
-            .strip_scope_url_prefix(test_url_path)
+        let (root_dir, path) = browser
+            .strip_wpt_url_prefix(test_url_path)
             .ok_or_else(err)?;
 
         if path.contains('\\') {
@@ -110,7 +107,7 @@ impl<'a> TestPath<'a> {
         };
 
         Ok(Self {
-            scope,
+            root_dir,
             path: Utf8Path::new(path).into(),
             variant: variant.map(Into::into),
         })
@@ -137,8 +134,8 @@ impl<'a> TestPath<'a> {
                 .ok_or_else(err)?,
         );
 
-        let (scope, path) = browser
-            .strip_scope_parent_path(rel_meta_file_path)
+        let (root_dir, path) = browser
+            .strip_wpt_root_dir_prefix(rel_meta_file_path)
             .map_err(|_e| err())?;
 
         let Ok(path) = path.strip_prefix("meta/") else {
@@ -152,7 +149,7 @@ impl<'a> TestPath<'a> {
         }
 
         Ok(Self {
-            scope,
+            root_dir,
             path: path.into(),
             variant: variant.map(Into::into),
         })
@@ -170,13 +167,13 @@ impl<'a> TestPath<'a> {
 
     pub fn into_owned(self) -> TestPath<'static> {
         let Self {
-            scope,
+            root_dir,
             path,
             variant,
         } = self;
 
         TestPath {
-            scope: scope.clone(),
+            root_dir: root_dir.clone(),
             path: path.clone().into_owned().into(),
             variant: variant.clone().map(|v| v.into_owned().into()),
         }
@@ -186,7 +183,7 @@ impl<'a> TestPath<'a> {
         let Self {
             path,
             variant,
-            scope: _,
+            root_dir: _,
         } = self;
         let base_name = path.file_name().unwrap();
 
@@ -203,13 +200,13 @@ impl<'a> TestPath<'a> {
         let Self {
             path,
             variant,
-            scope,
+            root_dir,
         } = self;
         lazy_format!(move |f| {
             write!(
                 f,
                 "{}{}",
-                scope.url_prefix(),
+                root_dir.url_prefix(),
                 path.components().join_with('/')
             )?;
             if let Some(variant) = variant.as_ref() {
@@ -223,15 +220,17 @@ impl<'a> TestPath<'a> {
         let Self {
             path,
             variant: _,
-            scope,
+            root_dir,
         } = self;
 
-        let scope_dir = scope
-            .metadata_parent_path_components()
+        let root_dir_dir = root_dir
+            .components()
             .chain(["meta"].iter().cloned())
             .join_with(std::path::MAIN_SEPARATOR);
 
-        lazy_format!(move |f| { write!(f, "{scope_dir}{}{path}.ini", std::path::MAIN_SEPARATOR) })
+        lazy_format!(move |f| {
+            write!(f, "{root_dir_dir}{}{path}.ini", std::path::MAIN_SEPARATOR)
+        })
     }
 }
 
@@ -276,43 +275,42 @@ impl Display for MetadataTestPathError<'_> {
     }
 }
 
-/// Symbolically represents a file root from which tests and metadata are based. Scopes are based
-/// on a specific [`Browser`].
+/// A root directory from which WPT tests and metadata are based. Based on a specific [`Browser`].
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) enum TestScope {
-    Firefox(FirefoxTestScope),
-    Servo(ServoTestScope),
+pub(crate) enum RootDir {
+    Firefox(FirefoxRootDir),
+    Servo(ServoRootDir),
 }
 
-impl TestScope {
-    /// NOTE: Keep this implementation in sync with [`Browser::strip_scope_url_prefix`].
+impl RootDir {
+    /// NOTE: Keep this implementation in sync with [`Browser::strip_wpt_url_prefix`].
     fn url_prefix(&self) -> &str {
         match self {
-            TestScope::Firefox(scope) => match scope {
-                FirefoxTestScope::Upstream => "",
-                FirefoxTestScope::Mozilla => "_mozilla/",
+            RootDir::Firefox(root_dir) => match root_dir {
+                FirefoxRootDir::Upstream => "",
+                FirefoxRootDir::Mozilla => "_mozilla/",
             },
-            TestScope::Servo(ServoTestScope::WebGpu) => "_webgpu/",
+            RootDir::Servo(ServoRootDir::WebGpu) => "_webgpu/",
         }
     }
 
-    /// NOTE: Keep this implementation in sync with [`Browser::strip_scope_metadata_parent_path`].
-    fn metadata_parent_path_components(&self) -> impl Iterator<Item = &str> + Clone {
+    /// NOTE: Keep this implementation in sync with [`Browser::strip_wpt_root_dir_prefix`].
+    fn components(&self) -> impl Iterator<Item = &str> + Clone {
         match self {
-            TestScope::Firefox(scope) => match scope {
-                FirefoxTestScope::Upstream => SCOPE_DIR_FX_UPSTREAM_COMPONENTS,
-                FirefoxTestScope::Mozilla => SCOPE_DIR_FX_MOZILLA_COMPONENTS,
+            RootDir::Firefox(root_dir) => match root_dir {
+                FirefoxRootDir::Upstream => ROOT_DIR_FX_UPSTREAM_COMPONENTS,
+                FirefoxRootDir::Mozilla => ROOT_DIR_FX_MOZILLA_COMPONENTS,
             },
-            TestScope::Servo(ServoTestScope::WebGpu) => SCOPE_DIR_SERVO_WEBGPU_COMPONENTS,
+            RootDir::Servo(ServoRootDir::WebGpu) => ROOT_DIR_SERVO_WEBGPU_COMPONENTS,
         }
         .iter()
         .cloned()
     }
 }
 
-/// Subset of [`TestScope`] for [`Browser::Firefox`].
+/// Subset of [`RootDir`] for [`Browser::Firefox`].
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) enum FirefoxTestScope {
+pub(crate) enum FirefoxRootDir {
     /// A public test available at some point in the history of [WPT upstream]. Note that while
     /// a test may be public, metadata associated with it is in a private location.
     ///
@@ -322,21 +320,21 @@ pub(crate) enum FirefoxTestScope {
     Mozilla,
 }
 
-impl From<FirefoxTestScope> for TestScope {
-    fn from(value: FirefoxTestScope) -> Self {
+impl From<FirefoxRootDir> for RootDir {
+    fn from(value: FirefoxRootDir) -> Self {
         Self::Firefox(value)
     }
 }
 
-/// Subset of [`TestScope`] for [`Browser::Servo`].
+/// Subset of [`RootDir`] for [`Browser::Servo`].
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) enum ServoTestScope {
+pub(crate) enum ServoRootDir {
     /// A WebGPU CTS test vendored into Servo's source tree.
     WebGpu,
 }
 
-impl From<ServoTestScope> for TestScope {
-    fn from(value: ServoTestScope) -> Self {
+impl From<ServoRootDir> for RootDir {
+    fn from(value: ServoRootDir) -> Self {
         Self::Servo(value)
     }
 }
@@ -351,7 +349,7 @@ fn parse_test_path() {
         )
         .unwrap(),
         TestPath {
-            scope: FirefoxTestScope::Mozilla.into(),
+            root_dir: FirefoxRootDir::Mozilla.into(),
             path: Utf8Path::new("blarg/cts.https.html").into(),
             variant: Some("?stuff=things".into()),
         }
@@ -365,7 +363,7 @@ fn parse_test_path() {
         )
         .unwrap(),
         TestPath {
-            scope: FirefoxTestScope::Upstream.into(),
+            root_dir: FirefoxRootDir::Upstream.into(),
             path: Utf8Path::new("stuff/things/cts.https.html").into(),
             variant: None,
         }
@@ -379,7 +377,7 @@ fn parse_test_path() {
         )
         .unwrap(),
         TestPath {
-            scope: ServoTestScope::WebGpu.into(),
+            root_dir: ServoRootDir::WebGpu.into(),
             path: Utf8Path::new("webgpu/cts.https.html").into(),
             variant: Some("?stuff=things".into()),
         }
