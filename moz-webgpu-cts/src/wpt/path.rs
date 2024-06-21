@@ -78,9 +78,7 @@ impl SpecType {
 
     pub fn from_base_name(base_name: &str) -> Option<(Self, &str)> {
         Self::iter().find_map(|variant| {
-            base_name
-                .strip_suffix(variant.file_extension())
-                .map(|some| (variant, some))
+            strip_suffix_with_value(base_name, variant.file_extension(), variant)
         })
     }
 
@@ -430,6 +428,10 @@ impl From<ServoRootDir> for RootDir {
     fn from(value: ServoRootDir) -> Self {
         Self::Servo(value)
     }
+}
+
+fn strip_suffix_with_value<'a, T>(s: &'a str, suffix: &str, t: T) -> Option<(T, &'a str)> {
+    s.strip_suffix(suffix).map(|some| (t, some))
 }
 
 #[test]
