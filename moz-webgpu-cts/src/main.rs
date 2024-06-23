@@ -1738,18 +1738,19 @@ fn search_for_repo_root() -> Result<PathBuf, AlreadyReportedToCommandline> {
                 dir
             })
     };
-    let source_root = find_up("Mercurial", ".hg").or_else(|e| match find_up("Git", ".git") {
-        Ok(path) => {
-            log::debug!("{e:?}");
-            Ok(path)
-        }
-        Err(e2) => {
-            log::warn!("{e:?}");
-            log::warn!("{e2:?}");
-            log::error!("failed to automatically find a repository root");
-            Err(AlreadyReportedToCommandline)
-        }
-    })?;
+    let source_root =
+        find_up("Mercurial", ".hg").or_else(|hg_err| match find_up("Git", ".git") {
+            Ok(path) => {
+                log::debug!("{hg_err:?}");
+                Ok(path)
+            }
+            Err(git_err) => {
+                log::warn!("{hg_err:?}");
+                log::warn!("{git_err:?}");
+                log::error!("failed to automatically find a repository root");
+                Err(AlreadyReportedToCommandline)
+            }
+        })?;
 
     log::debug!("detected repository root at {}", source_root.display());
 
