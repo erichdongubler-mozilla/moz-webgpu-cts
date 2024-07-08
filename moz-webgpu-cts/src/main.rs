@@ -1,18 +1,21 @@
-mod metadata;
 mod process_reports;
 mod report;
-mod shared;
+mod wpt;
 
 use self::{
-    metadata::{
-        BuildProfile, File, FileProps, Platform, Subtest, SubtestOutcome, Test, TestOutcome,
-        TestProps,
-    },
     process_reports::{Entry, TestEntry},
     report::{
         ExecutionReport, RunInfo, SubtestExecutionResult, TestExecutionEntry, TestExecutionResult,
     },
-    shared::{ExpandedPropertyValue, Expected, TestPath},
+    wpt::{
+        metadata::{
+            self,
+            properties::{ExpandedPropertyValue, Expected},
+            BuildProfile, File, FileProps, ImplementationStatus, Platform, Subtest, SubtestOutcome,
+            Test, TestOutcome, TestProps,
+        },
+        path::TestEntryPath,
+    },
 };
 
 use std::{
@@ -31,6 +34,7 @@ use std::{
     },
 };
 
+use crate::wpt::path::Browser;
 use camino::Utf8PathBuf;
 use clap::{Parser, ValueEnum};
 use enumset::EnumSetType;
@@ -38,11 +42,9 @@ use format::lazy_format;
 use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
 use joinery::JoinableIterator;
-use metadata::ImplementationStatus;
 use miette::{miette, Diagnostic, IntoDiagnostic, NamedSource, Report, SourceSpan, WrapErr};
 use path_dsl::path;
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
-use shared::Browser;
 use wax::Glob;
 use whippit::{
     metadata::SectionHeader,
@@ -112,7 +114,7 @@ enum Subcommand {
     /// Identify and promote tests that are ready to come out of the `backlog` implementation
     /// status.
     UpdateBacklog {
-        /// The heuristic to use for identifying tests that can be promoted.
+        /// The mode to use for updating tests.
         preset: UpdateBacklogPreset,
     },
     /// Dump all metadata as JSON. Do so at your own risk; no guarantees are made about the
@@ -277,23 +279,23 @@ fn run(cli: Cli) -> ExitCode {
 
             #[derive(Debug, Default)]
             struct EntryByCtsPath<'a> {
-                metadata_path: Option<TestPath<'a>>,
-                reported_path: Option<TestPath<'a>>,
+                metadata_path: Option<TestEntryPath<'a>>,
+                reported_path: Option<TestEntryPath<'a>>,
                 entry: TestEntry,
             }
 
-            fn cts_path(test_path: &TestPath<'_>) -> Option<String> {
-                test_path
+            fn cts_path(test_entry_path: &TestEntryPath<'_>) -> Option<String> {
+                test_entry_path
                     .variant
                     .as_ref()
                     .filter(|v| v.starts_with("?q=webgpu:"))
                     .map(|v| v.strip_prefix("?q=").unwrap().to_owned())
-                    .filter(|_q| test_path.path.ends_with("cts.https.html"))
+                    .filter(|_q| test_entry_path.path.ends_with("cts.https.html"))
             }
 
             let mut file_props_by_file = IndexMap::<Utf8PathBuf, FileProps>::default();
             let mut entries_by_cts_path = IndexMap::<String, EntryByCtsPath<'_>>::default();
-            let mut other_entries_by_test = IndexMap::<TestPath<'_>, TestEntry>::default();
+            let mut other_entries_by_test = IndexMap::<TestEntryPath<'_>, TestEntry>::default();
             let old_meta_file_paths = meta_files_by_path.keys().cloned().collect::<Vec<_>>();
 
             log::debug!("loading metadata for comparison to reports…");
@@ -313,8 +315,8 @@ fn run(cli: Cli) -> ExitCode {
                         subtests,
                     } = test;
 
-                    let test_path =
-                        TestPath::from_metadata_test(browser, file_rel_path, &name).unwrap();
+                    let test_entry_path =
+                        TestEntryPath::from_metadata_test(browser, file_rel_path, &name).unwrap();
 
                     let freak_out_do_nothing = |what: &dyn Display| {
                         log::error!("hoo boy, not sure what to do yet: {what}")
@@ -329,7 +331,7 @@ fn run(cli: Cli) -> ExitCode {
                                     "discarding previous entries with ",
                                     "this and further dupes"
                                 ),
-                                test_path
+                                test_entry_path
                             ))
                         }
                         reported_dupe_already = true;
@@ -338,21 +340,22 @@ fn run(cli: Cli) -> ExitCode {
                     let TestEntry {
                         entry: test_entry,
                         subtests: subtest_entries,
-                    } = if let Some(cts_path) = cts_path(&test_path) {
+                    } = if let Some(cts_path) = cts_path(&test_entry_path) {
                         let entry = entries_by_cts_path.entry(cts_path).or_default();
-                        if let Some(_old) =
-                            entry.metadata_path.replace(test_path.clone().into_owned())
+                        if let Some(_old) = entry
+                            .metadata_path
+                            .replace(test_entry_path.clone().into_owned())
                         {
                             dupe_err();
                         }
                         &mut entry.entry
                     } else {
                         other_entries_by_test
-                            .entry(test_path.clone().into_owned())
+                            .entry(test_entry_path.clone().into_owned())
                             .or_default()
                     };
 
-                    let test_path = &test_path;
+                    let test_entry_path = &test_entry_path;
 
                     if let Some(_old) = test_entry.meta_props.replace(properties) {
                         dupe_err();
@@ -370,7 +373,7 @@ fn run(cli: Cli) -> ExitCode {
                                         "discarding previous entries with ",
                                         "this and further dupes"
                                     ),
-                                    test_path, subtest_name
+                                    test_entry_path, subtest_name
                                 ));
                             }
                         }
@@ -443,16 +446,18 @@ fn run(cli: Cli) -> ExitCode {
                 for entry in entries {
                     let TestExecutionEntry { test_name, result } = entry;
 
-                    let test_path = TestPath::from_execution_report(browser, &test_name).unwrap();
+                    let test_entry_path =
+                        TestEntryPath::from_execution_report(browser, &test_name).unwrap();
                     let TestEntry {
                         entry: test_entry,
                         subtests: subtest_entries,
-                    } = if let Some(cts_path) = cts_path(&test_path) {
+                    } = if let Some(cts_path) = cts_path(&test_entry_path) {
                         let entry = entries_by_cts_path.entry(cts_path).or_default();
-                        if let Some(old) =
-                            entry.reported_path.replace(test_path.clone().into_owned())
+                        if let Some(old) = entry
+                            .reported_path
+                            .replace(test_entry_path.clone().into_owned())
                         {
-                            if old != test_path {
+                            if old != test_entry_path {
                                 log::warn!(
                                     concat!(
                                         "found test execution entry containing the same ",
@@ -463,14 +468,14 @@ fn run(cli: Cli) -> ExitCode {
                                         "newer: {:#?}\n",
                                     ),
                                     old,
-                                    test_path
+                                    test_entry_path
                                 )
                             }
                         }
                         &mut entry.entry
                     } else {
                         other_entries_by_test
-                            .entry(test_path.clone().into_owned())
+                            .entry(test_entry_path.clone().into_owned())
                             .or_default()
                     };
 
@@ -483,7 +488,7 @@ fn run(cli: Cli) -> ExitCode {
                                         "expected an empty `status` field for {:?}, ",
                                         "but found the {:?} status"
                                     ),
-                                    test_path,
+                                    test_entry_path,
                                     status,
                                 )
                             }
@@ -573,7 +578,7 @@ fn run(cli: Cli) -> ExitCode {
             });
             let recombined_tests_iter = entries_by_cts_path
                 .chain(other_entries_by_test)
-                .filter_map(|(test_path, test_entry)| {
+                .filter_map(|(test_entry_path, test_entry)| {
                     /// Reconciles `meta_props` with `reported` if they match
                     /// `implementation_status_filter`.
                     ///
@@ -646,12 +651,13 @@ fn run(cli: Cli) -> ExitCode {
                     } = test_entry;
 
                     if properties.is_none() {
-                        log::info!("new test entry: {test_path:?}")
+                        log::info!("new test entry: {test_entry_path:?}")
                     }
 
                     if test_reported.is_empty() && using_reports {
-                        let test_path = &test_path;
-                        let msg = lazy_format!("no entries found in reports for {:?}", test_path);
+                        let test_entry_path = &test_entry_path;
+                        let msg =
+                            lazy_format!("no entries found in reports for {:?}", test_entry_path);
                         match preset {
                             ReportProcessingPreset::Merge => log::warn!("{msg}"),
                             ReportProcessingPreset::ResetAll
@@ -689,7 +695,7 @@ fn run(cli: Cli) -> ExitCode {
                                         "this is an artifact of disjoint test runs"
                                     ),
                                     skip,
-                                    test_path,
+                                    test_entry_path,
                                     platform,
                                     build_profile,
                                 );
@@ -712,7 +718,7 @@ fn run(cli: Cli) -> ExitCode {
                         let subtest_name = SectionHeader(subtest_name);
                         if subtests.contains_key(&subtest_name) {
                             found_reconciliation_err = true;
-                            log::error!("internal error: duplicate test path {test_path:?}");
+                            log::error!("internal error: duplicate test path {test_entry_path:?}");
                         }
 
                         let Entry {
@@ -745,7 +751,7 @@ fn run(cli: Cli) -> ExitCode {
                     if subtests.is_empty() && properties == Default::default() {
                         None
                     } else {
-                        Some((test_path, (properties, subtests)))
+                        Some((test_entry_path, (properties, subtests)))
                     }
                 });
 
@@ -754,9 +760,9 @@ fn run(cli: Cli) -> ExitCode {
             );
 
             let mut files = BTreeMap::<PathBuf, File>::new();
-            for (test_path, (properties, subtests)) in recombined_tests_iter {
-                let name = test_path.test_name().to_string();
-                let rel_path = Utf8PathBuf::from(test_path.rel_metadata_path().to_string());
+            for (test_entry_path, (properties, subtests)) in recombined_tests_iter {
+                let name = test_entry_path.test_name().to_string();
+                let rel_path = Utf8PathBuf::from(test_entry_path.rel_metadata_path().to_string());
                 let path = checkout.join(&rel_path);
                 let file = files.entry(path).or_insert_with(|| File {
                     properties: file_props_by_file
@@ -876,13 +882,13 @@ fn run(cli: Cli) -> ExitCode {
                             let checkout = &checkout;
                             move |(name, inner)| {
                                 let SectionHeader(name) = &name;
-                                let test_path = TestPath::from_metadata_test(
+                                let test_entry_path = TestEntryPath::from_metadata_test(
                                     browser,
                                     path.strip_prefix(checkout).unwrap(),
                                     name,
                                 )
                                 .unwrap();
-                                let url_path = test_path.runner_url_path().to_string();
+                                let url_path = test_entry_path.runner_url_path().to_string();
                                 (
                                     url_path,
                                     TaggedTest {
