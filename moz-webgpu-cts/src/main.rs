@@ -146,7 +146,10 @@ enum OnZeroItem {
 #[derive(Clone, Copy, Debug, Parser)]
 enum UpdateBacklogSubcommand {
     /// Remove tests that expect only `PASS` outcomes on all platforms from `backlog`.
-    PromotePermaPassing,
+    PromotePermaPassing {
+        #[clap(long, default_value_t = true)]
+        only_across_all_platforms: bool,
+    },
 }
 
 fn main() -> ExitCode {
@@ -1510,9 +1513,17 @@ fn run(cli: Cli) -> ExitCode {
                     let value_across_all_platforms =
                         || cases.into_iter().map(|(_, case)| case).all_equal_value();
                     match preset {
-                        UpdateBacklogSubcommand::PromotePermaPassing => {
+                        UpdateBacklogSubcommand::PromotePermaPassing {
+                            only_across_all_platforms,
+                        } => {
                             if matches!(value_across_all_platforms(), Ok(Case::PermaPass)) {
                                 properties.implementation_status = None;
+                            } else if !only_across_all_platforms {
+                                properties.implementation_status =
+                                    Some(cases.map(|case| match case {
+                                        Case::PermaPass => ImplementationStatus::Implementing,
+                                        Case::Other => ImplementationStatus::Backlog,
+                                    }));
                             }
                         }
                     }
