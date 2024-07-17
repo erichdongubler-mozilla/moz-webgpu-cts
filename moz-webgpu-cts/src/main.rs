@@ -115,6 +115,7 @@ enum Subcommand {
     /// status.
     UpdateBacklog {
         /// The mode to use for updating tests.
+        #[clap(value_enum)]
         preset: UpdateBacklogPreset,
     },
     /// Dump all metadata as JSON. Do so at your own risk; no guarantees are made about the
