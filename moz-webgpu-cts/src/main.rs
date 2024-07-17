@@ -115,8 +115,8 @@ enum Subcommand {
     /// status.
     UpdateBacklog {
         /// The mode to use for updating tests.
-        #[clap(value_enum)]
-        preset: UpdateBacklogPreset,
+        #[clap(subcommand)]
+        preset: UpdateBacklogSubcommand,
     },
     /// Dump all metadata as JSON. Do so at your own risk; no guarantees are made about the
     /// schema of this JSON, for now.
@@ -143,8 +143,8 @@ enum OnZeroItem {
     Hide,
 }
 
-#[derive(Clone, Copy, Debug, ValueEnum)]
-enum UpdateBacklogPreset {
+#[derive(Clone, Copy, Debug, Parser)]
+enum UpdateBacklogSubcommand {
     /// Remove tests that expect only `PASS` outcomes on all platforms from `backlog`.
     PromotePermaPassing,
 }
@@ -1510,7 +1510,7 @@ fn run(cli: Cli) -> ExitCode {
                     let value_across_all_platforms =
                         || cases.into_iter().map(|(_, case)| case).all_equal_value();
                     match preset {
-                        UpdateBacklogPreset::PromotePermaPassing => {
+                        UpdateBacklogSubcommand::PromotePermaPassing => {
                             if matches!(value_across_all_platforms(), Ok(Case::PermaPass)) {
                                 properties.implementation_status = None;
                             }
