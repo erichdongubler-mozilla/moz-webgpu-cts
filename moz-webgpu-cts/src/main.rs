@@ -986,11 +986,8 @@ fn run(cli: Cli) -> ExitCode {
                         subtests,
                     } = test;
                     let mut aggregated_case_for_test = ExpandedPropertyValue::default();
-                    for ((platform, build_profile), expected) in properties
-                        .expected
-                        .as_ref()
-                        .unwrap_or(&Default::default())
-                        .iter()
+                    for ((platform, build_profile), expected) in
+                        properties.expected.unwrap_or_default().into_iter()
                     {
                         let case = match expected.as_permanent() {
                             Some(TestOutcome::Ok | TestOutcome::Pass) => Case::PermaPass,
@@ -1005,10 +1002,7 @@ fn run(cli: Cli) -> ExitCode {
                                     .iter()
                                     .map(|subtest| {
                                         let (_name, Subtest { properties }) = subtest;
-                                        let expected = properties
-                                            .expected
-                                            .as_ref()
-                                            .unwrap_or(&Default::default())
+                                        let expected = properties.expected.unwrap_or_default()
                                             [(platform, build_profile)];
                                         if let Some(SubtestOutcome::Pass) = expected.as_permanent()
                                         {
