@@ -992,8 +992,9 @@ fn run(cli: Cli) -> ExitCode {
                                 _ => Case::Other,
                             }
                         });
+                    let mut cases_by_subtest = BTreeMap::new();
                     if !subtests.is_empty() {
-                        let cases_by_subtest = subtests
+                        cases_by_subtest = subtests
                             .iter()
                             .map(|subtest| {
                                 let (name, Subtest { properties }) = subtest;
