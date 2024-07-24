@@ -985,7 +985,7 @@ fn run(cli: Cli) -> ExitCode {
                         properties,
                         subtests,
                     } = test;
-                    let mut cases = ExpandedPropertyValue::default();
+                    let mut aggregated_case_for_test = ExpandedPropertyValue::default();
                     for ((platform, build_profile), expected) in properties
                         .expected
                         .as_ref()
@@ -996,33 +996,43 @@ fn run(cli: Cli) -> ExitCode {
                             Some(TestOutcome::Ok | TestOutcome::Pass) => Case::PermaPass,
                             _ => Case::Other,
                         };
-                        cases[(platform, build_profile)] = case;
+                        aggregated_case_for_test[(platform, build_profile)] = case;
                     }
                     if !subtests.is_empty() {
-                        cases = ExpandedPropertyValue::from_query(|platform, build_profile| {
-                            let consistent_expected = subtests
-                                .iter()
-                                .map(|subtest| {
-                                    let (_name, Subtest { properties }) = subtest;
-                                    let expected =
-                                        properties.expected.as_ref().unwrap_or(&Default::default())
+                        aggregated_case_for_test =
+                            ExpandedPropertyValue::from_query(|platform, build_profile| {
+                                let consistent_expected = subtests
+                                    .iter()
+                                    .map(|subtest| {
+                                        let (_name, Subtest { properties }) = subtest;
+                                        let expected = properties
+                                            .expected
+                                            .as_ref()
+                                            .unwrap_or(&Default::default())
                                             [(platform, build_profile)];
-                                    if let Some(SubtestOutcome::Pass) = expected.as_permanent() {
-                                        Case::PermaPass
-                                    } else {
-                                        Case::Other
-                                    }
-                                })
-                                .chain(iter::once(cases[(platform, build_profile)]))
-                                .all_equal_value()
-                                .ok();
-                            consistent_expected.unwrap_or(Case::Other)
-                        });
+                                        if let Some(SubtestOutcome::Pass) = expected.as_permanent()
+                                        {
+                                            Case::PermaPass
+                                        } else {
+                                            Case::Other
+                                        }
+                                    })
+                                    .chain(iter::once(
+                                        aggregated_case_for_test[(platform, build_profile)],
+                                    ))
+                                    .all_equal_value()
+                                    .ok();
+                                consistent_expected.unwrap_or(Case::Other)
+                            });
                     }
                     // TODO: Just compare this multiple times (here _and_ above), and compare
                     // subtests afterwards.
-                    let value_across_all_platforms =
-                        || cases.into_iter().map(|(_, case)| case).all_equal_value();
+                    let value_across_all_platforms = || {
+                        aggregated_case_for_test
+                            .into_iter()
+                            .map(|(_, case)| case)
+                            .all_equal_value()
+                    };
                     fn apply_criteria(
                         direction: UpdateBacklogDirection,
                         case: Case,
@@ -1051,12 +1061,12 @@ fn run(cli: Cli) -> ExitCode {
                             } else {
                                 let old_impl_status =
                                     properties.implementation_status.unwrap_or_default();
-                                properties.implementation_status.replace(cases.map_with(
-                                    |key, case| {
+                                properties.implementation_status.replace(
+                                    aggregated_case_for_test.map_with(|key, case| {
                                         apply_criteria(direction, case)
                                             .unwrap_or_else(|| old_impl_status[key])
-                                    },
-                                ));
+                                    }),
+                                );
                             }
                         }
                     }
