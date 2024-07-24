@@ -985,16 +985,13 @@ fn run(cli: Cli) -> ExitCode {
                         properties,
                         subtests,
                     } = test;
-                    let mut aggregated_case_for_test = ExpandedPropertyValue::default();
-                    for ((platform, build_profile), expected) in
-                        properties.expected.unwrap_or_default().into_iter()
-                    {
-                        let case = match expected.as_permanent() {
-                            Some(TestOutcome::Ok | TestOutcome::Pass) => Case::PermaPass,
-                            _ => Case::Other,
-                        };
-                        aggregated_case_for_test[(platform, build_profile)] = case;
-                    }
+                    let mut aggregated_case_for_test =
+                        properties.expected.unwrap_or_default().map(|expected| {
+                            match expected.as_permanent() {
+                                Some(TestOutcome::Ok | TestOutcome::Pass) => Case::PermaPass,
+                                _ => Case::Other,
+                            }
+                        });
                     if !subtests.is_empty() {
                         aggregated_case_for_test =
                             ExpandedPropertyValue::from_query(|platform, build_profile| {
