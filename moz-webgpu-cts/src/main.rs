@@ -993,21 +993,25 @@ fn run(cli: Cli) -> ExitCode {
                             }
                         });
                     if !subtests.is_empty() {
+                        let cases_by_subtest = subtests
+                            .iter()
+                            .map(|subtest| {
+                                let (name, Subtest { properties }) = subtest;
+                                let case =
+                                    properties.expected.unwrap_or_default().map(|expected| {
+                                        match expected.as_permanent() {
+                                            Some(SubtestOutcome::Pass) => Case::PermaPass,
+                                            _ => Case::Other,
+                                        }
+                                    });
+                                (name, case)
+                            })
+                            .collect::<BTreeMap<_, _>>();
                         aggregated_case_for_test =
                             ExpandedPropertyValue::from_query(|platform, build_profile| {
-                                let consistent_expected = subtests
-                                    .iter()
-                                    .map(|subtest| {
-                                        let (_name, Subtest { properties }) = subtest;
-                                        let expected = properties.expected.unwrap_or_default()
-                                            [(platform, build_profile)];
-                                        if let Some(SubtestOutcome::Pass) = expected.as_permanent()
-                                        {
-                                            Case::PermaPass
-                                        } else {
-                                            Case::Other
-                                        }
-                                    })
+                                let consistent_expected = cases_by_subtest
+                                    .values()
+                                    .map(|case| case[(platform, build_profile)])
                                     .chain(iter::once(
                                         aggregated_case_for_test[(platform, build_profile)],
                                     ))
