@@ -718,40 +718,38 @@ fn run(cli: Cli) -> ExitCode {
                         implementation_status,
                     );
 
-                    let mut subtests = BTreeMap::new();
-                    for (subtest_name, subtest) in subtest_entries {
-                        let subtest_name = SectionHeader(subtest_name);
-                        if subtests.contains_key(&subtest_name) {
-                            found_reconciliation_err = true;
-                            log::error!("internal error: duplicate test path {test_entry_path:?}");
-                        }
+                    let subtests = subtest_entries
+                        .into_iter()
+                        .filter_map(|(subtest_name, subtest)| {
+                            let subtest_name = SectionHeader(subtest_name);
 
-                        let Entry {
-                            meta_props: subtest_properties,
-                            reported: subtest_reported,
-                        } = subtest;
+                            let Entry {
+                                meta_props: subtest_properties,
+                                reported: subtest_reported,
+                            } = subtest;
 
-                        let mut subtest_properties = subtest_properties.unwrap_or_default();
-                        reconcile(
-                            properties.implementation_status.as_ref(),
-                            &mut subtest_properties,
-                            subtest_reported,
-                            preset,
-                            implementation_status,
-                        );
-                        for (_, expected) in
-                            subtest_properties.expected.as_mut().unwrap().iter_mut()
-                        {
-                            taint_subtest_timeouts_by_suspicion(expected);
-                        }
+                            let mut subtest_properties = subtest_properties.unwrap_or_default();
+                            reconcile(
+                                properties.implementation_status.as_ref(),
+                                &mut subtest_properties,
+                                subtest_reported,
+                                preset,
+                                implementation_status,
+                            );
+                            for (_, expected) in
+                                subtest_properties.expected.as_mut().unwrap().iter_mut()
+                            {
+                                taint_subtest_timeouts_by_suspicion(expected);
+                            }
 
-                        subtests.insert(
-                            subtest_name,
-                            Subtest {
-                                properties: subtest_properties,
-                            },
-                        );
-                    }
+                            Some((
+                                subtest_name,
+                                Subtest {
+                                    properties: subtest_properties,
+                                },
+                            ))
+                        })
+                        .collect::<BTreeMap<_, _>>();
 
                     Some((test_entry_path, (properties, subtests)))
                 });
