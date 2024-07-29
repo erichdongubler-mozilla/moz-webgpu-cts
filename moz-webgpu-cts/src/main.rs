@@ -728,6 +728,24 @@ fn run(cli: Cli) -> ExitCode {
                                 reported: subtest_reported,
                             } = subtest;
 
+                            if subtest_reported.is_empty() && using_reports {
+                                let test_entry_path = &test_entry_path;
+                                let subtest_name = &subtest_name;
+                                let msg = lazy_format!(
+                                    "no subtest entries found in reports for {:?}, subtest {:?}",
+                                    test_entry_path,
+                                    subtest_name,
+                                );
+                                match preset {
+                                    ReportProcessingPreset::Merge => log::warn!("{msg}"),
+                                    ReportProcessingPreset::ResetAll
+                                    | ReportProcessingPreset::ResetContradictory => {
+                                        log::warn!("removing metadata after {msg}");
+                                        return None;
+                                    }
+                                }
+                            }
+
                             let mut subtest_properties = subtest_properties.unwrap_or_default();
                             reconcile(
                                 properties.implementation_status.as_ref(),
