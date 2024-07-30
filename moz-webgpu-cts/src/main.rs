@@ -30,7 +30,7 @@ use std::{
 use crate::wpt::path::Browser;
 use camino::Utf8PathBuf;
 use clap::{Parser, ValueEnum};
-use enumset::EnumSetType;
+use enumset::{EnumSet, EnumSetType};
 use format::lazy_format;
 use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
@@ -85,9 +85,10 @@ enum Subcommand {
         /// The heuristic for resolving differences between current metadata and processed reports.
         #[clap(value_enum, long, default_value_t = UpdateExpectedPreset::ResetContradictory)]
         preset: UpdateExpectedPreset,
-        /// The `implementation-status` that changes should be applied to.
-        #[clap(value_enum, long, default_value_t = ImplementationStatus::Backlog)]
-        implementation_status: ImplementationStatus,
+        /// `implementation-status`es that changes should be applied to. If not specified, defaults
+        /// to `implementing`.
+        #[clap(value_enum, long)]
+        implementation_status: Vec<ImplementationStatus>,
     },
     /// Parse test metadata, apply automated fixups, and re-emit it in normalized form.
     #[clap(name = "fixup", alias = "fmt")]
@@ -292,16 +293,23 @@ fn run(cli: Cli) -> ExitCode {
             exec_report_spec,
             preset,
             implementation_status,
-        } => match process_reports(
-            browser,
-            &checkout,
-            exec_report_spec,
-            preset.into(),
-            implementation_status,
-        ) {
-            Ok(()) => ExitCode::SUCCESS,
-            Err(AlreadyReportedToCommandline) => ExitCode::FAILURE,
-        },
+        } => {
+            let implementation_status = if implementation_status.is_empty() {
+                ImplementationStatus::default().into()
+            } else {
+                EnumSet::from_iter(implementation_status)
+            };
+            match process_reports(
+                browser,
+                &checkout,
+                exec_report_spec,
+                preset.into(),
+                implementation_status,
+            ) {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(AlreadyReportedToCommandline) => ExitCode::FAILURE,
+            }
+        }
         Subcommand::Fixup => {
             log::info!("fixing up metadata in-place…");
             let err_found = read_and_parse_all_metadata(browser, &checkout)
@@ -1304,7 +1312,7 @@ fn process_reports(
     checkout: &Path,
     exec_report_spec: ExecReportSpec,
     preset: process_reports::ReportProcessingPreset,
-    implementation_status: ImplementationStatus,
+    implementation_status: EnumSet<ImplementationStatus>,
 ) -> Result<(), AlreadyReportedToCommandline> {
     let exec_report_paths = exec_report_spec.paths()?;
 

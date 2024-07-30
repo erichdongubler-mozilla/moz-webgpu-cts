@@ -567,7 +567,7 @@ fn format_file_properties(props: &FileProps) -> impl Display + '_ {
     })
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, ValueEnum)]
+#[derive(Debug, Default, EnumSetType, Serialize, ValueEnum)]
 pub enum ImplementationStatus {
     /// Indicates that functionality governing test(s) is implemented or currently being
     /// implemented, and generally expected to conform to tests.
