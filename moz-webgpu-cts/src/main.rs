@@ -91,7 +91,7 @@ enum Subcommand {
         report_globs: Vec<String>,
         /// The heuristic for resolving differences between current metadata and processed reports.
         #[clap(long, default_value = "reset-contradictory")]
-        preset: ReportProcessingPreset,
+        preset: UpdateExpectedPreset,
         /// The `implementation-status` that changes should be applied to.
         #[clap(value_enum, long, default_value_t = ImplementationStatus::Backlog)]
         implementation_status: ImplementationStatus,
@@ -116,7 +116,7 @@ enum Subcommand {
 }
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
-enum ReportProcessingPreset {
+enum UpdateExpectedPreset {
     /// alias: `new-fx`
     #[value(alias("new-fx"))]
     #[value(alias("new-build"))]
@@ -126,6 +126,16 @@ enum ReportProcessingPreset {
     #[value(alias("same-build"))]
     Merge,
     ResetAll,
+}
+
+impl From<UpdateExpectedPreset> for process_reports::ReportProcessingPreset {
+    fn from(value: UpdateExpectedPreset) -> Self {
+        match value {
+            UpdateExpectedPreset::ResetContradictory => Self::ResetContradictoryOutcomes,
+            UpdateExpectedPreset::Merge => Self::MergeOutcomes,
+            UpdateExpectedPreset::ResetAll => Self::ResetAllOutcomes,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, ValueEnum)]
@@ -277,7 +287,7 @@ fn run(cli: Cli) -> ExitCode {
                 browser,
                 checkout: &checkout,
                 exec_report_paths,
-                preset,
+                preset: preset.into(),
                 implementation_status,
                 meta_files_by_path,
             }) {

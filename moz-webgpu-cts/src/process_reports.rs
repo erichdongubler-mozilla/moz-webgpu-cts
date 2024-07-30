@@ -29,7 +29,7 @@ use crate::{
         },
         path::{Browser, TestEntryPath},
     },
-    AlreadyReportedToCommandline, ReportProcessingPreset,
+    AlreadyReportedToCommandline,
 };
 
 #[derive(Debug, Default)]
@@ -55,6 +55,13 @@ pub(crate) struct ProcessReportsArgs<'a> {
     pub preset: ReportProcessingPreset,
     pub implementation_status: ImplementationStatus,
     pub meta_files_by_path: IndexMap<Arc<PathBuf>, File>,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum ReportProcessingPreset {
+    ResetContradictoryOutcomes,
+    MergeOutcomes,
+    ResetAllOutcomes,
 }
 
 #[derive(Debug, Default)]
@@ -120,13 +127,15 @@ fn reconcile<Out>(
         };
         if let Some(meta_expected) = meta_props.expected {
             let resolve = match preset {
-                ReportProcessingPreset::ResetAll => |_meta, rep: Option<_>| rep.unwrap_or_default(),
-                ReportProcessingPreset::ResetContradictory => {
+                ReportProcessingPreset::ResetAllOutcomes => {
+                    |_meta, rep: Option<_>| rep.unwrap_or_default()
+                }
+                ReportProcessingPreset::ResetContradictoryOutcomes => {
                     |meta: Expected<_>, rep: Option<Expected<_>>| {
                         rep.filter(|rep| !meta.is_superset(rep)).unwrap_or(meta)
                     }
                 }
-                ReportProcessingPreset::Merge => |meta, rep| match rep {
+                ReportProcessingPreset::MergeOutcomes => |meta, rep| match rep {
                     Some(rep) => meta | rep,
                     None => meta,
                 },
@@ -440,9 +449,9 @@ pub(crate) fn process_reports(
                 let test_entry_path = &test_entry_path;
                 let msg = lazy_format!("no entries found in reports for {:?}", test_entry_path);
                 match preset {
-                    ReportProcessingPreset::Merge => log::warn!("{msg}"),
-                    ReportProcessingPreset::ResetAll
-                    | ReportProcessingPreset::ResetContradictory => {
+                    ReportProcessingPreset::MergeOutcomes => log::warn!("{msg}"),
+                    ReportProcessingPreset::ResetAllOutcomes
+                    | ReportProcessingPreset::ResetContradictoryOutcomes => {
                         log::warn!("removing metadata after {msg}");
                         return None;
                     }
@@ -513,9 +522,9 @@ pub(crate) fn process_reports(
                             subtest_name,
                         );
                         match preset {
-                            ReportProcessingPreset::Merge => log::warn!("{msg}"),
-                            ReportProcessingPreset::ResetAll
-                            | ReportProcessingPreset::ResetContradictory => {
+                            ReportProcessingPreset::MergeOutcomes => log::warn!("{msg}"),
+                            ReportProcessingPreset::ResetAllOutcomes
+                            | ReportProcessingPreset::ResetContradictoryOutcomes => {
                                 log::warn!("removing metadata after {msg}");
                                 return None;
                             }
