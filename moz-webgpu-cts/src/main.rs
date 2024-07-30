@@ -753,11 +753,7 @@ fn run(cli: Cli) -> ExitCode {
                         );
                     }
 
-                    if subtests.is_empty() && properties == Default::default() {
-                        None
-                    } else {
-                        Some((test_entry_path, (properties, subtests)))
-                    }
+                    Some((test_entry_path, (properties, subtests)))
                 });
 
             log::debug!(
