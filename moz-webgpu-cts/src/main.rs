@@ -208,7 +208,7 @@ impl ExecReportSpec {
                 return Err(AlreadyReportedToCommandline);
             } else {
                 log::warn!(concat!(
-                    "report were specified via path and glob search, ",
+                    "reports were specified via path and glob search, ",
                     "but none were found via glob; ",
                     "continuing with report paths"
                 ))
