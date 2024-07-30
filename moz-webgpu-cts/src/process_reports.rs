@@ -126,14 +126,10 @@ fn reconcile<Out>(
                 .copied()
         };
         if let Some(meta_expected) = meta_props.expected {
-            let resolve = match preset {
-                ReportProcessingPreset::ResetAllOutcomes => {
-                    |_meta, rep: Option<_>| rep.unwrap_or_default()
-                }
+            let resolve: fn(Expected<_>, Option<Expected<_>>) -> _ = match preset {
+                ReportProcessingPreset::ResetAllOutcomes => |_meta, rep| rep.unwrap_or_default(),
                 ReportProcessingPreset::ResetContradictoryOutcomes => {
-                    |meta: Expected<_>, rep: Option<Expected<_>>| {
-                        rep.filter(|rep| !meta.is_superset(rep)).unwrap_or(meta)
-                    }
+                    |meta, rep| rep.filter(|rep| !meta.is_superset(rep)).unwrap_or(meta)
                 }
                 ReportProcessingPreset::MergeOutcomes => |meta, rep| match rep {
                     Some(rep) => meta | rep,
