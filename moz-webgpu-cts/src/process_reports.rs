@@ -58,6 +58,7 @@ pub(crate) struct ProcessReportsArgs<'a> {
 }
 
 #[derive(Clone, Copy, Debug)]
+#[allow(clippy::enum_variant_names)]
 pub(crate) enum ReportProcessingPreset {
     ResetContradictoryOutcomes,
     MergeOutcomes,
@@ -175,7 +176,7 @@ pub(crate) fn process_reports(
     for (path, file) in meta_files_by_path {
         let File { properties, tests } = file;
 
-        let file_rel_path = path.strip_prefix(&checkout).unwrap();
+        let file_rel_path = path.strip_prefix(checkout).unwrap();
 
         file_props_by_file.insert(
             Utf8PathBuf::from(file_rel_path.to_str().unwrap()),

@@ -291,55 +291,16 @@ fn run(cli: Cli) -> ExitCode {
             exec_report_spec,
             preset,
             implementation_status,
-        } => {
-            let exec_report_paths = match exec_report_spec.paths() {
-                Ok(ok) => ok,
-                Err(AlreadyReportedToCommandline) => return ExitCode::FAILURE,
-            };
-
-            let meta_files_by_path = match read_and_parse_all_metadata(browser, &checkout)
-                .collect::<Result<IndexMap<_, _>, _>>()
-            {
-                Ok(paths) => paths,
-                Err(AlreadyReportedToCommandline) => return ExitCode::FAILURE,
-            };
-
-            let files = match process_reports::process_reports(ProcessReportsArgs {
-                browser,
-                checkout: &checkout,
-                exec_report_paths,
-                preset: preset.into(),
-                implementation_status,
-                meta_files_by_path,
-            }) {
-                Ok(ok) => ok,
-                Err(AlreadyReportedToCommandline) => return ExitCode::FAILURE,
-            };
-
-            log::debug!("processing complete, writing new metadata to file system…");
-
-            let mut found_reconciliation_err = false;
-
-            for (path, file) in files {
-                log::debug!("writing new metadata to {}", path.display());
-                match write_to_file(&path, metadata::format_file(&file)) {
-                    Ok(()) => (),
-                    Err(AlreadyReportedToCommandline) => {
-                        found_reconciliation_err = true;
-                    }
-                }
-            }
-
-            if found_reconciliation_err {
-                log::error!(concat!(
-                    "one or more errors found while reconciling, ",
-                    "exiting with failure; see above for more details"
-                ));
-                return ExitCode::FAILURE;
-            }
-
-            ExitCode::SUCCESS
-        }
+        } => match process_reports(
+            browser,
+            &checkout,
+            exec_report_spec,
+            preset.into(),
+            implementation_status,
+        ) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(AlreadyReportedToCommandline) => ExitCode::FAILURE,
+        },
         Subcommand::Fixup => {
             log::info!("fixing up metadata in-place…");
             let err_found = read_and_parse_all_metadata(browser, &checkout)
@@ -1312,6 +1273,52 @@ fn write_to_file(path: &Path, contents: impl Display) -> Result<(), AlreadyRepor
         .map_err(Report::msg)
         .wrap_err_with(|| format!("error while writing to `{}`", path.display()))
         .map_err(report_to_cmd_line)
+}
+
+fn process_reports(
+    browser: Browser,
+    checkout: &Path,
+    exec_report_spec: ExecReportSpec,
+    preset: process_reports::ReportProcessingPreset,
+    implementation_status: ImplementationStatus,
+) -> Result<(), AlreadyReportedToCommandline> {
+    let exec_report_paths = exec_report_spec.paths()?;
+
+    let meta_files_by_path =
+        read_and_parse_all_metadata(browser, checkout).collect::<Result<IndexMap<_, _>, _>>()?;
+
+    let files = process_reports::process_reports(ProcessReportsArgs {
+        browser,
+        checkout,
+        exec_report_paths,
+        preset,
+        implementation_status,
+        meta_files_by_path,
+    })?;
+
+    log::debug!("processing complete, writing new metadata to file system…");
+
+    let mut found_reconciliation_err = false;
+
+    for (path, file) in files {
+        log::debug!("writing new metadata to {}", path.display());
+        match write_to_file(&path, metadata::format_file(&file)) {
+            Ok(()) => (),
+            Err(AlreadyReportedToCommandline) => {
+                found_reconciliation_err = true;
+            }
+        }
+    }
+
+    if found_reconciliation_err {
+        log::error!(concat!(
+            "one or more errors found while reconciling, ",
+            "exiting with failure; see above for more details"
+        ));
+        return Err(AlreadyReportedToCommandline);
+    }
+
+    Ok(())
 }
 
 /// Ensure that _both_ `TIMEOUT` and `NOTRUN` are in outcomes if at least one of them are present.
