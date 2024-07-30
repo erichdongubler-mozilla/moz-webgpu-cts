@@ -57,6 +57,98 @@ pub(crate) struct ProcessReportsArgs<'a> {
     pub meta_files_by_path: IndexMap<Arc<PathBuf>, File>,
 }
 
+#[derive(Debug, Default)]
+struct EntryByCtsPath<'a> {
+    metadata_path: Option<TestEntryPath<'a>>,
+    reported_path: Option<TestEntryPath<'a>>,
+    entry: TestEntry,
+}
+
+fn cts_path(test_entry_path: &TestEntryPath<'_>) -> Option<String> {
+    test_entry_path
+        .test_entry
+        .variant
+        .as_ref()
+        .filter(|v| v.starts_with("?q=webgpu:"))
+        .map(|v| v.strip_prefix("?q=").unwrap().to_owned())
+        .filter(|_q| test_entry_path.spec_path.path.ends_with("cts.https.html"))
+}
+
+fn accumulate<Out>(
+    recorded: &mut BTreeMap<Platform, BTreeMap<BuildProfile, Expected<Out>>>,
+    platform: Platform,
+    build_profile: BuildProfile,
+    reported_outcome: Out,
+) where
+    Out: Default + EnumSetType + Hash,
+{
+    match recorded.entry(platform).or_default().entry(build_profile) {
+        std::collections::btree_map::Entry::Vacant(entry) => {
+            entry.insert(Expected::permanent(reported_outcome));
+        }
+        std::collections::btree_map::Entry::Occupied(mut entry) => {
+            *entry.get_mut() |= reported_outcome
+        }
+    }
+}
+
+/// Reconciles `meta_props` with `reported` if they match
+/// `implementation_status_filter`.
+///
+/// For subtests, `parent_implementation_status` should be specified so the
+/// parent test's implementation status can be used for filtering.
+fn reconcile<Out>(
+    parent_implementation_status: Option<&ExpandedPropertyValue<ImplementationStatus>>,
+    meta_props: &mut TestProps<Out>,
+    reported: BTreeMap<Platform, BTreeMap<BuildProfile, Expected<Out>>>,
+    preset: ReportProcessingPreset,
+    implementation_status_filter: ImplementationStatus,
+) where
+    Out: Debug + Default + EnumSetType,
+{
+    let implementation_status = meta_props
+        .implementation_status
+        .or(parent_implementation_status.cloned())
+        .unwrap_or_default();
+    let should_apply_changes = |key| implementation_status[key] == implementation_status_filter;
+    let reconciled = {
+        let reported = |(platform, build_profile)| {
+            reported
+                .get(&platform)
+                .and_then(|rep| rep.get(&build_profile))
+                .copied()
+        };
+        if let Some(meta_expected) = meta_props.expected {
+            let resolve = match preset {
+                ReportProcessingPreset::ResetAll => |_meta, rep: Option<_>| rep.unwrap_or_default(),
+                ReportProcessingPreset::ResetContradictory => {
+                    |meta: Expected<_>, rep: Option<Expected<_>>| {
+                        rep.filter(|rep| !meta.is_superset(rep)).unwrap_or(meta)
+                    }
+                }
+                ReportProcessingPreset::Merge => |meta, rep| match rep {
+                    Some(rep) => meta | rep,
+                    None => meta,
+                },
+            };
+
+            ExpandedPropertyValue::from_query(|platform, build_profile| {
+                let key = (platform, build_profile);
+                if should_apply_changes(key) {
+                    resolve(meta_expected[key], reported(key))
+                } else {
+                    meta_expected[key]
+                }
+            })
+        } else {
+            ExpandedPropertyValue::from_query(|platform, build_profile| {
+                reported((platform, build_profile)).unwrap_or_default()
+            })
+        }
+    };
+    meta_props.expected = Some(reconciled);
+}
+
 pub(crate) fn process_reports(
     args: ProcessReportsArgs<'_>,
 ) -> Result<BTreeMap<PathBuf, File>, AlreadyReportedToCommandline> {
@@ -68,23 +160,6 @@ pub(crate) fn process_reports(
         implementation_status,
         meta_files_by_path,
     } = args;
-
-    #[derive(Debug, Default)]
-    struct EntryByCtsPath<'a> {
-        metadata_path: Option<TestEntryPath<'a>>,
-        reported_path: Option<TestEntryPath<'a>>,
-        entry: TestEntry,
-    }
-
-    fn cts_path(test_entry_path: &TestEntryPath<'_>) -> Option<String> {
-        test_entry_path
-            .test_entry
-            .variant
-            .as_ref()
-            .filter(|v| v.starts_with("?q=webgpu:"))
-            .map(|v| v.strip_prefix("?q=").unwrap().to_owned())
-            .filter(|_q| test_entry_path.spec_path.path.ends_with("cts.https.html"))
-    }
 
     let mut file_props_by_file = IndexMap::<Utf8PathBuf, FileProps>::default();
     let mut entries_by_cts_path = IndexMap::<String, EntryByCtsPath<'_>>::default();
@@ -284,23 +359,6 @@ pub(crate) fn process_reports(
                 }
             };
 
-            fn accumulate<Out>(
-                recorded: &mut BTreeMap<Platform, BTreeMap<BuildProfile, Expected<Out>>>,
-                platform: Platform,
-                build_profile: BuildProfile,
-                reported_outcome: Out,
-            ) where
-                Out: Default + EnumSetType + Hash,
-            {
-                match recorded.entry(platform).or_default().entry(build_profile) {
-                    std::collections::btree_map::Entry::Vacant(entry) => {
-                        entry.insert(Expected::permanent(reported_outcome));
-                    }
-                    std::collections::btree_map::Entry::Occupied(mut entry) => {
-                        *entry.get_mut() |= reported_outcome
-                    }
-                }
-            }
             accumulate(
                 &mut test_entry.reported,
                 platform,
@@ -365,72 +423,6 @@ pub(crate) fn process_reports(
     });
     let recombined_tests_iter = entries_by_cts_path.chain(other_entries_by_test).filter_map(
         |(test_entry_path, test_entry)| {
-            /// Reconciles `meta_props` with `reported` if they match
-            /// `implementation_status_filter`.
-            ///
-            /// For subtests, `parent_implementation_status` should be specified so the
-            /// parent test's implementation status can be used for filtering.
-            fn reconcile<Out>(
-                parent_implementation_status: Option<&ExpandedPropertyValue<ImplementationStatus>>,
-                meta_props: &mut TestProps<Out>,
-                reported: BTreeMap<Platform, BTreeMap<BuildProfile, Expected<Out>>>,
-                preset: ReportProcessingPreset,
-                implementation_status_filter: ImplementationStatus,
-            ) where
-                Out: Debug + Default + EnumSetType,
-            {
-                let implementation_status = meta_props
-                    .implementation_status
-                    .or(parent_implementation_status.cloned())
-                    .unwrap_or_default();
-                let should_apply_changes =
-                    |key| implementation_status[key] == implementation_status_filter;
-                let reconciled = {
-                    let reported = |(platform, build_profile)| {
-                        reported
-                            .get(&platform)
-                            .and_then(|rep| rep.get(&build_profile))
-                            .copied()
-                    };
-                    if let Some(meta_expected) = meta_props.expected {
-                        let resolve = match preset {
-                            ReportProcessingPreset::ResetAll => {
-                                |_meta, rep: Option<_>| rep.unwrap_or_default()
-                            }
-                            ReportProcessingPreset::ResetContradictory => {
-                                |meta: Expected<_>, rep: Option<Expected<_>>| {
-                                    rep.filter(|rep| !meta.is_superset(rep)).unwrap_or(meta)
-                                }
-                            }
-                            ReportProcessingPreset::Merge => |meta, rep| match rep {
-                                Some(rep) => meta | rep,
-                                None => meta,
-                            },
-                        };
-
-                        ExpandedPropertyValue::from_query(|platform, build_profile| {
-                            let key = (platform, build_profile);
-                            if should_apply_changes(key) {
-                                resolve(meta_expected[key], reported(key))
-                            } else {
-                                meta_expected[key]
-                            }
-                        })
-                    } else {
-                        match preset {
-                            ReportProcessingPreset::ResetContradictory
-                            | ReportProcessingPreset::Merge
-                            | ReportProcessingPreset::ResetAll => {
-                                ExpandedPropertyValue::from_query(|platform, build_profile| {
-                                    reported((platform, build_profile)).unwrap_or_default()
-                                })
-                            }
-                        }
-                    }
-                };
-                meta_props.expected = Some(reconciled);
-            }
-
             let TestEntry {
                 entry:
                     Entry {
