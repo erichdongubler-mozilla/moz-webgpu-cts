@@ -273,8 +273,6 @@ fn run(cli: Cli) -> ExitCode {
                 Err(AlreadyReportedToCommandline) => return ExitCode::FAILURE,
             };
 
-            let mut found_reconciliation_err = false;
-
             let files = match process_reports::process_reports(ProcessReportsArgs {
                 browser,
                 checkout: &checkout,
@@ -288,6 +286,8 @@ fn run(cli: Cli) -> ExitCode {
             };
 
             log::debug!("processing complete, writing new metadata to file system…");
+
+            let mut found_reconciliation_err = false;
 
             for (path, file) in files {
                 log::debug!("writing new metadata to {}", path.display());
