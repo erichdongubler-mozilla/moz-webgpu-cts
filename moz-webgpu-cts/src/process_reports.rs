@@ -9,7 +9,7 @@ use std::{
 };
 
 use camino::Utf8PathBuf;
-use enumset::EnumSetType;
+use enumset::{EnumSet, EnumSetType};
 use format::lazy_format;
 use indexmap::IndexMap;
 use miette::{IntoDiagnostic, Report, WrapErr};
@@ -53,7 +53,7 @@ pub(crate) struct ProcessReportsArgs<'a> {
     pub checkout: &'a Path,
     pub exec_report_paths: Vec<PathBuf>,
     pub preset: ReportProcessingPreset,
-    pub implementation_status: ImplementationStatus,
+    pub implementation_status: EnumSet<ImplementationStatus>,
     pub meta_files_by_path: IndexMap<Arc<PathBuf>, File>,
 }
 
@@ -110,7 +110,7 @@ fn reconcile<Out>(
     meta_props: &mut TestProps<Out>,
     reported: BTreeMap<Platform, BTreeMap<BuildProfile, Expected<Out>>>,
     preset: ReportProcessingPreset,
-    implementation_status_filter: ImplementationStatus,
+    implementation_status_filter: EnumSet<ImplementationStatus>,
 ) where
     Out: Debug + Default + EnumSetType,
 {
@@ -118,7 +118,8 @@ fn reconcile<Out>(
         .implementation_status
         .or(parent_implementation_status.cloned())
         .unwrap_or_default();
-    let should_apply_changes = |key| implementation_status[key] == implementation_status_filter;
+    let should_apply_changes =
+        |key| implementation_status_filter.contains(implementation_status[key]);
     let reconciled = {
         let reported = |(platform, build_profile)| {
             reported
