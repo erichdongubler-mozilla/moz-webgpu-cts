@@ -718,36 +718,56 @@ fn run(cli: Cli) -> ExitCode {
                         implementation_status,
                     );
 
-                    let mut subtests = BTreeMap::new();
-                    for (subtest_name, subtest) in subtest_entries {
-                        let subtest_name = SectionHeader(subtest_name);
+                    let subtests = subtest_entries
+                        .into_iter()
+                        .filter_map(|(subtest_name, subtest)| {
+                            let subtest_name = SectionHeader(subtest_name);
 
-                        let Entry {
-                            meta_props: subtest_properties,
-                            reported: subtest_reported,
-                        } = subtest;
+                            let Entry {
+                                meta_props: subtest_properties,
+                                reported: subtest_reported,
+                            } = subtest;
 
-                        let mut subtest_properties = subtest_properties.unwrap_or_default();
-                        reconcile(
-                            properties.implementation_status.as_ref(),
-                            &mut subtest_properties,
-                            subtest_reported,
-                            preset,
-                            implementation_status,
-                        );
-                        for (_, expected) in
-                            subtest_properties.expected.as_mut().unwrap().iter_mut()
-                        {
-                            taint_subtest_timeouts_by_suspicion(expected);
-                        }
+                            if subtest_reported.is_empty() && using_reports {
+                                let test_entry_path = &test_entry_path;
+                                let subtest_name = &subtest_name;
+                                let msg = lazy_format!(
+                                    "no subtest entries found in reports for {:?}, subtest {:?}",
+                                    test_entry_path,
+                                    subtest_name,
+                                );
+                                match preset {
+                                    ReportProcessingPreset::Merge => log::warn!("{msg}"),
+                                    ReportProcessingPreset::ResetAll
+                                    | ReportProcessingPreset::ResetContradictory => {
+                                        log::warn!("removing metadata after {msg}");
+                                        return None;
+                                    }
+                                }
+                            }
 
-                        subtests.insert(
-                            subtest_name,
-                            Subtest {
-                                properties: subtest_properties,
-                            },
-                        );
-                    }
+                            let mut subtest_properties = subtest_properties.unwrap_or_default();
+                            reconcile(
+                                properties.implementation_status.as_ref(),
+                                &mut subtest_properties,
+                                subtest_reported,
+                                preset,
+                                implementation_status,
+                            );
+                            for (_, expected) in
+                                subtest_properties.expected.as_mut().unwrap().iter_mut()
+                            {
+                                taint_subtest_timeouts_by_suspicion(expected);
+                            }
+
+                            Some((
+                                subtest_name,
+                                Subtest {
+                                    properties: subtest_properties,
+                                },
+                            ))
+                        })
+                        .collect::<BTreeMap<_, _>>();
 
                     Some((test_entry_path, (properties, subtests)))
                 });
