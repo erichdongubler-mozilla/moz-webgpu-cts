@@ -62,6 +62,33 @@ struct Cli {
 
 #[derive(Debug, Parser)]
 enum Subcommand {
+    /// Migrate old test structure in metadata to that found in `wptreport.json` reports.
+    ///
+    /// When a new version of CTS is run by your implementation of WebGPU, new execution reports
+    /// may differ from old ones in various ways:
+    ///
+    /// 1. Test may have been added, deleted, or moved.
+    ///
+    ///    It requires human judgment to determine what additions and deletions are actually
+    ///    movements of the same test coverage.
+    /// 2. Tests' actual outcomes on your implementation may change, since implementations of
+    ///    existing tests may have changed.
+    ///
+    /// This command implements (only) the changes from (1) in your metadata by using the reports
+    /// you provide to:
+    ///
+    /// 1. Remove _all_ metadata from test paths that are currently in metadata, but not observedn
+    ///    execution reports.
+    /// 2. Add empty metadata entries for test paths that are observed in execution reports, but
+    ///    absent from current metadata.
+    ///
+    /// The diff produced by the above changes makes it easier to determine what tests may have
+    /// moved, and, by extension, whether you should attempt to migrate metadata for subsequent
+    /// test runs.
+    Migrate {
+        #[clap(flatten)]
+        exec_report_spec: ExecReportSpec,
+    },
     /// Adjust expected test outcomes in metadata, optionally using `wptreport.json` reports from
     /// CI runs covering your browser's implementation of WebGPU.
     ///
@@ -292,6 +319,16 @@ fn run(cli: Cli) -> ExitCode {
     };
 
     match subcommand {
+        Subcommand::Migrate { exec_report_spec } => match process_reports(
+            browser,
+            &checkout,
+            exec_report_spec,
+            process_reports::ReportProcessingPreset::MigrateTestStructure,
+            &mut should_update_expected::NeverUpdateExpected,
+        ) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(AlreadyReportedToCommandline) => ExitCode::FAILURE,
+        },
         Subcommand::UpdateExpected {
             exec_report_spec,
             preset,

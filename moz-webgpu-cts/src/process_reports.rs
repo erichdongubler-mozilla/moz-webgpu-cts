@@ -65,6 +65,7 @@ pub(crate) enum ReportProcessingPreset {
     ResetContradictoryOutcomes,
     MergeOutcomes,
     ResetAllOutcomes,
+    MigrateTestStructure,
 }
 
 #[derive(Debug, Default)]
@@ -132,6 +133,7 @@ fn reconcile<Out>(
                 Some(rep) => meta | rep,
                 None => meta,
             },
+            ReportProcessingPreset::MigrateTestStructure => |meta, _rep| meta,
         };
 
         ExpandedPropertyValue::from_query(|platform, build_profile| {
@@ -447,6 +449,10 @@ pub(crate) fn process_reports(
                         log::warn!("removing metadata after {msg}");
                         return None;
                     }
+                    ReportProcessingPreset::MigrateTestStructure => {
+                        log::info!("removing metadata after {msg}");
+                        return None;
+                    }
                 }
             }
 
@@ -519,6 +525,10 @@ pub(crate) fn process_reports(
                             ReportProcessingPreset::ResetAllOutcomes
                             | ReportProcessingPreset::ResetContradictoryOutcomes => {
                                 log::warn!("removing metadata after {msg}");
+                                return None;
+                            }
+                            ReportProcessingPreset::MigrateTestStructure => {
+                                log::info!("removing metadata after {msg}");
                                 return None;
                             }
                         }
