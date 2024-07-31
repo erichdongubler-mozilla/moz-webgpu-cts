@@ -238,6 +238,8 @@ enum UpdateExpectedPreset {
     #[value(alias("same-build"))]
     Merge,
     ResetAll,
+    /// Sets only reported results
+    Set,
 }
 
 impl From<UpdateExpectedPreset> for process_reports::ReportProcessingPreset {
@@ -246,6 +248,7 @@ impl From<UpdateExpectedPreset> for process_reports::ReportProcessingPreset {
             UpdateExpectedPreset::ResetContradictory => Self::ResetContradictoryOutcomes,
             UpdateExpectedPreset::Merge => Self::MergeOutcomes,
             UpdateExpectedPreset::ResetAll => Self::ResetAllOutcomes,
+            UpdateExpectedPreset::Set => Self::SetNewOutcomes,
         }
     }
 }
