@@ -208,7 +208,7 @@ impl ExecReportSpec {
                 return Err(AlreadyReportedToCommandline);
             } else {
                 log::warn!(concat!(
-                    "report were specified via path and glob search, ",
+                    "reports were specified via path and glob search, ",
                     "but none were found via glob; ",
                     "continuing with report paths"
                 ))
@@ -1298,21 +1298,21 @@ fn process_reports(
 
     log::debug!("processing complete, writing new metadata to file system…");
 
-    let mut found_reconciliation_err = false;
+    let mut writeback_err = false;
 
     for (path, file) in files {
         log::debug!("writing new metadata to {}", path.display());
         match write_to_file(&path, metadata::format_file(&file)) {
             Ok(()) => (),
             Err(AlreadyReportedToCommandline) => {
-                found_reconciliation_err = true;
+                writeback_err = true;
             }
         }
     }
 
-    if found_reconciliation_err {
+    if writeback_err {
         log::error!(concat!(
-            "one or more errors found while reconciling, ",
+            "one or more errors found while writing metadata back to disk, ",
             "exiting with failure; see above for more details"
         ));
         return Err(AlreadyReportedToCommandline);
