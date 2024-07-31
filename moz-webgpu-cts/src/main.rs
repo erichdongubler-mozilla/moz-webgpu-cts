@@ -18,6 +18,7 @@ use std::{
     fs,
     io::{self, BufWriter},
     iter,
+    ops::Add,
     path::{Path, PathBuf},
     process::ExitCode,
     sync::{
@@ -412,6 +413,17 @@ fn run(cli: Cli) -> ExitCode {
                 }
             }
 
+            impl<T: Add<Output = T>> Add for PermaAndIntermittent<T> {
+                type Output = PermaAndIntermittent<T>;
+
+                fn add(self, rhs: Self) -> Self::Output {
+                    Self {
+                        perma: self.perma + rhs.perma,
+                        intermittent: self.intermittent + rhs.intermittent,
+                    }
+                }
+            }
+
             impl<T> PermaAndIntermittent<T> {
                 pub fn as_ref(&self) -> PermaAndIntermittent<&T> {
                     let Self {
@@ -445,6 +457,7 @@ fn run(cli: Cli) -> ExitCode {
                 tests_with_runner_errors: TestSet,
                 tests_with_disabled_or_skip: TestSet,
                 tests_with_crashes: TestSet,
+                tests_with_failures: TestSet,
                 subtests_with_failures_by_test: SubtestByTestSet,
                 subtests_with_timeouts_by_test: SubtestByTestSet,
             }
@@ -606,6 +619,15 @@ fn run(cli: Cli) -> ExitCode {
                                         outcome,
                                     )
                                 }),
+                                TestOutcome::Pass => (),
+                                TestOutcome::Fail => receiver(&mut |analysis| {
+                                    insert_in_test_set(
+                                        &mut analysis.tests_with_failures,
+                                        test_name,
+                                        expected,
+                                        outcome,
+                                    )
+                                }),
                             }
                         }
                     }
@@ -708,6 +730,7 @@ fn run(cli: Cli) -> ExitCode {
                     tests_with_runner_errors,
                     tests_with_disabled_or_skip,
                     tests_with_crashes,
+                    tests_with_failures,
                     subtests_with_failures_by_test,
                     subtests_with_timeouts_by_test,
                 } = analysis;
@@ -774,7 +797,8 @@ fn run(cli: Cli) -> ExitCode {
                     intermittent: num_tests_with_intermittent_failures_somewhere,
                 } = subtests_with_failures_by_test
                     .as_ref()
-                    .map(|tests| tests.len());
+                    .map(|tests| tests.len())
+                    + tests_with_failures.as_ref().map(|tests| tests.len());
                 let PermaAndIntermittent {
                     perma: num_subtests_with_perma_failures_somewhere,
                     intermittent: num_subtests_with_intermittent_failures_somewhere,
@@ -950,7 +974,7 @@ fn run(cli: Cli) -> ExitCode {
                         .iter()
                     {
                         let case = match expected.as_permanent() {
-                            Some(TestOutcome::Ok) => Case::PermaPass,
+                            Some(TestOutcome::Ok | TestOutcome::Pass) => Case::PermaPass,
                             _ => Case::Other,
                         };
                         cases[(platform, build_profile)] = case;

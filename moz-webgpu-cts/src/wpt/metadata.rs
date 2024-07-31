@@ -1190,6 +1190,8 @@ pub(crate) const ERROR: &str = "ERROR";
 #[serde(rename_all = "UPPERCASE")]
 pub enum TestOutcome {
     Ok,
+    Pass,
+    Fail,
     Timeout,
     Crash,
     Error,
@@ -1209,6 +1211,8 @@ impl Display for TestOutcome {
             "{}",
             match self {
                 Self::Ok => OK,
+                Self::Pass => PASS,
+                Self::Fail => FAIL,
                 Self::Timeout => TIMEOUT,
                 Self::Crash => CRASH,
                 Self::Error => ERROR,
@@ -1227,6 +1231,8 @@ impl<'a> Properties<'a> for TestProps<TestOutcome> {
             helper,
             choice((
                 keyword(OK).to(TestOutcome::Ok),
+                keyword(PASS).to(TestOutcome::Pass),
+                keyword(FAIL).to(TestOutcome::Fail),
                 keyword(CRASH).to(TestOutcome::Crash),
                 keyword(TIMEOUT).to(TestOutcome::Timeout),
                 keyword(ERROR).to(TestOutcome::Error),
@@ -1458,24 +1464,6 @@ r#"
     );
 
     let parser = || single_leading_newline(Test::parser());
-
-    assert_debug_snapshot!(
-        parser().parse(
-r#"
-[asdf]
-  # Incorrect; `PASS` isn't a valid test outcome (but it _is_ a valid subtest outcome).
-  expected: PASS
-"#
-        ),
-        @r###"
-    ParseResult {
-        output: None,
-        errs: [
-            found end of input at 108..112 expected something else,
-        ],
-    }
-    "###
-    );
 
     assert_debug_snapshot!(
         parser().parse(
@@ -1833,6 +1821,68 @@ r#"
                             },
                         },
                     },
+                },
+            ),
+        ),
+        errs: [],
+    }
+    "###
+    );
+
+    assert_debug_snapshot!(
+        parser().parse(
+r#"
+[canvas_complex_rgba8unorm_store.https.html]
+  expected: [PASS, FAIL]
+"#
+        ),
+        @r###"
+    ParseResult {
+        output: Some(
+            (
+                "canvas_complex_rgba8unorm_store.https.html",
+                Test {
+                    properties: TestProps {
+                        is_disabled: false,
+                        expected: Some(
+                            ExpandedPropertyValue(
+                                {
+                                    Windows: {
+                                        Debug: [
+                                            Pass,
+                                            Fail,
+                                        ],
+                                        Optimized: [
+                                            Pass,
+                                            Fail,
+                                        ],
+                                    },
+                                    Linux: {
+                                        Debug: [
+                                            Pass,
+                                            Fail,
+                                        ],
+                                        Optimized: [
+                                            Pass,
+                                            Fail,
+                                        ],
+                                    },
+                                    MacOs: {
+                                        Debug: [
+                                            Pass,
+                                            Fail,
+                                        ],
+                                        Optimized: [
+                                            Pass,
+                                            Fail,
+                                        ],
+                                    },
+                                },
+                            ),
+                        ),
+                        implementation_status: None,
+                    },
+                    subtests: {},
                 },
             ),
         ),
