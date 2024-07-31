@@ -63,6 +63,7 @@ pub(crate) enum ReportProcessingPreset {
     ResetContradictoryOutcomes,
     MergeOutcomes,
     ResetAllOutcomes,
+    SetNewOutcomes,
 }
 
 #[derive(Debug, Default)]
@@ -134,6 +135,10 @@ fn reconcile<Out>(
                 }
                 ReportProcessingPreset::MergeOutcomes => |meta, rep| match rep {
                     Some(rep) => meta | rep,
+                    None => meta,
+                },
+                ReportProcessingPreset::SetNewOutcomes => |meta, rep| match rep {
+                    Some(rep) => rep,
                     None => meta,
                 },
             };
@@ -452,6 +457,7 @@ pub(crate) fn process_reports(
                         log::warn!("removing metadata after {msg}");
                         return None;
                     }
+                    ReportProcessingPreset::SetNewOutcomes => {}
                 }
             }
 
@@ -525,6 +531,7 @@ pub(crate) fn process_reports(
                                 log::warn!("removing metadata after {msg}");
                                 return None;
                             }
+                            ReportProcessingPreset::SetNewOutcomes => {}
                         }
                     }
 
