@@ -974,7 +974,7 @@ fn run(cli: Cli) -> ExitCode {
                         .iter()
                     {
                         let case = match expected.as_permanent() {
-                            Some(TestOutcome::Ok) => Case::PermaPass,
+                            Some(TestOutcome::Ok | TestOutcome::Pass) => Case::PermaPass,
                             _ => Case::Other,
                         };
                         cases[(platform, build_profile)] = case;
