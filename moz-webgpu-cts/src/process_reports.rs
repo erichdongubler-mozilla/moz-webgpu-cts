@@ -287,6 +287,12 @@ pub(crate) fn process_reports(
                         })
                         .into_diagnostic()
                         .wrap_err("failed to parse JSON")
+                        .inspect(|_| {
+                            let count = report_stream.count();
+                            if count > 0 && browser != Browser::Servo {
+                                log::warn!("{} contains {count} leftover objects", path.display());
+                            }
+                        })
                 })
                 .wrap_err_with(|| {
                     format!(
