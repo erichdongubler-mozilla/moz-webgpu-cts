@@ -126,31 +126,27 @@ fn reconcile<Out>(
                 .and_then(|rep| rep.get(&build_profile))
                 .copied()
         };
-        if let Some(meta_expected) = meta_props.expected {
-            let resolve: fn(Expected<_>, Option<Expected<_>>) -> _ = match preset {
-                ReportProcessingPreset::ResetAllOutcomes => |_meta, rep| rep.unwrap_or_default(),
-                ReportProcessingPreset::ResetContradictoryOutcomes => {
-                    |meta, rep| rep.filter(|rep| !meta.is_superset(rep)).unwrap_or(meta)
-                }
-                ReportProcessingPreset::MergeOutcomes => |meta, rep| match rep {
-                    Some(rep) => meta | rep,
-                    None => meta,
-                },
-            };
+        let meta_expected = meta_props.expected.unwrap_or_default();
 
-            ExpandedPropertyValue::from_query(|platform, build_profile| {
-                let key = (platform, build_profile);
-                if should_apply_changes(key) {
-                    resolve(meta_expected[key], reported(key))
-                } else {
-                    meta_expected[key]
-                }
-            })
-        } else {
-            ExpandedPropertyValue::from_query(|platform, build_profile| {
-                reported((platform, build_profile)).unwrap_or_default()
-            })
-        }
+        let resolve: fn(Expected<_>, Option<Expected<_>>) -> _ = match preset {
+            ReportProcessingPreset::ResetAllOutcomes => |_meta, rep| rep.unwrap_or_default(),
+            ReportProcessingPreset::ResetContradictoryOutcomes => {
+                |meta, rep| rep.filter(|rep| !meta.is_superset(rep)).unwrap_or(meta)
+            }
+            ReportProcessingPreset::MergeOutcomes => |meta, rep| match rep {
+                Some(rep) => meta | rep,
+                None => meta,
+            },
+        };
+
+        ExpandedPropertyValue::from_query(|platform, build_profile| {
+            let key = (platform, build_profile);
+            if should_apply_changes(key) {
+                resolve(meta_expected[key], reported(key))
+            } else {
+                meta_expected[key]
+            }
+        })
     };
     meta_props.expected = Some(reconciled);
 }
