@@ -83,7 +83,7 @@ enum Subcommand {
         #[clap(flatten)]
         exec_report_spec: ExecReportSpec,
         /// The heuristic for resolving differences between current metadata and processed reports.
-        #[clap(long, default_value = "reset-contradictory")]
+        #[clap(value_enum, long, default_value_t = UpdateExpectedPreset::ResetContradictory)]
         preset: UpdateExpectedPreset,
         /// The `implementation-status` that changes should be applied to.
         #[clap(value_enum, long, default_value_t = ImplementationStatus::Backlog)]
