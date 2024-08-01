@@ -23,7 +23,7 @@ use crate::{
     taint_subtest_timeouts_by_suspicion,
     wpt::{
         metadata::{
-            properties::{ExpandedPropertyValue, Expected},
+            properties::{ExpandedPropertyValue, Expected, NonNormalizedPropertyValue},
             BuildProfile, File, FileProps, ImplementationStatus, Platform, Subtest, SubtestOutcome,
             Test, TestOutcome, TestProps,
         },
@@ -38,7 +38,7 @@ where
     Out: EnumSetType,
 {
     pub meta_props: Option<TestProps<Out>>,
-    pub reported: BTreeMap<Platform, BTreeMap<BuildProfile, Expected<Out>>>,
+    pub reported: NonNormalizedPropertyValue<Expected<Out>>,
 }
 
 #[derive(Debug, Default)]
@@ -83,7 +83,7 @@ fn cts_path(test_entry_path: &TestEntryPath<'_>) -> Option<String> {
 }
 
 fn accumulate<Out>(
-    recorded: &mut BTreeMap<Platform, BTreeMap<BuildProfile, Expected<Out>>>,
+    recorded: &mut NonNormalizedPropertyValue<Expected<Out>>,
     platform: Platform,
     build_profile: BuildProfile,
     reported_outcome: Out,
@@ -108,7 +108,7 @@ fn accumulate<Out>(
 fn reconcile<Out>(
     parent_implementation_status: Option<&ExpandedPropertyValue<ImplementationStatus>>,
     meta_props: &mut TestProps<Out>,
-    reported: BTreeMap<Platform, BTreeMap<BuildProfile, Expected<Out>>>,
+    reported: NonNormalizedPropertyValue<Expected<Out>>,
     preset: ReportProcessingPreset,
     implementation_status_filter: EnumSet<ImplementationStatus>,
 ) where
