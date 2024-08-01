@@ -400,8 +400,10 @@ where
     }
 }
 
-/// Data from a [`NormalizedPropertyValue`].
+/// Data from a [`NormalizedPropertyValue`]. A normalized form of [`NonNormalizedPropertyValue`].
 pub type NormalizedPropertyValueData<T> = Normalized<Platform, Normalized<BuildProfile, T>>;
 
 /// A value that is either `V` or a set of `V`s branched on by `K`.
 pub type Normalized<K, V> = MaybeCollapsed<V, BTreeMap<K, V>>;
+
+pub type NonNormalizedPropertyValue<T> = BTreeMap<Platform, BTreeMap<BuildProfile, T>>;
