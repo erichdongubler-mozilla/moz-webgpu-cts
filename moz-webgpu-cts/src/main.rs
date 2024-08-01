@@ -37,7 +37,10 @@ use itertools::Itertools;
 use joinery::JoinableIterator;
 use miette::{miette, Diagnostic, IntoDiagnostic, NamedSource, Report, SourceSpan, WrapErr};
 use path_dsl::path;
-use process_reports::ProcessReportsArgs;
+use process_reports::{
+    should_update_expected::{self, ShouldUpdateExpected},
+    ProcessReportsArgs,
+};
 use wax::Glob;
 use whippit::{
     metadata::SectionHeader,
@@ -294,7 +297,7 @@ fn run(cli: Cli) -> ExitCode {
             preset,
             implementation_status,
         } => {
-            let implementation_status = if implementation_status.is_empty() {
+            let allowed_implementation_statuses = if implementation_status.is_empty() {
                 ImplementationStatus::default().into()
             } else {
                 EnumSet::from_iter(implementation_status)
@@ -304,7 +307,9 @@ fn run(cli: Cli) -> ExitCode {
                 &checkout,
                 exec_report_spec,
                 preset.into(),
-                implementation_status,
+                &mut should_update_expected::ImplementationStatusFilter {
+                    allowed: allowed_implementation_statuses,
+                },
             ) {
                 Ok(()) => ExitCode::SUCCESS,
                 Err(AlreadyReportedToCommandline) => ExitCode::FAILURE,
@@ -1312,7 +1317,7 @@ fn process_reports(
     checkout: &Path,
     exec_report_spec: ExecReportSpec,
     preset: process_reports::ReportProcessingPreset,
-    implementation_status: EnumSet<ImplementationStatus>,
+    should_update_expected: &mut dyn ShouldUpdateExpected,
 ) -> Result<(), AlreadyReportedToCommandline> {
     let exec_report_paths = exec_report_spec.paths()?;
 
@@ -1324,7 +1329,7 @@ fn process_reports(
         checkout,
         exec_report_paths,
         preset,
-        implementation_status,
+        should_update_expected,
         meta_files_by_path,
     })?;
 

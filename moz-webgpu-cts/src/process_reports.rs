@@ -9,7 +9,7 @@ use std::{
 };
 
 use camino::Utf8PathBuf;
-use enumset::{EnumSet, EnumSetType};
+use enumset::EnumSetType;
 use format::lazy_format;
 use indexmap::IndexMap;
 use miette::{IntoDiagnostic, Report, WrapErr};
@@ -24,13 +24,15 @@ use crate::{
     wpt::{
         metadata::{
             properties::{ExpandedPropertyValue, Expected, NonNormalizedPropertyValue},
-            BuildProfile, File, FileProps, ImplementationStatus, Platform, Subtest, SubtestOutcome,
-            Test, TestOutcome, TestProps,
+            BuildProfile, File, FileProps, Platform, Subtest, SubtestOutcome, Test, TestOutcome,
+            TestProps,
         },
         path::{Browser, TestEntryPath},
     },
     AlreadyReportedToCommandline,
 };
+
+pub(crate) mod should_update_expected;
 
 #[derive(Debug, Default)]
 pub(crate) struct Entry<Out>
@@ -53,7 +55,7 @@ pub(crate) struct ProcessReportsArgs<'a> {
     pub checkout: &'a Path,
     pub exec_report_paths: Vec<PathBuf>,
     pub preset: ReportProcessingPreset,
-    pub implementation_status: EnumSet<ImplementationStatus>,
+    pub should_update_expected: &'a mut dyn should_update_expected::ShouldUpdateExpected,
     pub meta_files_by_path: IndexMap<Arc<PathBuf>, File>,
 }
 
@@ -105,28 +107,20 @@ fn accumulate<Out>(
 ///
 /// For subtests, `parent_implementation_status` should be specified so the
 /// parent test's implementation status can be used for filtering.
+#[allow(clippy::type_complexity)]
 fn reconcile<Out>(
-    parent_implementation_status: Option<&ExpandedPropertyValue<ImplementationStatus>>,
     meta_props: &mut TestProps<Out>,
     reported: NonNormalizedPropertyValue<Expected<Out>>,
     preset: ReportProcessingPreset,
-    implementation_status_filter: EnumSet<ImplementationStatus>,
+    should_update_expected: &mut dyn FnMut(
+        &TestProps<Out>,
+        &NonNormalizedPropertyValue<Expected<Out>>,
+        (Platform, BuildProfile),
+    ) -> bool,
 ) where
     Out: Debug + Default + EnumSetType,
 {
-    let implementation_status = meta_props
-        .implementation_status
-        .or(parent_implementation_status.cloned())
-        .unwrap_or_default();
-    let should_apply_changes =
-        |key| implementation_status_filter.contains(implementation_status[key]);
     let reconciled = {
-        let reported = |(platform, build_profile)| {
-            reported
-                .get(&platform)
-                .and_then(|rep| rep.get(&build_profile))
-                .copied()
-        };
         let meta_expected = meta_props.expected.unwrap_or_default();
 
         let resolve: fn(Expected<_>, Option<Expected<_>>) -> _ = match preset {
@@ -142,8 +136,12 @@ fn reconcile<Out>(
 
         ExpandedPropertyValue::from_query(|platform, build_profile| {
             let key = (platform, build_profile);
-            if should_apply_changes(key) {
-                resolve(meta_expected[key], reported(key))
+            if should_update_expected(meta_props, &reported, key) {
+                let reported = reported
+                    .get(&platform)
+                    .and_then(|rep| rep.get(&build_profile))
+                    .copied();
+                resolve(meta_expected[key], reported)
             } else {
                 meta_expected[key]
             }
@@ -160,7 +158,7 @@ pub(crate) fn process_reports(
         checkout,
         exec_report_paths,
         preset,
-        implementation_status,
+        should_update_expected,
         meta_files_by_path,
     } = args;
 
@@ -490,11 +488,12 @@ pub(crate) fn process_reports(
             }
 
             reconcile(
-                None,
                 &mut properties,
                 test_reported,
                 preset,
-                implementation_status,
+                &mut |meta_props, reported, key| {
+                    should_update_expected.test(meta_props, reported, key)
+                },
             );
 
             let subtests = subtest_entries
@@ -527,11 +526,12 @@ pub(crate) fn process_reports(
 
                     let mut subtest_properties = subtest_properties.unwrap_or_default();
                     reconcile(
-                        properties.implementation_status.as_ref(),
                         &mut subtest_properties,
                         subtest_reported,
                         preset,
-                        implementation_status,
+                        &mut |meta_props, reported, key| {
+                            should_update_expected.subtest(meta_props, reported, &properties, key)
+                        },
                     );
                     for (_, expected) in subtest_properties.expected.as_mut().unwrap().iter_mut() {
                         taint_subtest_timeouts_by_suspicion(expected);
