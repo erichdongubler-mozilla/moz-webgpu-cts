@@ -60,3 +60,27 @@ impl ShouldUpdateExpected for ImplementationStatusFilter {
         self.is_allowed(status)
     }
 }
+
+#[derive(Debug)]
+pub(crate) struct NeverUpdateExpected;
+
+impl ShouldUpdateExpected for NeverUpdateExpected {
+    fn test(
+        &mut self,
+        _meta_props: &TestProps<TestOutcome>,
+        _reported: &NonNormalizedPropertyValue<Expected<TestOutcome>>,
+        _key: (Platform, BuildProfile),
+    ) -> bool {
+        false
+    }
+
+    fn subtest(
+        &mut self,
+        _meta_props: &TestProps<SubtestOutcome>,
+        _reported: &NonNormalizedPropertyValue<Expected<SubtestOutcome>>,
+        _parent_meta_props: &TestProps<TestOutcome>,
+        _key: (Platform, BuildProfile),
+    ) -> bool {
+        false
+    }
+}
