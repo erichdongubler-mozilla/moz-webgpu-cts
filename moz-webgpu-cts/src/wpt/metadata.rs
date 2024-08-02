@@ -111,26 +111,7 @@ impl<'a> Properties<'a> for FileProps {
             )
             .map(|((), prefs)| FileProp::Prefs(prefs));
 
-        let tags = helper
-            .parser(
-                keyword("tags").to(()),
-                conditional_term.clone(),
-                ascii::ident()
-                    .map(|i: &str| i.to_owned())
-                    .separated_by(just(',').padded_by(inline_whitespace()))
-                    .collect()
-                    .delimited_by(
-                        just('[').padded_by(inline_whitespace()),
-                        just(']').padded_by(inline_whitespace()),
-                    )
-                    .validate(|idents: Vec<_>, e, emitter| {
-                        if idents.is_empty() {
-                            emitter.emit(Rich::custom(e.span(), "no tags specified"));
-                        }
-                        idents
-                    }),
-            )
-            .map(|((), tags)| FileProp::Tags(tags));
+        let tags = tags_parser(helper, conditional_term.clone()).map(FileProp::Tags);
 
         let disabled = helper
             .parser(
@@ -194,6 +175,32 @@ impl<'a> Properties<'a> for FileProps {
             }
         }
     }
+}
+
+fn tags_parser<'a, T>(
+    helper: &mut PropertiesParseHelper<'a>,
+    conditional_term: impl Parser<'a, &'a str, T, ParseError<'a>>,
+) -> impl Parser<'a, &'a str, PropertyValue<T, Vec<String>>, ParseError<'a>> {
+    helper
+        .parser(
+            keyword("tags").to(()),
+            conditional_term,
+            ascii::ident()
+                .map(|i: &str| i.to_owned())
+                .separated_by(just(',').padded_by(inline_whitespace()))
+                .collect()
+                .delimited_by(
+                    just('[').padded_by(inline_whitespace()),
+                    just(']').padded_by(inline_whitespace()),
+                )
+                .validate(|idents: Vec<_>, e, emitter| {
+                    if idents.is_empty() {
+                        emitter.emit(Rich::custom(e.span(), "no tags specified"));
+                    }
+                    idents
+                }),
+        )
+        .map(|((), tags)| tags)
 }
 
 #[test]
