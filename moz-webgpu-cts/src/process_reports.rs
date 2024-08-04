@@ -57,6 +57,7 @@ pub(crate) struct ProcessReportsArgs<'a> {
     pub checkout: &'a Path,
     pub exec_report_paths: Vec<PathBuf>,
     pub preset: ReportProcessingPreset,
+    pub on_missing_from_report: MissingFromReport,
     pub should_update_expected: &'a mut dyn should_update_expected::ShouldUpdateExpected,
     pub meta_files_by_path: IndexMap<Arc<PathBuf>, File>,
     pub on_skip_only: OnSkipOnly,
@@ -68,6 +69,31 @@ pub(crate) enum ReportProcessingPreset {
     MergeOutcomes,
     ResetAllOutcomes,
     MigrateTestStructure,
+}
+
+#[allow(clippy::enum_variant_names)]
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum MissingFromReport {
+    Delete(Log),
+    Keep(Log),
+}
+
+#[derive(Clone, Copy, Debug)]
+#[allow(clippy::enum_variant_names)]
+pub(crate) enum Log {
+    Silent,
+    Info,
+    Warn,
+}
+
+impl Log {
+    fn log<A: AsRef<str>>(&self, msg: A) {
+        match self {
+            Log::Silent => {}
+            Log::Info => log::info!("{}", msg.as_ref()),
+            Log::Warn => log::warn!("{}", msg.as_ref()),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -170,6 +196,7 @@ pub(crate) fn process_reports(
         checkout,
         exec_report_paths,
         preset,
+        on_missing_from_report,
         should_update_expected,
         meta_files_by_path,
         on_skip_only,
@@ -550,17 +577,12 @@ pub(crate) fn process_reports(
                             test_entry_path,
                             subtest_name,
                         );
-                        match preset {
-                            ReportProcessingPreset::MergeOutcomes => log::warn!("{msg}"),
-                            ReportProcessingPreset::ResetAllOutcomes
-                            | ReportProcessingPreset::ResetContradictoryOutcomes => {
-                                log::warn!("removing metadata after {msg}");
+                        match on_missing_from_report {
+                            MissingFromReport::Delete(log) => {
+                                log.log(format!("removing metadata after {msg}"));
                                 return None;
                             }
-                            ReportProcessingPreset::MigrateTestStructure => {
-                                log::info!("removing metadata after {msg}");
-                                return None;
-                            }
+                            MissingFromReport::Keep(log) => log.log(msg.to_string()),
                         }
                     }
 
