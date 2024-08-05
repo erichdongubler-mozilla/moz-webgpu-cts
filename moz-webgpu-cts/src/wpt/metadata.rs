@@ -795,7 +795,7 @@ where
             f: &mut Formatter<'_>,
             indent: &dyn Display,
             ident: &str,
-            prop: &ExpandedPropertyValue<T>,
+            prop: ExpandedPropertyValue<T>,
         ) -> fmt::Result
         where
             T: Clone + Default + Display + Eq,
@@ -817,7 +817,7 @@ where
                 BuildProfile::Debug => "debug",
                 BuildProfile::Optimized => "not debug",
             };
-            let normalized = NormalizedPropertyValue::from_expanded(prop.clone());
+            let normalized = NormalizedPropertyValue::from_expanded(prop);
             match normalized.inner() {
                 MaybeCollapsed::Collapsed(t) => match t {
                     MaybeCollapsed::Collapsed(t) => {
@@ -870,12 +870,12 @@ where
                 f,
                 &indent,
                 ImplementationStatus::IDENT,
-                implementation_status,
+                *implementation_status,
             )?;
         }
 
         if let Some(exps) = expected {
-            write_normalized(f, &indent, EXPECTED_IDENT, exps)?;
+            write_normalized(f, &indent, EXPECTED_IDENT, *exps)?;
         }
 
         Ok(())
