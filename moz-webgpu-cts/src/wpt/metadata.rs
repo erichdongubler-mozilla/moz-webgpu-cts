@@ -677,7 +677,10 @@ impl<'a> metadata::Subtests<'a> for Subtests {
     ) {
         let Self(subtests) = self;
         if subtests.get(&name).is_some() {
-            emitter.emit(Rich::custom(span, "duplicate subtest {name:?}"));
+            emitter.emit(Rich::custom(
+                span,
+                format_args!("duplicate subtest {name:?}"),
+            ));
         }
         subtests.insert(name, subtest);
     }
