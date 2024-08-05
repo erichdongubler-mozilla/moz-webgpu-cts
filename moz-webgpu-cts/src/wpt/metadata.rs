@@ -181,11 +181,34 @@ fn tags_parser<'a, T>(
     helper: &mut PropertiesParseHelper<'a>,
     conditional_term: impl Parser<'a, &'a str, T, ParseError<'a>>,
 ) -> impl Parser<'a, &'a str, PropertyValue<T, Vec<String>>, ParseError<'a>> {
+    use crate::chumsky::{error::Error, util::MaybeRef};
+
+    let tag_ident = {
+        let underscore_or_hyphen = |c| matches!(c, '_' | '-');
+        any()
+            .try_map(move |c: char, span| {
+                if c.is_ascii_alphabetic() || underscore_or_hyphen(c) {
+                    Ok(c)
+                } else {
+                    Err(Error::<&'a str>::expected_found(
+                        [],
+                        Some(MaybeRef::Val(c)),
+                        span,
+                    ))
+                }
+            })
+            .then(
+                any()
+                    .filter(move |c: &char| c.is_ascii_alphanumeric() || underscore_or_hyphen(*c))
+                    .repeated(),
+            )
+            .to_slice()
+    };
     helper
         .parser(
             keyword("tags").to(()),
             conditional_term,
-            ascii::ident()
+            tag_ident
                 .map(|i: &str| i.to_owned())
                 .separated_by(just(',').padded_by(inline_whitespace()))
                 .collect()
