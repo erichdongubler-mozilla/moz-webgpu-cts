@@ -111,26 +111,7 @@ impl<'a> Properties<'a> for FileProps {
             )
             .map(|((), prefs)| FileProp::Prefs(prefs));
 
-        let tags = helper
-            .parser(
-                keyword("tags").to(()),
-                conditional_term.clone(),
-                ascii::ident()
-                    .map(|i: &str| i.to_owned())
-                    .separated_by(just(',').padded_by(inline_whitespace()))
-                    .collect()
-                    .delimited_by(
-                        just('[').padded_by(inline_whitespace()),
-                        just(']').padded_by(inline_whitespace()),
-                    )
-                    .validate(|idents: Vec<_>, e, emitter| {
-                        if idents.is_empty() {
-                            emitter.emit(Rich::custom(e.span(), "no tags specified"));
-                        }
-                        idents
-                    }),
-            )
-            .map(|((), tags)| FileProp::Tags(tags));
+        let tags = tags_parser(helper, conditional_term.clone()).map(FileProp::Tags);
 
         let disabled = helper
             .parser(
@@ -194,6 +175,55 @@ impl<'a> Properties<'a> for FileProps {
             }
         }
     }
+}
+
+fn tags_parser<'a, T>(
+    helper: &mut PropertiesParseHelper<'a>,
+    conditional_term: impl Parser<'a, &'a str, T, ParseError<'a>>,
+) -> impl Parser<'a, &'a str, PropertyValue<T, Vec<String>>, ParseError<'a>> {
+    use crate::chumsky::{error::Error, util::MaybeRef};
+
+    let tag_ident = {
+        let underscore_or_hyphen = |c| matches!(c, '_' | '-');
+        any()
+            .try_map(move |c: char, span| {
+                if c.is_ascii_alphabetic() || underscore_or_hyphen(c) {
+                    Ok(c)
+                } else {
+                    Err(Error::<&'a str>::expected_found(
+                        [],
+                        Some(MaybeRef::Val(c)),
+                        span,
+                    ))
+                }
+            })
+            .then(
+                any()
+                    .filter(move |c: &char| c.is_ascii_alphanumeric() || underscore_or_hyphen(*c))
+                    .repeated(),
+            )
+            .to_slice()
+    };
+    helper
+        .parser(
+            keyword("tags").to(()),
+            conditional_term,
+            tag_ident
+                .map(|i: &str| i.to_owned())
+                .separated_by(just(',').padded_by(inline_whitespace()))
+                .collect()
+                .delimited_by(
+                    just('[').padded_by(inline_whitespace()),
+                    just(']').padded_by(inline_whitespace()),
+                )
+                .validate(|idents: Vec<_>, e, emitter| {
+                    if idents.is_empty() {
+                        emitter.emit(Rich::custom(e.span(), "no tags specified"));
+                    }
+                    idents
+                }),
+        )
+        .map(|((), tags)| tags)
 }
 
 #[test]
