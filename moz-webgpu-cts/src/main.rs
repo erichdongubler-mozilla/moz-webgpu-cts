@@ -295,12 +295,22 @@ enum OnZeroItem {
 enum UpdateBacklogDirection {
     /// Allows promotions from `backlog` to `implementing`.
     Promote,
+    Demote,
+    Sync,
 }
 
 impl UpdateBacklogDirection {
     pub fn can_promote(self) -> bool {
         match self {
-            Self::Promote => true,
+            Self::Promote | Self::Sync => true,
+            Self::Demote => false,
+        }
+    }
+
+    pub fn can_demote(self) -> bool {
+        match self {
+            Self::Demote | Self::Sync => true,
+            Self::Promote => false,
         }
     }
 }
@@ -1089,6 +1099,9 @@ fn run(cli: Cli) -> ExitCode {
                         match case {
                             Case::PermaPass if direction.can_promote() => {
                                 Some(ImplementationStatus::Implementing)
+                            }
+                            Case::Other if direction.can_demote() => {
+                                Some(ImplementationStatus::Backlog)
                             }
                             _ => None,
                         }
