@@ -579,6 +579,7 @@ fn run(cli: Cli) -> ExitCode {
                     is_disabled,
                     expected,
                     implementation_status: _,
+                    tags: _,
                 } = properties;
 
                 let test_name = Arc::new(test_name);
@@ -703,6 +704,7 @@ fn run(cli: Cli) -> ExitCode {
                         is_disabled,
                         expected,
                         implementation_status: _,
+                        tags: _,
                     } = properties;
 
                     if is_disabled {

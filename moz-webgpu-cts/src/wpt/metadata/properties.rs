@@ -290,6 +290,12 @@ impl<T> ExpandedPropertyValue<T> {
         let Self(inner) = self;
         inner
     }
+
+    pub(crate) fn as_ref(&self) -> ExpandedPropertyValue<&T> {
+        ExpandedPropertyValue::from_query(|platform, build_profile| {
+            &self[(platform, build_profile)]
+        })
+    }
 }
 
 impl<T> ExpandedPropertyValue<T> {

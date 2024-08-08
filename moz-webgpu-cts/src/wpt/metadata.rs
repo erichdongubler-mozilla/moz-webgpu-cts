@@ -785,6 +785,7 @@ where
             is_disabled,
             expected,
             implementation_status,
+            tags,
         } = property;
 
         if *is_disabled {
@@ -795,7 +796,7 @@ where
             f: &mut Formatter<'_>,
             indent: &dyn Display,
             ident: &str,
-            prop: &ExpandedPropertyValue<T>,
+            prop: ExpandedPropertyValue<T>,
         ) -> fmt::Result
         where
             T: Clone + Default + Display + Eq,
@@ -817,7 +818,7 @@ where
                 BuildProfile::Debug => "debug",
                 BuildProfile::Optimized => "not debug",
             };
-            let normalized = NormalizedPropertyValue::from_expanded(prop.clone());
+            let normalized = NormalizedPropertyValue::from_expanded(prop);
             match normalized.inner() {
                 MaybeCollapsed::Collapsed(t) => match t {
                     MaybeCollapsed::Collapsed(t) => {
@@ -865,17 +866,36 @@ where
             Ok(())
         }
 
+        if let Some(tags) = tags {
+            use std::borrow::Cow;
+
+            #[derive(Clone, Debug, Default, Eq, PartialEq)]
+            struct TagsDisplay<'a>(Cow<'a, Vec<String>>);
+
+            impl Display for TagsDisplay<'_> {
+                fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+                    let Self(tags) = self;
+                    Display::fmt(&format_args!("[{}]", tags.iter().join_with(", ")), f)
+                }
+            }
+
+            let tags_ref = tags.as_ref();
+            let tags_ref = tags_ref.map(Cow::Borrowed).map(TagsDisplay);
+
+            write_normalized(f, &indent, TAGS_IDENT, tags_ref)?;
+        }
+
         if let Some(implementation_status) = implementation_status {
             write_normalized(
                 f,
                 &indent,
                 ImplementationStatus::IDENT,
-                implementation_status,
+                *implementation_status,
             )?;
         }
 
         if let Some(exps) = expected {
-            write_normalized(f, &indent, EXPECTED_IDENT, exps)?;
+            write_normalized(f, &indent, EXPECTED_IDENT, *exps)?;
         }
 
         Ok(())
@@ -903,6 +923,7 @@ where
     pub is_disabled: bool,
     pub expected: Option<ExpandedPropertyValue<Expected<Out>>>,
     pub implementation_status: Option<ExpandedPropertyValue<ImplementationStatus>>,
+    pub tags: Option<ExpandedPropertyValue<Vec<String>>>,
 }
 
 impl<'a, Out> TestProps<Out>
@@ -914,6 +935,7 @@ where
             is_disabled,
             expected,
             implementation_status,
+            tags,
         } = self;
 
         let TestProp { kind, span } = prop;
@@ -992,6 +1014,7 @@ where
                 implementation_status,
                 val,
             ),
+            TestPropKind::Tags(val) => conditional(emitter, span, TAGS_IDENT, tags, val),
         }
     }
 }
@@ -1019,6 +1042,7 @@ where
     Expected(PropertyValue<Applicability, Expected<Out>>),
     Disabled,
     ImplementationStatus(PropertyValue<Applicability, ImplementationStatus>),
+    Tags(PropertyValue<Applicability, Vec<String>>),
 }
 
 impl<Out> TestProp<Out>
@@ -1196,18 +1220,23 @@ where
             helper
                 .parser(
                     ImplementationStatus::property_ident_parser(),
-                    conditional_term,
+                    conditional_term.clone(),
                     ImplementationStatus::property_value_parser(),
                 )
                 .map_with(|((), val), e| TestProp {
                     span: e.span(),
                     kind: TestPropKind::ImplementationStatus(val),
                 }),
+            tags_parser(helper, conditional_term).map_with(|val, e| TestProp {
+                span: e.span(),
+                kind: TestPropKind::Tags(val),
+            }),
         ))
     }
 }
 
 pub(crate) const EXPECTED_IDENT: &str = "expected";
+pub(crate) const TAGS_IDENT: &str = "tags";
 pub(crate) const PASS: &str = "PASS";
 pub(crate) const FAIL: &str = "FAIL";
 pub(crate) const NOTRUN: &str = "NOTRUN";
@@ -1371,6 +1400,7 @@ r#"
                             is_disabled: false,
                             expected: None,
                             implementation_status: None,
+                            tags: None,
                         },
                         subtests: {},
                     },
@@ -1405,6 +1435,7 @@ r#"
                             is_disabled: false,
                             expected: None,
                             implementation_status: None,
+                            tags: None,
                         },
                         subtests: {
                             "blarg": Subtest {
@@ -1412,6 +1443,7 @@ r#"
                                     is_disabled: false,
                                     expected: None,
                                     implementation_status: None,
+                                    tags: None,
                                 },
                             },
                         },
@@ -1448,6 +1480,7 @@ r#"
                             is_disabled: false,
                             expected: None,
                             implementation_status: None,
+                            tags: None,
                         },
                         subtests: {
                             "blarg": Subtest {
@@ -1484,6 +1517,7 @@ r#"
                                         ),
                                     ),
                                     implementation_status: None,
+                                    tags: None,
                                 },
                             },
                         },
@@ -1516,6 +1550,7 @@ r#"
                         is_disabled: false,
                         expected: None,
                         implementation_status: None,
+                        tags: None,
                     },
                     subtests: {
                         "blarg": Subtest {
@@ -1558,6 +1593,7 @@ r#"
                                     ),
                                 ),
                                 implementation_status: None,
+                                tags: None,
                             },
                         },
                     },
@@ -1617,6 +1653,7 @@ r#"
                             ),
                         ),
                         implementation_status: None,
+                        tags: None,
                     },
                     subtests: {
                         "blarg": Subtest {
@@ -1653,6 +1690,7 @@ r#"
                                     ),
                                 ),
                                 implementation_status: None,
+                                tags: None,
                             },
                         },
                     },
@@ -1683,6 +1721,7 @@ r#"
                         is_disabled: false,
                         expected: None,
                         implementation_status: None,
+                        tags: None,
                     },
                     subtests: {
                         "blarg": Subtest {
@@ -1719,6 +1758,7 @@ r#"
                                     ),
                                 ),
                                 implementation_status: None,
+                                tags: None,
                             },
                         },
                     },
@@ -1750,6 +1790,7 @@ r#"
                         is_disabled: false,
                         expected: None,
                         implementation_status: None,
+                        tags: None,
                     },
                     subtests: {
                         "blarg": Subtest {
@@ -1786,6 +1827,7 @@ r#"
                                     ),
                                 ),
                                 implementation_status: None,
+                                tags: None,
                             },
                         },
                     },
@@ -1815,6 +1857,7 @@ r#"
                         is_disabled: false,
                         expected: None,
                         implementation_status: None,
+                        tags: None,
                     },
                     subtests: {
                         ":": Subtest {
@@ -1851,6 +1894,7 @@ r#"
                                     ),
                                 ),
                                 implementation_status: None,
+                                tags: None,
                             },
                         },
                     },
@@ -1914,6 +1958,105 @@ r#"
                             ),
                         ),
                         implementation_status: None,
+                        tags: None,
+                    },
+                    subtests: {},
+                },
+            ),
+        ),
+        errs: [],
+    }
+    "###
+    );
+    assert_debug_snapshot!(
+    parser().parse(
+r#"
+[this_is_tagged.https.html]
+  tags: [webgpu, webgpu-long]
+  expected: [PASS, TIMEOUT]
+"#
+    ),
+    @r###"
+    ParseResult {
+        output: Some(
+            (
+                "this_is_tagged.https.html",
+                Test {
+                    properties: TestProps {
+                        is_disabled: false,
+                        expected: Some(
+                            ExpandedPropertyValue(
+                                {
+                                    Windows: {
+                                        Debug: [
+                                            Pass,
+                                            Timeout,
+                                        ],
+                                        Optimized: [
+                                            Pass,
+                                            Timeout,
+                                        ],
+                                    },
+                                    Linux: {
+                                        Debug: [
+                                            Pass,
+                                            Timeout,
+                                        ],
+                                        Optimized: [
+                                            Pass,
+                                            Timeout,
+                                        ],
+                                    },
+                                    MacOs: {
+                                        Debug: [
+                                            Pass,
+                                            Timeout,
+                                        ],
+                                        Optimized: [
+                                            Pass,
+                                            Timeout,
+                                        ],
+                                    },
+                                },
+                            ),
+                        ),
+                        implementation_status: None,
+                        tags: Some(
+                            ExpandedPropertyValue(
+                                {
+                                    Windows: {
+                                        Debug: [
+                                            "webgpu",
+                                            "webgpu-long",
+                                        ],
+                                        Optimized: [
+                                            "webgpu",
+                                            "webgpu-long",
+                                        ],
+                                    },
+                                    Linux: {
+                                        Debug: [
+                                            "webgpu",
+                                            "webgpu-long",
+                                        ],
+                                        Optimized: [
+                                            "webgpu",
+                                            "webgpu-long",
+                                        ],
+                                    },
+                                    MacOs: {
+                                        Debug: [
+                                            "webgpu",
+                                            "webgpu-long",
+                                        ],
+                                        Optimized: [
+                                            "webgpu",
+                                            "webgpu-long",
+                                        ],
+                                    },
+                                },
+                            ),
+                        ),
                     },
                     subtests: {},
                 },
