@@ -289,6 +289,24 @@ enum OnZeroItem {
     Hide,
 }
 
+#[derive(Clone, Copy, Debug)]
+enum UpdateBacklogDirection {
+    Promote,
+}
+
+impl UpdateBacklogDirection {
+    pub fn can_promote(self) -> bool {
+        match self {
+            Self::Promote => true,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+enum UpdateBacklogCriteria {
+    PermaPassing { only_across_all_platforms: bool },
+}
+
 #[derive(Clone, Copy, Debug, Parser)]
 enum UpdateBacklogSubcommand {
     /// Remove tests that expect only `PASS` outcomes on all platforms from `backlog`.
@@ -986,6 +1004,16 @@ fn run(cli: Cli) -> ExitCode {
             ExitCode::SUCCESS
         }
         Subcommand::UpdateBacklog { preset } => {
+            let (direction, criteria) = match preset {
+                UpdateBacklogSubcommand::PromotePermaPassing {
+                    only_across_all_platforms,
+                } => (
+                    UpdateBacklogDirection::Promote,
+                    UpdateBacklogCriteria::PermaPassing {
+                        only_across_all_platforms,
+                    },
+                ),
+            };
             let mut files = {
                 let mut found_parse_err = false;
                 let extracted = read_and_parse_all_metadata(browser, &checkout)
@@ -1063,18 +1091,37 @@ fn run(cli: Cli) -> ExitCode {
                     // subtests afterwards.
                     let value_across_all_platforms =
                         || cases.into_iter().map(|(_, case)| case).all_equal_value();
-                    match preset {
-                        UpdateBacklogSubcommand::PromotePermaPassing {
+                    fn apply_criteria(
+                        direction: UpdateBacklogDirection,
+                        case: Case,
+                    ) -> Option<ImplementationStatus> {
+                        match case {
+                            Case::PermaPass if direction.can_promote() => {
+                                Some(ImplementationStatus::Implementing)
+                            }
+                            _ => None,
+                        }
+                    }
+                    match criteria {
+                        UpdateBacklogCriteria::PermaPassing {
                             only_across_all_platforms,
                         } => {
-                            if matches!(value_across_all_platforms(), Ok(Case::PermaPass)) {
-                                properties.implementation_status = None;
-                            } else if !only_across_all_platforms {
-                                properties.implementation_status =
-                                    Some(cases.map(|case| match case {
-                                        Case::PermaPass => ImplementationStatus::Implementing,
-                                        Case::Other => ImplementationStatus::Backlog,
-                                    }));
+                            if only_across_all_platforms {
+                                properties.implementation_status = apply_criteria(
+                                    direction,
+                                    value_across_all_platforms().unwrap_or(Case::Other),
+                                )
+                                .map(ExpandedPropertyValue::unconditional)
+                                .or(properties.implementation_status);
+                            } else {
+                                let old_impl_status =
+                                    properties.implementation_status.unwrap_or_default();
+                                properties.implementation_status.replace(cases.map_with(
+                                    |key, case| {
+                                        apply_criteria(direction, case)
+                                            .unwrap_or_else(|| old_impl_status[key])
+                                    },
+                                ));
                             }
                         }
                     }
