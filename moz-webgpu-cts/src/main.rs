@@ -45,7 +45,7 @@ use process_reports::{
     should_update_expected::{self, ShouldUpdateExpected},
     ProcessReportsArgs,
 };
-use wax::Glob;
+use wax::{walk::Entry as _, Glob};
 use whippit::{
     metadata::SectionHeader,
     reexport::chumsky::{self, prelude::Rich},
@@ -1168,7 +1168,7 @@ fn render_metadata_parse_errors<'a>(
         #[label]
         span: SourceSpan,
         #[source_code]
-        source_code: NamedSource,
+        source_code: NamedSource<Arc<String>>,
         inner: Rich<'static, char>,
     }
     let source_code = file_contents.clone();
@@ -1177,7 +1177,7 @@ fn render_metadata_parse_errors<'a>(
         let error = ParseError {
             source_code: NamedSource::new(path.to_str().unwrap(), source_code.clone()),
             inner: error.clone().into_owned(),
-            span: SourceSpan::new(span.start.into(), (span.end - span.start).into()),
+            span: SourceSpan::new(span.start.into(), span.end - span.start),
         };
         let error = Report::new(error);
         eprintln!("{error:?}");
