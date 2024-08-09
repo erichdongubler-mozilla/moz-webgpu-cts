@@ -1324,7 +1324,6 @@ pub enum SubtestOutcome {
     Pass,
     Fail,
     Timeout,
-    Crash,
     NotRun,
 }
 
@@ -1343,7 +1342,6 @@ impl Display for SubtestOutcome {
                 Self::Pass => PASS,
                 Self::Fail => FAIL,
                 Self::Timeout => TIMEOUT,
-                Self::Crash => CRASH,
                 Self::NotRun => NOTRUN,
             }
         )
@@ -1360,7 +1358,6 @@ impl SubtestOutcome {
             keyword(PASS).to(SubtestOutcome::Pass),
             keyword(FAIL).to(SubtestOutcome::Fail),
             keyword(TIMEOUT).to(SubtestOutcome::Timeout),
-            keyword(CRASH).to(SubtestOutcome::Crash),
             keyword(NOTRUN).to(SubtestOutcome::NotRun),
         ))
     }
