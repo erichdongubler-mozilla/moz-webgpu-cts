@@ -41,7 +41,7 @@ use process_reports::{
     should_update_expected::{self, ShouldUpdateExpected},
     ProcessReportsArgs,
 };
-use wax::Glob;
+use wax::{walk::Entry as _, Glob};
 use whippit::{
     metadata::SectionHeader,
     reexport::chumsky::{self, prelude::Rich},
@@ -201,26 +201,30 @@ impl FileSpec {
             let files = globs
                 .iter()
                 .flat_map(|(base_path, glob)| {
-                    glob.walk(base_path)
-                        .filter_map(|entry| match entry {
-                            Ok(entry) => Some(entry.into_path()),
-                            Err(e) => {
-                                found_glob_walk_err = true;
-                                let ctx_msg = if let Some(path) = e.path() {
-                                    format!(
-                                        "failed to enumerate {what} from glob `{}` at path {}",
-                                        glob,
-                                        path.display()
-                                    )
-                                } else {
-                                    format!("failed to enumerate {what} from glob `{glob}`")
-                                };
-                                let e = Report::msg(e).wrap_err(ctx_msg);
-                                eprintln!("{e:?}");
-                                None
-                            }
-                        })
-                        .collect::<Vec<_>>() // OPT: Can we get rid of this somehow?
+                    if let Some(glob) = glob {
+                        glob.walk(base_path)
+                            .filter_map(|entry| match entry {
+                                Ok(entry) => Some(entry.into_path()),
+                                Err(e) => {
+                                    found_glob_walk_err = true;
+                                    let ctx_msg = if let Some(path) = e.path() {
+                                        format!(
+                                            "failed to enumerate {what} from glob `{}` at path {}",
+                                            glob,
+                                            path.display()
+                                        )
+                                    } else {
+                                        format!("failed to enumerate {what} from glob `{glob}`")
+                                    };
+                                    let e = Report::msg(e).wrap_err(ctx_msg);
+                                    eprintln!("{e:?}");
+                                    None
+                                }
+                            })
+                            .collect::<Vec<_>>() // OPT: Can we get rid of this somehow?
+                    } else {
+                        vec![base_path.to_owned()]
+                    }
                 })
                 .collect::<Vec<_>>();
 
@@ -1255,7 +1259,7 @@ fn render_metadata_parse_errors<'a>(
         #[label]
         span: SourceSpan,
         #[source_code]
-        source_code: NamedSource,
+        source_code: NamedSource<Arc<String>>,
         inner: Rich<'static, char>,
     }
     let source_code = file_contents.clone();
