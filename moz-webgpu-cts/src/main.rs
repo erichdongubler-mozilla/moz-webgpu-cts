@@ -576,7 +576,7 @@ fn run(cli: Cli) -> ExitCode {
                 } = test;
 
                 let TestProps {
-                    is_disabled,
+                    disabled,
                     expected,
                     implementation_status: _,
                     tags: _,
@@ -584,7 +584,7 @@ fn run(cli: Cli) -> ExitCode {
 
                 let test_name = Arc::new(test_name);
 
-                if is_disabled {
+                if disabled.is_some() {
                     analysis.for_each_platform_mut(|analysis| {
                         analysis
                             .tests_with_disabled_or_skip
@@ -701,13 +701,13 @@ fn run(cli: Cli) -> ExitCode {
 
                     let Subtest { properties } = subtest;
                     let TestProps {
-                        is_disabled,
+                        disabled,
                         expected,
                         implementation_status: _,
                         tags: _,
                     } = properties;
 
-                    if is_disabled {
+                    if disabled.is_some() {
                         analysis
                             .windows
                             .tests_with_disabled_or_skip
