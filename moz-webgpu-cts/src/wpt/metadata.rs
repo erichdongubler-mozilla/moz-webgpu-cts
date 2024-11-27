@@ -51,7 +51,7 @@ impl File {
     }
 }
 
-impl<'a> metadata::File<'a> for File {
+impl metadata::File<'_> for File {
     type Properties = FileProps;
     type Tests = Tests;
 
@@ -679,7 +679,7 @@ impl Test {
     }
 }
 
-impl<'a> metadata::Test<'a> for Test {
+impl metadata::Test<'_> for Test {
     type Properties = TestProps<TestOutcome>;
     type Subtests = Subtests;
 
@@ -721,7 +721,7 @@ pub struct Subtest {
     pub properties: TestProps<SubtestOutcome>,
 }
 
-impl<'a> metadata::Subtest<'a> for Subtest {
+impl metadata::Subtest<'_> for Subtest {
     type Properties = TestProps<SubtestOutcome>;
 
     fn new(_span: SimpleSpan, properties: Self::Properties) -> Self {
@@ -926,11 +926,11 @@ where
     pub tags: Option<ExpandedPropertyValue<Vec<String>>>,
 }
 
-impl<'a, Out> TestProps<Out>
+impl<Out> TestProps<Out>
 where
     Out: Clone + Default + EnumSetType + Eq + PartialEq + Hash,
 {
-    fn insert(&mut self, prop: TestProp<Out>, emitter: &mut Emitter<Rich<'a, char>>) {
+    fn insert(&mut self, prop: TestProp<Out>, emitter: &mut Emitter<Rich<'_, char>>) {
         let Self {
             is_disabled,
             expected,
