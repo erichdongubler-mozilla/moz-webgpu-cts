@@ -293,7 +293,7 @@ enum OnZeroItem {
 enum UpdateBacklogSubcommand {
     /// Remove tests that expect only `PASS` outcomes on all platforms from `backlog`.
     PromotePermaPassing {
-        #[clap(long, default_value_t = true)]
+        #[clap(long)]
         only_across_all_platforms: bool,
     },
 }
