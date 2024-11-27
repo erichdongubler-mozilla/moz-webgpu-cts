@@ -564,7 +564,13 @@ fn run(cli: Cli) -> ExitCode {
                 }
             }
 
+            let test_count = u64::try_from(tests_by_name.len()).unwrap();
+            let subtest_count = tests_by_name
+                .values()
+                .map(|test| u64::try_from(test.inner.subtests.len()).unwrap())
+                .sum::<u64>();
             let mut analysis = Analysis::default();
+
             for (test_name, test) in tests_by_name {
                 let TaggedTest {
                     orig_path: _,
@@ -773,6 +779,7 @@ fn run(cli: Cli) -> ExitCode {
                 }
             }
             log::info!("finished analysis, printing to `stdout`…");
+            println!("Total: {test_count} test(s), {subtest_count} subtest(s)");
             analysis.for_each_platform(|platform, analysis| {
                 let show_zero_count_item = match on_zero_item {
                     OnZeroItem::Show => true,
