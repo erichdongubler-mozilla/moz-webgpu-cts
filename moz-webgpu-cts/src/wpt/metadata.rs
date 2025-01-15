@@ -660,7 +660,7 @@ impl<'a> metadata::Tests<'a> for Tests {
     ) {
         let Self(tests) = self;
         if tests.get(&name).is_some() {
-            emitter.emit(Rich::custom(span, "duplicate test {name:?}"));
+            emitter.emit(Rich::custom(span, format!("duplicate test {name:?}")));
         }
         tests.insert(name, test);
     }
@@ -984,8 +984,8 @@ where
                                     platform,
                                     build_profile,
                                 } = applicability;
-                                if platform.as_ref().map_or(true, |p2| *p2 == p)
-                                    && build_profile.as_ref().map_or(true, |bp2| *bp2 == bp)
+                                if platform.as_ref().is_none_or(|p2| *p2 == p)
+                                    && build_profile.as_ref().is_none_or(|bp2| *bp2 == bp)
                                 {
                                     matched = Some(val.clone());
                                 }
