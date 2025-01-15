@@ -1,5 +1,6 @@
 [package]
 name = "whippit"
+authors.workspace = true
 description = "Parsers for Web Platform Tests reports and metadata"
 version = "0.6.2"
 edition = "2021"

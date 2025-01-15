@@ -1,5 +1,6 @@
 [package]
 name = "moz-webgpu-cts"
+authors.workspace = true
 description = "Tools to work with Web Platform Tests metadata for WebGPU CTS in Firefox"
 version = "2.0.1"
 edition = "2021"
@@ -9,6 +10,12 @@ publish = false
 
 [package.metadata.dist]
 dist = true
+
+[package.metadata.wix]
+upgrade-guid = "B0A5EC85-8940-4136-ADCE-1EC3742B865C"
+path-guid = "89D36C80-8B92-4C15-87A7-CCBD7A3FE6E8"
+license = false
+eula = false
 
 [dependencies]
 camino = { version = "1.1.6", features = ["serde1"] }
