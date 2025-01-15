@@ -279,42 +279,49 @@ impl<'a> TestEntryPath<'a> {
         test_name: &'a str,
     ) -> Result<Self, MetadataTestEntryPathError<'a>> {
         let rel_meta_file_path = Utf8Path::new(rel_meta_file_path.to_str().ok_or(
-            MetadataTestEntryPathError {
+            MetadataTestEntryPathError::Other {
                 rel_meta_file_path,
                 test_name,
             },
         )?);
-        let err = || MetadataTestEntryPathError {
+        let other_err = || MetadataTestEntryPathError::Other {
             rel_meta_file_path: rel_meta_file_path.as_std_path(),
             test_name,
         };
-        let (spec_type, rel_meta_file_path) = {
+        let (spec_type, rel_meta_file_path_stripped) = {
             let test_base_name = rel_meta_file_path
                 .as_str()
                 .strip_suffix(".ini")
-                .ok_or_else(err)?;
+                .ok_or_else(other_err)?;
 
-            let (spec_type, stripped) = SpecType::from_base_name(test_base_name).ok_or_else(err)?;
+            let (spec_type, stripped) =
+                SpecType::from_base_name(test_base_name).ok_or_else(other_err)?;
 
             (spec_type, Utf8Path::new(stripped))
         };
 
         let (root_dir, path) = browser
-            .strip_wpt_root_dir_prefix(rel_meta_file_path)
-            .map_err(|_e| err())?;
+            .strip_wpt_root_dir_prefix(rel_meta_file_path_stripped)
+            .map_err(|_e| other_err())?;
 
         let Ok(path) = path.strip_prefix("meta/") else {
-            return Err(err());
+            return Err(other_err());
         };
 
         let (base_name, variant) = Self::split_test_base_name_from_variant(test_name);
 
         let (js_exec_scope, base_name) = spec_type
             .validate_test_entry_base_name(base_name)
-            .ok_or_else(err)?;
+            .ok_or_else(other_err)?;
 
-        if path.components().next_back() != Some(Utf8Component::Normal(base_name)) {
-            return Err(err());
+        let expected_base_name = path.components().next_back().unwrap();
+        if expected_base_name != Utf8Component::Normal(base_name) {
+            return Err(MetadataTestEntryPathError::BaseFileNameMismatch {
+                rel_meta_file_path: rel_meta_file_path.as_std_path(),
+                expected: expected_base_name.as_str(),
+                actual: base_name,
+                actual_span: 0..base_name.len(),
+            });
         }
 
         Ok(Self {
@@ -465,24 +472,29 @@ impl Display for ExecutionReportPathError<'_> {
 }
 
 /// An error encountered during [`TestEntryPath::from_metadata_test`].
-#[derive(Debug)]
-pub struct MetadataTestEntryPathError<'a> {
-    rel_meta_file_path: &'a Path,
-    test_name: &'a str,
-}
-
-impl Display for MetadataTestEntryPathError<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let Self {
-            rel_meta_file_path,
-            test_name,
-        } = self;
-        write!(
-            f,
-            "failed to derive test path from relative metadata path {:?} and test name {:?}",
-            rel_meta_file_path, test_name
-        )
-    }
+#[derive(Debug, thiserror::Error)]
+pub enum MetadataTestEntryPathError<'a> {
+    #[error(
+        "test entry name mismatch in metadata file at relative path {:?}; expected entry to start with {:?}, got {:?}",
+        rel_meta_file_path,
+        expected,
+        actual
+    )]
+    BaseFileNameMismatch {
+        rel_meta_file_path: &'a Path,
+        expected: &'a str,
+        actual: &'a str,
+        actual_span: std::ops::Range<usize>,
+    },
+    #[error(
+        "failed to derive test path from metadata file at relative path {:?} given entry with test name {:?}",
+        rel_meta_file_path,
+        test_name,
+    )]
+    Other {
+        rel_meta_file_path: &'a Path,
+        test_name: &'a str,
+    },
 }
 
 /// A root directory from which WPT tests and metadata are based. Based on a specific [`Browser`].
