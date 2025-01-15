@@ -660,7 +660,7 @@ impl<'a> metadata::Tests<'a> for Tests {
     ) {
         let Self(tests) = self;
         if tests.get(&name).is_some() {
-            emitter.emit(Rich::custom(span, "duplicate test {name:?}"));
+            emitter.emit(Rich::custom(span, format!("duplicate test {name:?}")));
         }
         tests.insert(name, test);
     }
