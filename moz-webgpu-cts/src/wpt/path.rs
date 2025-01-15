@@ -288,7 +288,7 @@ impl<'a> TestEntryPath<'a> {
             rel_meta_file_path: rel_meta_file_path.as_std_path(),
             test_name,
         };
-        let (spec_type, rel_meta_file_path) = {
+        let (spec_type, rel_meta_file_path_stripped) = {
             let test_base_name = rel_meta_file_path
                 .as_str()
                 .strip_suffix(".ini")
@@ -301,7 +301,7 @@ impl<'a> TestEntryPath<'a> {
         };
 
         let (root_dir, path) = browser
-            .strip_wpt_root_dir_prefix(rel_meta_file_path)
+            .strip_wpt_root_dir_prefix(rel_meta_file_path_stripped)
             .map_err(|_e| other_err())?;
 
         let Ok(path) = path.strip_prefix("meta/") else {
@@ -316,7 +316,12 @@ impl<'a> TestEntryPath<'a> {
 
         let expected_base_name = path.components().next_back().unwrap();
         if expected_base_name != Utf8Component::Normal(base_name) {
-            return Err(other_err());
+            return Err(MetadataTestEntryPathError::BaseFileNameMismatch {
+                rel_meta_file_path: rel_meta_file_path.as_std_path(),
+                expected: expected_base_name.as_str(),
+                actual: base_name,
+                actual_span: 0..base_name.len(),
+            });
         }
 
         Ok(Self {
@@ -469,6 +474,18 @@ impl Display for ExecutionReportPathError<'_> {
 /// An error encountered during [`TestEntryPath::from_metadata_test`].
 #[derive(Debug, thiserror::Error)]
 pub enum MetadataTestEntryPathError<'a> {
+    #[error(
+        "test entry name mismatch in metadata file at relative path {:?}; expected entry to start with {:?}, got {:?}",
+        rel_meta_file_path,
+        expected,
+        actual
+    )]
+    BaseFileNameMismatch {
+        rel_meta_file_path: &'a Path,
+        expected: &'a str,
+        actual: &'a str,
+        actual_span: std::ops::Range<usize>,
+    },
     #[error(
         "failed to derive test path from metadata file at relative path {:?} given entry with test name {:?}",
         rel_meta_file_path,
