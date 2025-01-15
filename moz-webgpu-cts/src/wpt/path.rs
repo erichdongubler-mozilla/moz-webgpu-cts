@@ -314,7 +314,8 @@ impl<'a> TestEntryPath<'a> {
             .validate_test_entry_base_name(base_name)
             .ok_or_else(other_err)?;
 
-        if path.components().next_back() != Some(Utf8Component::Normal(base_name)) {
+        let expected_base_name = path.components().next_back().unwrap();
+        if expected_base_name != Utf8Component::Normal(base_name) {
             return Err(other_err());
         }
 
