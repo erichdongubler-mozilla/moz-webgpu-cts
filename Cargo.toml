@@ -13,6 +13,9 @@ log = "0.4.20"
 serde = { version = "1.0.188", features = ["derive"] }
 thiserror = "1.0.49"
 
+[workspace.package]
+authors = ["`moz-webgpu-cts` authors"]
+
 # The profile that 'cargo dist' will build with
 [profile.dist]
 inherits = "release"
