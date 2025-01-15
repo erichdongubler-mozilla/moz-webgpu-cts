@@ -187,7 +187,13 @@ pub(crate) fn process_reports(
             } = test;
 
             let test_entry_path =
-                TestEntryPath::from_metadata_test(browser, file_rel_path, &name).unwrap();
+                match TestEntryPath::from_metadata_test(browser, file_rel_path, &name) {
+                    Ok(ok) => ok,
+                    Err(e) => {
+                        log::error!("{e}");
+                        return Err(AlreadyReportedToCommandline);
+                    }
+                };
 
             let freak_out_do_nothing =
                 |what: &dyn Display| log::error!("hoo boy, not sure what to do yet: {what}");
