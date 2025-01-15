@@ -465,24 +465,15 @@ impl Display for ExecutionReportPathError<'_> {
 }
 
 /// An error encountered during [`TestEntryPath::from_metadata_test`].
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
+#[error(
+    "failed to derive test path from metadata file at relative path {:?} given entry with test name {:?}",
+    rel_meta_file_path,
+    test_name,
+)]
 pub struct MetadataTestEntryPathError<'a> {
     rel_meta_file_path: &'a Path,
     test_name: &'a str,
-}
-
-impl Display for MetadataTestEntryPathError<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let Self {
-            rel_meta_file_path,
-            test_name,
-        } = self;
-        write!(
-            f,
-            "failed to derive test path from relative metadata path {:?} and test name {:?}",
-            rel_meta_file_path, test_name
-        )
-    }
 }
 
 /// A root directory from which WPT tests and metadata are based. Based on a specific [`Browser`].
