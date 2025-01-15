@@ -984,8 +984,8 @@ where
                                     platform,
                                     build_profile,
                                 } = applicability;
-                                if platform.as_ref().map_or(true, |p2| *p2 == p)
-                                    && build_profile.as_ref().map_or(true, |bp2| *bp2 == bp)
+                                if platform.as_ref().is_none_or(|p2| *p2 == p)
+                                    && build_profile.as_ref().is_none_or(|bp2| *bp2 == bp)
                                 {
                                     matched = Some(val.clone());
                                 }

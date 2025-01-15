@@ -175,7 +175,7 @@ impl ExecReportSpec {
                             .filter(|diag| {
                                 // N.B.: There should be at least one of these!
                                 diag.severity()
-                                    .map_or(true, |sev| sev == miette::Severity::Error)
+                                    .is_none_or(|sev| sev == miette::Severity::Error)
                             })
                             .map(Report::new_boxed);
                         for report in error_reports {
