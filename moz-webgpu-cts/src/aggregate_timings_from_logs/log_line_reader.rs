@@ -3,15 +3,17 @@ use std::{
     ops::Range,
 };
 
+use bstr::{BStr, ByteSlice};
 use chrono::{DateTime, FixedOffset};
 use miette::Diagnostic;
 use whippit::reexport::chumsky::{
-    error::{EmptyErr, Simple},
+    error::{EmptyErr, Error, Simple},
     extra::{self, Full, ParserExtra},
     input::{Input, SliceInput, StrInput, ValueInput},
+    prelude::custom,
     primitive::{any, choice, just},
     span::SimpleSpan,
-    text::{ascii, digits},
+    text::{ascii, digits, Char},
     IterParser, Parser,
 };
 
@@ -42,7 +44,7 @@ where
 {
     pub fn next_log_line(
         &mut self,
-        buf: &mut String,
+        buf: &mut Vec<u8>,
         test_log_line_parse_error_sink: &mut dyn FnMut(RecognizedLogLineParseError),
     ) -> Option<Result<LogLine, LogLineReadError>> {
         let line_offset_in_buf = buf.len();
@@ -78,8 +80,8 @@ where
 
     fn read_line<'a>(
         &mut self,
-        buf: &'a mut String,
-    ) -> Option<Result<(&'a str, u64), LogLineReadError>> {
+        buf: &'a mut Vec<u8>,
+    ) -> Option<Result<(&'a BStr, u64), LogLineReadError>> {
         let Self {
             next_line_idx,
             reader,
@@ -88,7 +90,7 @@ where
 
         let start = buf.len();
         match reader
-            .read_line(buf)
+            .read_until(b'\n', buf)
             .map_err(|source| LogLineReadErrorKind::Io { source })
             .map_err(|source| LogLineReadError {
                 line_num: *next_line_idx,
@@ -96,8 +98,8 @@ where
             }) {
             Ok(0) => None,
             Ok(bytes_read) => {
-                let mut line = &buf[start..buf.len()];
-                line = line.strip_suffix('\n').unwrap_or(line);
+                let mut line = BStr::new(&buf[start..buf.len()]);
+                line = line.strip_suffix(b"\n").map(BStr::new).unwrap_or(line);
 
                 let extracted = match bytes_read {
                     0 => None,
@@ -193,7 +195,7 @@ impl LogLineSpans {
     }
 
     #[track_caller]
-    pub fn get_from<'a>(&self, s: &'a str) -> &'a str {
+    pub fn get_from<'a>(&self, s: &'a [u8]) -> &'a [u8] {
         s.get(self.buf_slice_idx()).unwrap()
     }
 }
@@ -225,7 +227,7 @@ enum TestLogLineDiscriminant {
 
 impl TestLogLineDiscriminant {
     pub fn new(s: &str) -> Option<Self> {
-        let outcome = Outcome::from_ambiguous::<_, extra::Default>;
+        let outcome = Outcome::from_ambiguous::<_, extra::Default, _>;
 
         match s {
             "START" => Some(Self::Start),
@@ -258,15 +260,18 @@ enum Outcome {
 }
 
 impl Outcome {
-    pub fn from_ambiguous<'a, I, E>(input: I) -> Option<Self>
+    pub fn from_ambiguous<'a, I, E, T>(input: I) -> Option<Self>
     where
-        I: Input<'a, Token = char> + StrInput<'a, char>,
+        T: Char,
+        T::Str: PartialEq + PartialOrd,
+        str: AsRef<T::Str>,
+        I: Input<'a, Token = T> + StrInput<'a, T>,
         E: ParserExtra<'a, I>,
         E::Context: Default,
         E::State: Default,
     {
         choice((
-            TestOutcome::parser::<I, E>().map(|o| match o {
+            TestOutcome::parser::<I, E, T>().map(|o| match o {
                 TestOutcome::Pass => Self::Pass,
                 TestOutcome::Fail => Self::Fail,
                 TestOutcome::Timeout => Self::Timeout,
@@ -275,7 +280,7 @@ impl Outcome {
                 TestOutcome::Skip => Self::Skip,
                 TestOutcome::Ok => Self::Ok,
             }),
-            SubtestOutcome::parser::<I, E>().map(|o| match o {
+            SubtestOutcome::parser::<I, E, T>().map(|o| match o {
                 SubtestOutcome::Pass => Self::Pass,
                 SubtestOutcome::Fail => Self::Fail,
                 SubtestOutcome::Timeout => Self::Timeout,
@@ -314,6 +319,7 @@ pub(super) enum RecognizedLogLineParseErrorKind {
 #[cfg_attr(test, derive(Eq, PartialEq))]
 pub(super) enum ParseTestStartError {
     SectionDividerBwDiscriminantAndTestPath { span: LogLineSpans },
+    ReadTestPathAsUtf8 { valid_up_to_span: LogLineSpans },
     ParseTestPath { inner: TestPathParseError },
 }
 
@@ -356,10 +362,10 @@ where
 
 fn mozlog_test_message_section_divider<'a, I, E>() -> impl Parser<'a, I, (), E> + Copy
 where
-    I: Input<'a, Token = char>,
+    I: Input<'a, Token = u8>,
     E: ParserExtra<'a, I>,
 {
-    just(" | ").to(())
+    just(b" | ").to(())
 }
 
 #[derive(Clone, Debug)]
@@ -369,20 +375,42 @@ struct LogLineClassificationResult {
     should_save_spans: bool,
 }
 
+fn ascii_excluding<'a, 'b, I, E>(
+    excluded_bytes: &'static [u8],
+) -> impl Parser<'a, I, &'a str, E> + Copy
+where
+    I: Input<'a, Token = u8> + SliceInput<'a, Slice = &'a [u8]> + ValueInput<'a>,
+    E: ParserExtra<'a, I>,
+{
+    custom(|input| {
+        let start = input.offset();
+        while input
+            .peek()
+            .is_some_and(|b: u8| b.is_ascii() && !excluded_bytes.contains(&b))
+        {
+            input.next();
+        }
+        let slice: &[u8] = input.slice_since(start..);
+        if slice.is_empty() {
+            Err(E::Error::expected_found([], None, input.span_since(start)))
+        } else {
+            Ok(std::str::from_utf8(slice).unwrap())
+        }
+    })
+}
+
 fn classify_log_line<'a>(
     browser: Browser,
     line_num: u64,
-    s: &'a str,
+    s: &'a BStr,
     slice_start: usize, // TODO: maybe confusing with `s`' start?
     unrecoverable_err_sink: &'a mut dyn FnMut(RecognizedLogLineParseError),
 ) -> LogLineClassificationResult {
     let log_line = {
-        let any = || {
-            any::<
-                &str,
-                Full<Simple<char>, (&mut bool, &mut dyn FnMut(RecognizedLogLineParseError)), ()>,
-            >()
-        }; // TODO: ew, dis bad, better plz?
+        let ascii_excluding = ascii_excluding::<
+            _,
+            Full<Simple<u8>, (&mut bool, &mut dyn FnMut(RecognizedLogLineParseError)), ()>,
+        >; // TODO: ew, dis bad, better plz?
 
         // i.e., something of the form:
         // - `[task] `
@@ -390,42 +418,34 @@ fn classify_log_line<'a>(
         // - `[task.something] `
         // - `[task.something 2024-08-02T22:11:54.874Z] `
         let taskcluster_layer = {
-            let log_source = any()
-                .and_is(just(" ").not())
-                .and_is(just("]").not())
-                .repeated()
-                .to_slice();
-            let timestamp = any()
-                .and_is(just("]").not())
-                .repeated()
-                .to_slice()
-                .map_with(|raw, e| (raw, e.span()));
+            let log_source = ascii_excluding(b" ]");
+            let timestamp = ascii_excluding(b"]").map_with(|raw, e| (raw, e.span()));
 
             log_source
-                .ignore_then(just(" ").ignore_then(timestamp).or_not())
-                .delimited_by(just("["), just("] "))
+                .ignore_then(just(b" ").ignore_then(timestamp).or_not())
+                .delimited_by(just(b"["), just(b"] "))
         };
 
         // i.e., something of the form `22:11:54     INFO - `
         // TODO: narrow to only parsing two digits?
         let script_logger_layer = digits(10)
-            .separated_by(just(":"))
+            .separated_by(just(b":"))
             .exactly(3)
             .ignored()
             .then(
-                just("     ")
-                    .ignore_then(ascii::ident())
-                    .then_ignore(just(" - ")),
+                just(b"     ")
+                    .ignore_then(ascii::ident().map(|ident| std::str::from_utf8(ident).unwrap()))
+                    .then_ignore(just(b" - ")),
             );
 
         let discriminant = ascii::ident()
-            .separated_by(just('-'))
+            .separated_by(just(b'-'))
             .to_slice()
-            .map_with(|ident, e| (ident, e.span()));
+            .map_with(|ident, e| (std::str::from_utf8(ident).unwrap(), e.span()));
 
         let mozlog_message_layer = choice((
-            just("SUITE-").to(SuiteOrTest::Suite),
-            just("TEST-").to(SuiteOrTest::Test),
+            just(b"SUITE-").to(SuiteOrTest::Suite),
+            just(b"TEST-").to(SuiteOrTest::Test),
         ))
         .then(discriminant)
         .map(|(discriminant_kind, (discriminant, discriminant_span))| {
@@ -451,12 +471,12 @@ fn classify_log_line<'a>(
             .map_with(move |parsed, e| {
                 let (should_save_spans, unrecoverable_err_sink) = e.state();
 
-                let (log_layers, rest) = parsed;
+                let (log_layers, (rest, rest_span)) = parsed;
 
                 classify_log_line_inner(
                     browser,
                     log_layers,
-                    rest,
+                    (BStr::new(rest), rest_span),
                     line_num,
                     slice_start,
                     should_save_spans,
@@ -468,7 +488,7 @@ fn classify_log_line<'a>(
     let mut s = s;
 
     // Windows reports may have carriage returns at the end of some (but not all) lines.
-    if let Some(stripped) = s.strip_suffix('\r') {
+    if let Some(stripped) = s.strip_suffix(b"\r").map(BStr::new) {
         s = stripped;
     }
 
@@ -477,7 +497,10 @@ fn classify_log_line<'a>(
         Ok(LogLineKind::Other)
     } else {
         log_line
-            .parse_with_state(s, &mut (&mut should_save_spans, unrecoverable_err_sink))
+            .parse_with_state(
+                s as &[u8],
+                &mut (&mut should_save_spans, unrecoverable_err_sink),
+            )
             .into_result()
             .map_err(|e| {
                 let e = e.first().unwrap();
@@ -508,7 +531,7 @@ struct RecognizedLogLineDiscriminant<'a> {
 fn classify_log_line_inner(
     browser: Browser,
     log_layers: Option<LogLayers<'_>>,
-    rest: (&str, SimpleSpan),
+    rest: (&BStr, SimpleSpan),
     line_num: u64,
     slice_start: usize,
     should_save_spans: &mut &mut bool,
@@ -541,10 +564,13 @@ fn classify_log_line_inner(
         Some(some) => some,
         None => match discriminant {
             Some(_) => panic!("lolwut, dunno what to do with a discriminant but no timestamp"),
-            None => match rest {
-                "Aborting task..." => return Ok(LogLineKind::AbortingTask),
-                _ => return Ok(LogLineKind::Other),
-            },
+            None => {
+                if rest == b"Aborting task..." {
+                    return Ok(LogLineKind::AbortingTask);
+                } else {
+                    return Ok(LogLineKind::Other);
+                }
+            }
         },
     };
 
@@ -588,6 +614,10 @@ fn classify_log_line_inner(
         }};
     }
 
+    let valid_up_to = |start_span: SimpleSpan, utf8_parse_err: bstr::Utf8Error| {
+        SimpleSpan::splat(start_span.start + utf8_parse_err.valid_up_to())
+    };
+
     'kind: {
         match discriminant_kind {
         SuiteOrTest::Test => match TestLogLineDiscriminant::new(discriminant) {
@@ -606,6 +636,20 @@ fn classify_log_line_inner(
                         unrecoverable_err_sink(e);
                         break 'kind None;
                     }
+                };
+
+                let rest = match rest.to_str() {
+                    Ok(ok) => ok,
+                    Err(e) =>  {
+                        unrecoverable_err_sink(
+                            RecognizedLogLineParseErrorKind::TestStart(
+                                ParseTestStartError::ReadTestPathAsUtf8 {
+                                    valid_up_to_span: save_span(valid_up_to(rest_span, e)),
+                                }
+                            )
+                        );
+                        break 'kind None;
+                    },
                 };
 
                 if let Err(e) = TestEntryPath::from_execution_report(browser, rest)
@@ -654,7 +698,7 @@ fn classify_log_line_inner(
                     }
                 };
 
-                if rest.starts_with("leakcheck") {
+                if rest.starts_with(b"leakcheck") {
                     break 'kind test(TestLogLineKind::LeakCheck);
                 }
 
@@ -665,10 +709,11 @@ fn classify_log_line_inner(
                     )
                 });
                 let [(test_path, test_path_span), (_took_section, _took_span)] = {
-                    let res = any::<_, Full<Simple<char>, &str, ()>>()
+                    let res = any::<_, Full<Simple<_>, &BStr, ()>>()
                         .and_is(mozlog_test_message_section_divider().not())
                         .repeated()
                         .to_slice()
+                        .map(BStr::new)
                         .map_with(|section, e| (section, e.span()))
                         .separated_by(mozlog_test_message_section_divider())
                         .collect_exactly()
@@ -688,6 +733,20 @@ fn classify_log_line_inner(
                         Ok(ok) => ok,
                         Err(CheckErrorSink) => break 'kind None,
                     }
+                };
+
+                let test_path = match test_path.to_str() {
+                    Ok(ok) => ok,
+                    Err(e) =>  {
+                        unrecoverable_err_sink(
+                            RecognizedLogLineParseErrorKind::TestStart(
+                                ParseTestStartError::ReadTestPathAsUtf8 {
+                                    valid_up_to_span: save_span(valid_up_to(rest_span, e)),
+                                }
+                            )
+                        );
+                        break 'kind None;
+                    },
                 };
 
                 if let Err(e) =
@@ -729,7 +788,7 @@ fn classify_log_line_inner(
                 };
 
                 // TODO: needed?
-                if rest.starts_with("leakcheck") {
+                if rest.starts_with(b"leakcheck") {
                     break 'kind test(TestLogLineKind::LeakCheck);
                 }
 
@@ -743,10 +802,11 @@ fn classify_log_line_inner(
                     (test_path, test_path_span),
                     (_expected_section, _expected_span)
                 ] = {
-                    let res = any::<_, Full<Simple<char>, &str, ()>>()
+                    let res = any::<_, Full<Simple<u8>, &BStr, ()>>()
                         .and_is(mozlog_test_message_section_divider().not())
                         .repeated()
                         .to_slice()
+                        .map(BStr::new)
                         .map_with(|section, e| (section, e.span()))
                         .separated_by(mozlog_test_message_section_divider())
                         .collect_exactly()
@@ -766,6 +826,20 @@ fn classify_log_line_inner(
                         Ok(ok) => ok,
                         Err(CheckErrorSink) => break 'kind None,
                     }
+                };
+
+                let test_path = match test_path.to_str() {
+                    Ok(ok) => ok,
+                    Err(e) =>  {
+                        unrecoverable_err_sink(
+                            RecognizedLogLineParseErrorKind::TestStart(
+                                ParseTestStartError::ReadTestPathAsUtf8 {
+                                    valid_up_to_span: save_span(valid_up_to(test_path_span, e)),
+                                }
+                            )
+                        );
+                        break 'kind None;
+                    },
                 };
 
                 if let Err(e) =
@@ -819,7 +893,8 @@ fn classify_good_lines() {
     macro_rules! assert_good_parse_eq {
         ($line:expr, $should_save_spans:expr, $expected:expr) => {
             let mut errs = vec![];
-            let res = classify_log_line(Browser::Firefox, 0, $line, 0, &mut |e| errs.push(e));
+            let res =
+                classify_log_line(Browser::Firefox, 0, $line.into(), 0, &mut |e| errs.push(e));
             if !errs.is_empty() {
                 for err in &errs {
                     eprintln!("got unexpected test log line error: {err:#?}");
@@ -876,7 +951,7 @@ fn classify_bad_lines() {
         ($line:expr, $should_save_spans:expr, $errs:expr) => {
             errs.clear();
             assert_eq!(
-                classify_log_line(Browser::Firefox, 0, $line, 0, &mut |e| errs.push(e)),
+                classify_log_line(Browser::Firefox, 0, $line.into(), 0, &mut |e| errs.push(e)),
                 LogLineClassificationResult {
                     inner: Err(CheckErrorSink),
                     should_save_spans: $should_save_spans,

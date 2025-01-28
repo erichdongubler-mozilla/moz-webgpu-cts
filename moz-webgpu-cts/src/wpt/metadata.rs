@@ -27,7 +27,7 @@ use whippit::{
         prelude::Rich,
         primitive::{any, choice, end, group, just, one_of},
         span::SimpleSpan,
-        text::{ascii, inline_whitespace, keyword, newline},
+        text::{ascii, inline_whitespace, keyword, newline, Char},
         Boxed, IterParser, Parser,
     },
 };
@@ -1275,11 +1275,15 @@ impl Display for TestOutcome {
 }
 
 impl TestOutcome {
-    pub(crate) fn parser<'a, I, E>() -> impl Parser<'a, I, TestOutcome, E> + Clone
+    pub(crate) fn parser<'a, I, E, T>() -> impl Parser<'a, I, TestOutcome, E> + Clone
     where
-        I: Input<'a, Token = char> + StrInput<'a, char>,
+        T: Char,
+        T::Str: PartialEq + PartialOrd,
+        str: AsRef<T::Str>,
+        I: Input<'a, Token = T> + StrInput<'a, T>,
         E: ParserExtra<'a, I>,
     {
+        let keyword = |kw: &'static str| keyword(kw.as_ref());
         choice((
             keyword(OK).to(TestOutcome::Ok),
             keyword(PASS).to(TestOutcome::Pass),
@@ -1333,11 +1337,15 @@ impl Display for SubtestOutcome {
 }
 
 impl SubtestOutcome {
-    pub(crate) fn parser<'a, I, E>() -> impl Parser<'a, I, SubtestOutcome, E> + Clone
+    pub(crate) fn parser<'a, I, E, T>() -> impl Parser<'a, I, SubtestOutcome, E> + Clone
     where
-        I: Input<'a, Token = char> + StrInput<'a, char>,
+        T: Char,
+        T::Str: PartialEq + PartialOrd,
+        str: AsRef<T::Str>,
+        I: Input<'a, Token = T> + StrInput<'a, T>,
         E: ParserExtra<'a, I>,
     {
+        let keyword = |kw: &'static str| keyword(kw.as_ref());
         choice((
             keyword(PASS).to(SubtestOutcome::Pass),
             keyword(FAIL).to(SubtestOutcome::Fail),
