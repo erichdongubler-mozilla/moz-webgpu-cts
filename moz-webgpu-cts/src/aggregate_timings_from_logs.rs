@@ -9,6 +9,7 @@ use std::{
 };
 
 use anyhow::Context;
+use bstr::{BStr, ByteSlice as _};
 use chrono::{DateTime, FixedOffset};
 use lazy_format::lazy_format;
 use log_line_reader::{
@@ -39,7 +40,7 @@ pub(crate) fn aggregate_timings_from_logs(
     // TODO: Do 'em all in parallel!
 
     let mut test_timings_by_file = BTreeMap::new();
-    let mut buf = String::with_capacity(512);
+    let mut buf = Vec::with_capacity(512);
     for log_path in log_paths.iter() {
         let log_path_entry = test_timings_by_file.entry(log_path).or_default();
         match process_log(browser, log_path, log_path_entry, &mut buf) {
@@ -68,7 +69,7 @@ fn process_log(
     browser: Browser,
     log_path: &Path,
     log_path_entry: &mut BTreeMap<TestEntryPath<'_>, Duration>,
-    buf: &mut String,
+    buf: &mut Vec<u8>,
 ) -> Result<(), AlreadyReportedToCommandline> {
     let mut reader = LogLineReader::new(browser, BufReader::new(File::open(log_path).unwrap()));
     let mut next_line = |buf: &mut _| {
@@ -81,7 +82,7 @@ fn process_log(
                 })
                 .map_err(|e| {
                     for e in errs {
-                        render_test_log_line_err(log_path, &*buf, e);
+                        render_test_log_line_err(log_path, BStr::new(&*buf), e);
                     }
                     log::error!("{e:?}");
                     AlreadyReportedToCommandline
@@ -132,9 +133,10 @@ fn process_log(
 
     let extract_test_url_path =
         |test_url_path: &LogLineSpans,
-         buf: &str|
+         buf: &[u8]|
          -> Result<TestEntryPath<'static>, AlreadyReportedToCommandline> {
             let test_url_path = test_url_path.get_from(buf);
+            let test_url_path = BStr::new(test_url_path).to_str().unwrap();
             TestEntryPath::from_execution_report(browser, test_url_path)
                 .map(|p| p.into_owned())
                 .map_err(|e| {
@@ -145,7 +147,7 @@ fn process_log(
         };
 
     // TODO: Use control flow, not parser state? 🤔
-    let mut next_line = |buf: &mut String| {
+    let mut next_line = |buf: &mut Vec<u8>| {
         buf.clear();
         next_line(buf)
     };
@@ -277,7 +279,7 @@ impl From<LogLineSpans> for SourceSpan {
     }
 }
 
-fn render_test_log_line_err(log_path: &Path, buf: &str, e: RecognizedLogLineParseError) {
+fn render_test_log_line_err(log_path: &Path, buf: &BStr, e: RecognizedLogLineParseError) {
     let RecognizedLogLineParseError { line_num, kind } = e;
     // TODO: use `camino` paths, save everyone some pain 😭
     let log_and_line_prepend =
@@ -332,6 +334,15 @@ fn render_test_log_line_err(log_path: &Path, buf: &str, e: RecognizedLogLinePars
                 labels = test_path_parse_labels(inner),
                 "{log_and_line_prepend}failed to parse `START`ed test path"
             ),
+            ParseTestStartError::ReadTestPathAsUtf8 { valid_up_to_span } => {
+                miette::diagnostic!(
+                    labels = vec![LabeledSpan::new_primary_with_span(
+                        Some("valid up to here".to_owned()),
+                        valid_up_to_span
+                    )],
+                    "sdasdsadasdad"
+                )
+            }
         },
         RecognizedLogLineParseErrorKind::ExpectedTestEnd(e) => match e {
             ParseExpectedTestEndError::SectionDividerBwDiscriminantAndTestPath { span } => {
@@ -353,6 +364,6 @@ fn render_test_log_line_err(log_path: &Path, buf: &str, e: RecognizedLogLinePars
         env!("CARGO_BIN_NAME"),
         "`. You should file an issue upstream!"
     ));
-    let diagnostic = Report::new(diagnostic).with_source_code(buf.to_owned());
+    let diagnostic = Report::new(diagnostic).with_source_code(Vec::from(buf.to_owned()));
     eprintln!("{diagnostic:?}")
 }
