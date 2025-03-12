@@ -27,23 +27,23 @@ impl<'de> Deserialize<'de> for RunInfo {
         struct ActualRunInfo {
             os: String,
             processor: String,
-            win11_2009: bool,
             debug: bool,
         }
 
         let ActualRunInfo {
             os,
             processor,
-            win11_2009,
             debug,
         } = ActualRunInfo::deserialize(deserializer)?;
 
         let platform = match &*os {
             "win" => {
-                if processor == "x86_64" && win11_2009 {
+                if processor == "x86_64" {
                     Platform::Windows
                 } else {
-                    return Err(D::Error::custom("asdf"));
+                    return Err(D::Error::custom(
+                        "platform was `win`, but `processor` was not `x86_64`",
+                    ));
                 }
             }
             "mac" => Platform::MacOs,
