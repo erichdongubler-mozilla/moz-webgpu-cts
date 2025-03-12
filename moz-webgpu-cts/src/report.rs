@@ -43,7 +43,7 @@ impl<'de> Deserialize<'de> for RunInfo {
                 if processor == "x86_64" && win11_2009 {
                     Platform::Windows
                 } else {
-                    return Err(D::Error::custom("asdf"));
+                    return Err(D::Error::custom("unrecognized Windows version"));
                 }
             }
             "mac" => Platform::MacOs,
