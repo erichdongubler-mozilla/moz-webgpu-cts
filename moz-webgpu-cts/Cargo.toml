@@ -20,7 +20,7 @@ eula = false
 [dependencies]
 camino = { version = "1.1.6", features = ["serde1"] }
 clap = { version = "4.4.2", features = ["derive"] }
-env_logger = "0.10.0"
+env_logger = "0.11.7"
 enumset = { version = "1.1.3", features = ["serde"] }
 format = { workspace = true }
 indexmap = { workspace = true }
