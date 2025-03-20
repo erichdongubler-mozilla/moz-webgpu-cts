@@ -115,9 +115,8 @@ enum Subcommand {
         /// The heuristic for resolving differences between current metadata and processed reports.
         #[clap(value_enum, long, default_value_t = UpdateExpectedPreset::ResetContradictory)]
         preset: UpdateExpectedPreset,
-        /// `implementation-status`es that changes should be applied to. If not specified, defaults
-        /// to `implementing`.
-        #[clap(value_enum, long)]
+        /// `implementation-status`es that changes should be applied to.
+        #[clap(value_enum, long, default_value = "backlog")]
         implementation_status: Vec<ImplementationStatus>,
     },
     /// Parse test metadata, apply automated fixups, and re-emit it in normalized form.
@@ -360,11 +359,14 @@ fn run(cli: Cli) -> ExitCode {
             preset,
             implementation_status,
         } => {
-            let allowed_implementation_statuses = if implementation_status.is_empty() {
-                ImplementationStatus::default().into()
-            } else {
-                EnumSet::from_iter(implementation_status)
-            };
+            assert!(
+                !implementation_status.is_empty(),
+                concat!(
+                    "internal error: should not be possible ",
+                    "to have an empty `--implementation-status` option from CLI"
+                )
+            );
+            let allowed_implementation_statuses = EnumSet::from_iter(implementation_status);
             match process_reports(
                 browser,
                 &checkout,
