@@ -556,6 +556,10 @@ fn format_file_properties(props: &FileProps) -> impl Display + '_ {
             tags,
         } = props;
 
+        if let Some(is_disabled) = is_disabled {
+            write_prop_val(DISABLED_IDENT, is_disabled, Display::fmt, f)?;
+        }
+
         if let Some(implementation_status) = implementation_status {
             write_prop_val(
                 ImplementationStatus::IDENT,
@@ -587,10 +591,6 @@ fn format_file_properties(props: &FileProps) -> impl Display + '_ {
                 |tags: &Vec<_>, f| write!(f, "[{}]", tags.iter().join_with(", ")),
                 f,
             )?;
-        }
-
-        if let Some(is_disabled) = is_disabled {
-            write_prop_val(DISABLED_IDENT, is_disabled, Display::fmt, f)?;
         }
 
         Ok(())
