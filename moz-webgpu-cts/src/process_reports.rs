@@ -57,6 +57,7 @@ pub(crate) struct ProcessReportsArgs<'a> {
     pub preset: ReportProcessingPreset,
     pub should_update_expected: &'a mut dyn should_update_expected::ShouldUpdateExpected,
     pub meta_files_by_path: IndexMap<Arc<PathBuf>, File>,
+    pub on_missing: OnMissing,
     pub on_skip_only: OnSkipOnly,
 }
 
@@ -66,6 +67,12 @@ pub(crate) enum ReportProcessingPreset {
     MergeOutcomes,
     ResetAllOutcomes,
     MigrateTestStructure,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct OnMissing {
+    pub log_level: Option<log::Level>,
+    pub delete_because: Option<&'static str>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -170,6 +177,7 @@ pub(crate) fn process_reports(
         preset,
         should_update_expected,
         meta_files_by_path,
+        on_missing,
         on_skip_only,
     } = args;
 
@@ -462,18 +470,31 @@ pub(crate) fn process_reports(
 
             if test_reported.is_empty() {
                 let test_entry_path = &test_entry_path;
-                let msg = lazy_format!("no entries found in reports for {:?}", test_entry_path);
-                match preset {
-                    ReportProcessingPreset::MergeOutcomes => log::warn!("{msg}"),
-                    ReportProcessingPreset::ResetAllOutcomes
-                    | ReportProcessingPreset::ResetContradictoryOutcomes => {
-                        log::warn!("removing metadata after {msg}");
-                        return None;
-                    }
-                    ReportProcessingPreset::MigrateTestStructure => {
-                        log::info!("removing metadata after {msg}");
-                        return None;
-                    }
+                let &OnMissing {
+                    log_level,
+                    delete_because,
+                } = &on_missing;
+
+                if let Some(level) = log_level {
+                    log::log!(
+                        level,
+                        "{}",
+                        lazy_format!(|f| {
+                            if let Some(reason) = delete_because {
+                                write!(f, "removing metadata after {reason}, and ")?;
+                            }
+
+                            write!(
+                                f,
+                                "no entries were found in reports for {:?}",
+                                test_entry_path
+                            )
+                        })
+                    );
+                }
+
+                if delete_because.is_some() {
+                    return None;
                 }
             }
 
@@ -543,22 +564,34 @@ pub(crate) fn process_reports(
                     if subtest_reported.is_empty() {
                         let test_entry_path = &test_entry_path;
                         let subtest_name = &subtest_name;
-                        let msg = lazy_format!(
-                            "no subtest entries found in reports for {:?}, subtest {:?}",
-                            test_entry_path,
-                            subtest_name,
-                        );
-                        match preset {
-                            ReportProcessingPreset::MergeOutcomes => log::warn!("{msg}"),
-                            ReportProcessingPreset::ResetAllOutcomes
-                            | ReportProcessingPreset::ResetContradictoryOutcomes => {
-                                log::warn!("removing metadata after {msg}");
-                                return None;
-                            }
-                            ReportProcessingPreset::MigrateTestStructure => {
-                                log::info!("removing metadata after {msg}");
-                                return None;
-                            }
+                        let &OnMissing {
+                            log_level,
+                            delete_because,
+                        } = &on_missing;
+
+                        if let Some(level) = log_level {
+                            log::log!(
+                                level,
+                                "{}",
+                                lazy_format!(|f| {
+                                    if let Some(reason) = delete_because {
+                                        write!(f, "removing metadata after {reason}, and ")?;
+                                    }
+
+                                    write!(
+                                        f,
+                                        concat!(
+                                            "no subtest entries found in reports ",
+                                            "for {:?}, subtest {:?}"
+                                        ),
+                                        test_entry_path, subtest_name,
+                                    )
+                                })
+                            );
+                        }
+
+                        if delete_because.is_some() {
+                            return None;
                         }
                     }
 
