@@ -122,6 +122,9 @@ enum Subcommand {
         /// `implementation-status`es that changes should be applied to.
         #[clap(value_enum, long, default_value = "backlog")]
         implementation_status: Vec<ImplementationStatus>,
+        /// What do when only `SKIP` outcomes are found for tests and subtests.
+        #[clap(value_enum, long, default_value_t = OnSkipOnly::Reconcile)]
+        on_skip_only: OnSkipOnly,
     },
     /// Parse test metadata, apply automated fixups, and re-emit it in normalized form.
     #[clap(name = "fixup", alias = "fmt")]
@@ -196,6 +199,24 @@ impl From<UpdateExpectedPreset> for process_reports::ReportProcessingPreset {
     }
 }
 
+/// See [`Subcommand::UpdateExpected::on_skip_only`].
+#[derive(Clone, Copy, Debug, ValueEnum)]
+pub(crate) enum OnSkipOnly {
+    /// Use reconcilation from the provided `--preset` with `SKIP` outcomes.
+    Reconcile,
+    /// Do not change metadata.
+    Ignore,
+}
+
+impl From<OnSkipOnly> for process_reports::OnSkipOnly {
+    fn from(value: OnSkipOnly) -> Self {
+        match value {
+            OnSkipOnly::Ignore => Self::Ignore,
+            OnSkipOnly::Reconcile => Self::Reconcile,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, ValueEnum)]
 enum OnZeroItem {
     Show,
@@ -263,6 +284,7 @@ fn run(cli: Cli) -> ExitCode {
             exec_report_spec,
             process_reports::ReportProcessingPreset::MigrateTestStructure,
             &mut should_update_expected::NeverUpdateExpected,
+            OnSkipOnly::Reconcile.into(),
         ) {
             Ok(()) => ExitCode::SUCCESS,
             Err(AlreadyReportedToCommandline) => ExitCode::FAILURE,
@@ -271,6 +293,7 @@ fn run(cli: Cli) -> ExitCode {
             exec_report_spec,
             preset,
             implementation_status,
+            on_skip_only,
         } => {
             assert!(
                 !implementation_status.is_empty(),
@@ -288,6 +311,7 @@ fn run(cli: Cli) -> ExitCode {
                 &mut should_update_expected::ImplementationStatusFilter {
                     allowed: allowed_implementation_statuses,
                 },
+                on_skip_only.into(),
             ) {
                 Ok(()) => ExitCode::SUCCESS,
                 Err(AlreadyReportedToCommandline) => ExitCode::FAILURE,
@@ -1322,6 +1346,7 @@ fn process_reports(
     exec_report_spec: ExecReportSpec,
     preset: process_reports::ReportProcessingPreset,
     should_update_expected: &mut dyn ShouldUpdateExpected,
+    on_skip_only: process_reports::OnSkipOnly,
 ) -> Result<(), AlreadyReportedToCommandline> {
     let exec_report_paths = exec_report_spec.paths()?;
 
@@ -1335,6 +1360,7 @@ fn process_reports(
         preset,
         should_update_expected,
         meta_files_by_path,
+        on_skip_only,
     })?;
 
     log::debug!("processing complete, writing new metadata to file system…");
