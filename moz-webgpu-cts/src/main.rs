@@ -1,3 +1,4 @@
+mod auto_option;
 mod file_spec;
 mod process_reports;
 mod report;
