@@ -57,7 +57,7 @@ pub(crate) struct ProcessReportsArgs<'a> {
     pub browser: Browser,
     pub checkout: &'a Path,
     pub exec_report_paths: Vec<PathBuf>,
-    pub preset: ReportProcessingPreset,
+    pub reconciliation: Reconciliation,
     pub should_update_expected: &'a mut dyn should_update_expected::ShouldUpdateExpected,
     pub meta_files_by_path: IndexMap<Arc<PathBuf>, File>,
     pub on_missing: OnMissing,
@@ -65,11 +65,11 @@ pub(crate) struct ProcessReportsArgs<'a> {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub(crate) enum ReportProcessingPreset {
-    ResetContradictoryOutcomes,
-    MergeOutcomes,
-    ResetAllOutcomes,
-    MigrateTestStructure,
+pub(crate) enum Reconciliation {
+    MetadataUnlessContradicted,
+    UnionOfMetadataAndReported,
+    Reported,
+    Metadata,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -158,7 +158,7 @@ fn accumulate<Out>(
 fn reconcile<Out>(
     meta_props: &mut TestProps<Out>,
     reported: NonNormalizedPropertyValue<Expected<Out>>,
-    preset: ReportProcessingPreset,
+    reconciliation: Reconciliation,
     should_update_expected: &mut dyn FnMut(
         &TestProps<Out>,
         &NonNormalizedPropertyValue<Expected<Out>>,
@@ -170,16 +170,16 @@ fn reconcile<Out>(
     let reconciled = {
         let meta_expected = meta_props.expected.unwrap_or_default();
 
-        let resolve: fn(Expected<_>, Option<Expected<_>>) -> _ = match preset {
-            ReportProcessingPreset::ResetAllOutcomes => |_meta, rep| rep.unwrap_or_default(),
-            ReportProcessingPreset::ResetContradictoryOutcomes => {
+        let resolve: fn(Expected<_>, Option<Expected<_>>) -> _ = match reconciliation {
+            Reconciliation::Reported => |_meta, rep| rep.unwrap_or_default(),
+            Reconciliation::MetadataUnlessContradicted => {
                 |meta, rep| rep.filter(|rep| !meta.is_superset(rep)).unwrap_or(meta)
             }
-            ReportProcessingPreset::MergeOutcomes => |meta, rep| match rep {
+            Reconciliation::UnionOfMetadataAndReported => |meta, rep| match rep {
                 Some(rep) => meta | rep,
                 None => meta,
             },
-            ReportProcessingPreset::MigrateTestStructure => |meta, _rep| meta,
+            Reconciliation::Metadata => |meta, _rep| meta,
         };
 
         ExpandedPropertyValue::from_query(|platform, build_profile| {
@@ -205,7 +205,7 @@ pub(crate) fn process_reports(
         browser,
         checkout,
         exec_report_paths,
-        preset,
+        reconciliation,
         should_update_expected,
         meta_files_by_path,
         on_missing,
@@ -574,7 +574,7 @@ pub(crate) fn process_reports(
             reconcile(
                 &mut properties,
                 test_reported,
-                preset,
+                reconciliation,
                 &mut |meta_props, reported, key| {
                     let (platform, build_profile) = key;
                     (match on_skip_only {
@@ -618,7 +618,7 @@ pub(crate) fn process_reports(
                     reconcile(
                         &mut subtest_properties,
                         subtest_reported,
-                        preset,
+                        reconciliation,
                         &mut |meta_props, reported, key| {
                             should_update_expected.subtest(meta_props, reported, &properties, key)
                         },
