@@ -75,6 +75,34 @@ pub(crate) struct OnMissing {
     pub delete_because: Option<&'static str>,
 }
 
+impl OnMissing {
+    fn should_delete<F>(&self, msg: F) -> bool
+    where
+        F: Fn(&mut std::fmt::Formatter<'_>) -> std::fmt::Result,
+    {
+        let &Self {
+            log_level,
+            delete_because,
+        } = self;
+
+        if let Some(level) = log_level {
+            log::log!(
+                level,
+                "{}",
+                lazy_format!(|f| {
+                    if let Some(reason) = delete_because {
+                        write!(f, "removing metadata after {reason}, and ")?;
+                    }
+
+                    msg(f)
+                })
+            );
+        }
+
+        delete_because.is_some()
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum OnSkipOnly {
     /// Do not change metadata.
@@ -470,30 +498,13 @@ pub(crate) fn process_reports(
 
             if test_reported.is_empty() {
                 let test_entry_path = &test_entry_path;
-                let &OnMissing {
-                    log_level,
-                    delete_because,
-                } = &on_missing;
-
-                if let Some(level) = log_level {
-                    log::log!(
-                        level,
-                        "{}",
-                        lazy_format!(|f| {
-                            if let Some(reason) = delete_because {
-                                write!(f, "removing metadata after {reason}, and ")?;
-                            }
-
-                            write!(
-                                f,
-                                "no entries were found in reports for {:?}",
-                                test_entry_path
-                            )
-                        })
-                    );
-                }
-
-                if delete_because.is_some() {
+                if on_missing.should_delete(|f| {
+                    write!(
+                        f,
+                        "no entries were found in reports for {:?}",
+                        test_entry_path
+                    )
+                }) {
                     return None;
                 }
             }
@@ -564,33 +575,16 @@ pub(crate) fn process_reports(
                     if subtest_reported.is_empty() {
                         let test_entry_path = &test_entry_path;
                         let subtest_name = &subtest_name;
-                        let &OnMissing {
-                            log_level,
-                            delete_because,
-                        } = &on_missing;
-
-                        if let Some(level) = log_level {
-                            log::log!(
-                                level,
-                                "{}",
-                                lazy_format!(|f| {
-                                    if let Some(reason) = delete_because {
-                                        write!(f, "removing metadata after {reason}, and ")?;
-                                    }
-
-                                    write!(
-                                        f,
-                                        concat!(
-                                            "no subtest entries found in reports ",
-                                            "for {:?}, subtest {:?}"
-                                        ),
-                                        test_entry_path, subtest_name,
-                                    )
-                                })
-                            );
-                        }
-
-                        if delete_because.is_some() {
+                        if on_missing.should_delete(|f| {
+                            write!(
+                                f,
+                                concat!(
+                                    "no subtest entries found in reports ",
+                                    "for {:?}, subtest {:?}"
+                                ),
+                                test_entry_path, subtest_name,
+                            )
+                        }) {
                             return None;
                         }
                     }
