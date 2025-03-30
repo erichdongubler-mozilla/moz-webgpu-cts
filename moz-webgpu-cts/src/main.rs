@@ -193,12 +193,12 @@ enum UpdateExpectedPreset {
     ResetAll,
 }
 
-impl From<UpdateExpectedPreset> for process_reports::ReportProcessingPreset {
+impl From<UpdateExpectedPreset> for process_reports::Reconciliation {
     fn from(value: UpdateExpectedPreset) -> Self {
         match value {
-            UpdateExpectedPreset::ResetContradictory => Self::ResetContradictoryOutcomes,
-            UpdateExpectedPreset::Merge => Self::MergeOutcomes,
-            UpdateExpectedPreset::ResetAll => Self::ResetAllOutcomes,
+            UpdateExpectedPreset::ResetContradictory => Self::MetadataUnlessContradicted,
+            UpdateExpectedPreset::Merge => Self::UnionOfMetadataAndReported,
+            UpdateExpectedPreset::ResetAll => Self::Reported,
         }
     }
 }
@@ -312,7 +312,7 @@ fn run(cli: Cli) -> ExitCode {
             browser,
             &checkout,
             exec_report_spec,
-            process_reports::ReportProcessingPreset::MigrateTestStructure,
+            process_reports::Reconciliation::Metadata,
             &mut should_update_expected::NeverUpdateExpected,
             process_reports::OnMissing {
                 log_level: Some(log::Level::Info),
@@ -1394,7 +1394,7 @@ fn process_reports(
     browser: Browser,
     checkout: &Path,
     exec_report_spec: ExecReportSpec,
-    preset: process_reports::ReportProcessingPreset,
+    reconciliation: process_reports::Reconciliation,
     should_update_expected: &mut dyn ShouldUpdateExpected,
     on_missing: process_reports::OnMissing,
     on_skip_only: process_reports::OnSkipOnly,
@@ -1408,7 +1408,7 @@ fn process_reports(
         browser,
         checkout,
         exec_report_paths,
-        preset,
+        reconciliation,
         should_update_expected,
         meta_files_by_path,
         on_missing,
