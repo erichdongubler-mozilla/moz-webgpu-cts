@@ -46,7 +46,7 @@ where
 #[derive(Debug, Default)]
 pub(crate) struct TestEntry {
     pub entry: Entry<TestOutcome>,
-    pub subtests: BTreeMap<String, Entry<SubtestOutcome>>,
+    pub subtests: IndexMap<String, Entry<SubtestOutcome>>,
 }
 
 #[derive(Debug)]
@@ -565,7 +565,7 @@ pub(crate) fn process_reports(
                         },
                     ))
                 })
-                .collect::<BTreeMap<_, _>>();
+                .collect::<IndexMap<_, _>>();
 
             Some((test_entry_path, (properties, subtests)))
         },
