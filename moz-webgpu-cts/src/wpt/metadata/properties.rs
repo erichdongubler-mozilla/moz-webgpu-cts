@@ -2,7 +2,7 @@ use std::{
     collections::BTreeMap,
     fmt::{self, Debug, Display, Formatter},
     num::NonZeroUsize,
-    ops::{BitOr, BitOrAssign, Index, IndexMut},
+    ops::{BitOr, BitOrAssign, Deref, Index, IndexMut},
 };
 
 use enum_map::EnumMap;
@@ -301,9 +301,12 @@ impl<T> ExpandedPropertyValue<T> {
         inner
     }
 
-    pub(crate) fn as_ref(&self) -> ExpandedPropertyValue<&T> {
+    pub(crate) fn as_deref(&self) -> ExpandedPropertyValue<&<T as Deref>::Target>
+    where
+        T: Deref,
+    {
         ExpandedPropertyValue::from_query(|platform, build_profile| {
-            &self[(platform, build_profile)]
+            &*self[(platform, build_profile)]
         })
     }
 }

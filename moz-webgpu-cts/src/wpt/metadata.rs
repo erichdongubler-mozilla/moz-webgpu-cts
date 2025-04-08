@@ -870,7 +870,7 @@ where
             use std::borrow::Cow;
 
             #[derive(Clone, Debug, Default, Eq, PartialEq)]
-            struct TagsDisplay<'a>(Cow<'a, Vec<String>>);
+            struct TagsDisplay<'a>(Cow<'a, [String]>);
 
             impl Display for TagsDisplay<'_> {
                 fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
@@ -879,7 +879,7 @@ where
                 }
             }
 
-            let tags_ref = tags.as_ref();
+            let tags_ref = tags.as_deref();
             let tags_ref = tags_ref.map(Cow::Borrowed).map(TagsDisplay);
 
             write_normalized(f, &indent, TAGS_IDENT, tags_ref)?;
