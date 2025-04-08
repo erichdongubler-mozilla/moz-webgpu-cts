@@ -57,6 +57,7 @@ pub(crate) struct ProcessReportsArgs<'a> {
     pub preset: ReportProcessingPreset,
     pub should_update_expected: &'a mut dyn should_update_expected::ShouldUpdateExpected,
     pub meta_files_by_path: IndexMap<Arc<PathBuf>, File>,
+    pub on_skip_only: OnSkipOnly,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -65,6 +66,14 @@ pub(crate) enum ReportProcessingPreset {
     MergeOutcomes,
     ResetAllOutcomes,
     MigrateTestStructure,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum OnSkipOnly {
+    /// Do not change metadata.
+    Ignore,
+    /// Apply reconcilation with `SKIP` outcomes.
+    Reconcile,
 }
 
 #[derive(Debug, Default)]
@@ -161,6 +170,7 @@ pub(crate) fn process_reports(
         preset,
         should_update_expected,
         meta_files_by_path,
+        on_skip_only,
     } = args;
 
     if exec_report_paths.is_empty() {
@@ -469,6 +479,7 @@ pub(crate) fn process_reports(
 
             let mut properties = properties.unwrap_or_default();
 
+            let skip = TestOutcome::Skip;
             for (platform, build_profile, reported) in
                 test_reported.iter_mut().flat_map(|(p, by_bp)| {
                     by_bp
@@ -476,7 +487,6 @@ pub(crate) fn process_reports(
                         .map(move |(bp, reported)| (p, bp, reported))
                 })
             {
-                let skip = TestOutcome::Skip;
                 // Ignore `SKIP` outcomes if we have non-`SKIP` outcomes here.
                 //
                 // Do this so that test runs whose coverage _in aggregate_ includes actual
@@ -509,7 +519,11 @@ pub(crate) fn process_reports(
                 test_reported,
                 preset,
                 &mut |meta_props, reported, key| {
-                    should_update_expected.test(meta_props, reported, key)
+                    let (platform, build_profile) = key;
+                    (match on_skip_only {
+                        OnSkipOnly::Ignore => reported[&platform][&build_profile] != skip,
+                        OnSkipOnly::Reconcile => true,
+                    }) && should_update_expected.test(meta_props, reported, key)
                 },
             );
 
