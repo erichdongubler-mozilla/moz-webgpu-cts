@@ -415,7 +415,7 @@ fn run(cli: Cli) -> ExitCode {
         Subcommand::Triage { on_zero_item } => {
             #[derive(Debug)]
             struct TaggedTest {
-                #[allow(unused)]
+                #[expect(unused)]
                 orig_path: Arc<PathBuf>,
                 inner: Test,
             }

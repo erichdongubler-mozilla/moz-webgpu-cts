@@ -60,7 +60,6 @@ pub(crate) struct ProcessReportsArgs<'a> {
 }
 
 #[derive(Clone, Copy, Debug)]
-#[allow(clippy::enum_variant_names)]
 pub(crate) enum ReportProcessingPreset {
     ResetContradictoryOutcomes,
     MergeOutcomes,
@@ -108,7 +107,7 @@ fn accumulate<Out>(
 ///
 /// For subtests, `parent_implementation_status` should be specified so the
 /// parent test's implementation status can be used for filtering.
-#[allow(clippy::type_complexity)]
+#[expect(clippy::type_complexity)]
 fn reconcile<Out>(
     meta_props: &mut TestProps<Out>,
     reported: NonNormalizedPropertyValue<Expected<Out>>,

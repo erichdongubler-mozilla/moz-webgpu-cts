@@ -64,7 +64,7 @@ impl metadata::File<'_> for File {
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct FileProps {
     pub is_disabled: Option<PropertyValue<Expr<Value<'static>>, String>>,
-    #[allow(clippy::type_complexity)]
+    #[expect(clippy::type_complexity)]
     pub prefs: Option<PropertyValue<Expr<Value<'static>>, Vec<(String, String)>>>,
     pub tags: Option<PropertyValue<Expr<Value<'static>>, Vec<String>>>,
     pub implementation_status: Option<PropertyValue<Expr<Value<'static>>, ImplementationStatus>>,
