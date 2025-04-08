@@ -685,14 +685,6 @@ fn run(cli: Cli) -> ExitCode {
                                             )
                                         })
                                     }
-                                    SubtestOutcome::Crash => receiver(&mut |analysis| {
-                                        insert_in_test_set(
-                                            &mut analysis.tests_with_crashes,
-                                            test_name,
-                                            expected,
-                                            outcome,
-                                        )
-                                    }),
                                     SubtestOutcome::Fail => receiver(&mut |analysis| {
                                         insert_in_subtest_by_test_set(
                                             &mut analysis.subtests_with_failures_by_test,
