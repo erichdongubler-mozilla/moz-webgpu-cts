@@ -1,5 +1,4 @@
 use std::{
-    collections::BTreeMap,
     fmt::{self, Display, Formatter},
     hash::Hash,
 };
@@ -8,6 +7,7 @@ use clap::ValueEnum;
 use enum_map::Enum;
 use enumset::EnumSetType;
 use format::lazy_format;
+use indexmap::IndexMap;
 use joinery::JoinableIterator;
 use maybe_collapsed::MaybeCollapsed;
 use serde::{Deserialize, Serialize};
@@ -43,7 +43,7 @@ pub(crate) mod properties;
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct File {
     pub properties: FileProps,
-    pub tests: BTreeMap<SectionHeader, Test>,
+    pub tests: IndexMap<SectionHeader, Test>,
 }
 
 impl File {
@@ -647,7 +647,7 @@ impl ImplementationStatus {
 }
 
 #[derive(Debug, Default)]
-pub struct Tests(BTreeMap<SectionHeader, Test>);
+pub struct Tests(IndexMap<SectionHeader, Test>);
 
 impl<'a> metadata::Tests<'a> for Tests {
     type Test = Test;
@@ -670,7 +670,7 @@ impl<'a> metadata::Tests<'a> for Tests {
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct Test {
     pub properties: TestProps<TestOutcome>,
-    pub subtests: BTreeMap<SectionHeader, Subtest>,
+    pub subtests: IndexMap<SectionHeader, Subtest>,
 }
 
 #[cfg(test)]
@@ -694,7 +694,7 @@ impl metadata::Test<'_> for Test {
 }
 
 #[derive(Default)]
-pub struct Subtests(BTreeMap<SectionHeader, Subtest>);
+pub struct Subtests(IndexMap<SectionHeader, Subtest>);
 
 impl<'a> metadata::Subtests<'a> for Subtests {
     type Subtest = Subtest;
