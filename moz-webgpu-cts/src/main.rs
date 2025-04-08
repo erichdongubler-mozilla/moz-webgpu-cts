@@ -1,15 +1,19 @@
+mod file_spec;
 mod process_reports;
 mod report;
 mod wpt;
 
-use self::wpt::{
-    metadata::{
-        self,
-        properties::{ExpandedPropertyValue, Expected},
-        File, ImplementationStatus, Platform, Subtest, SubtestOutcome, Test, TestOutcome,
-        TestProps,
+use self::{
+    file_spec::FileSpec,
+    wpt::{
+        metadata::{
+            self,
+            properties::{ExpandedPropertyValue, Expected},
+            File, ImplementationStatus, Platform, Subtest, SubtestOutcome, Test, TestOutcome,
+            TestProps,
+        },
+        path::TestEntryPath,
     },
-    path::TestEntryPath,
 };
 
 use std::{
@@ -161,102 +165,11 @@ impl ExecReportSpec {
             report_globs,
         } = self;
 
-        let report_globs = {
-            let mut found_glob_parse_err = false;
-            let globs = report_globs
-                .into_iter()
-                .filter_map(|glob| match Glob::diagnosed(&glob) {
-                    Ok((glob, _diagnostics)) => Some(glob.into_owned().partition()),
-                    Err(diagnostics) => {
-                        found_glob_parse_err = true;
-                        let error_reports = diagnostics
-                            .into_iter()
-                            .filter(|diag| {
-                                // N.B.: There should be at least one of these!
-                                diag.severity()
-                                    .is_none_or(|sev| sev == miette::Severity::Error)
-                            })
-                            .map(Report::new_boxed);
-                        for report in error_reports {
-                            eprintln!("{report:?}");
-                        }
-                        None
-                    }
-                })
-                .collect::<Vec<_>>();
-
-            if found_glob_parse_err {
-                log::error!("failed to parse one or more WPT report globs; bailing");
-                return Err(AlreadyReportedToCommandline);
-            }
-
-            globs
-        };
-
-        let report_paths_from_glob = {
-            let mut found_glob_walk_err = false;
-            let files = report_globs
-                .iter()
-                .flat_map(|(base_path, glob)| {
-                    glob.walk(base_path)
-                        .filter_map(|entry| match entry {
-                            Ok(entry) => Some(entry.into_path()),
-                            Err(e) => {
-                                found_glob_walk_err = true;
-                                let ctx_msg = if let Some(path) = e.path() {
-                                    format!(
-                                        "failed to enumerate files for glob `{}` at path {}",
-                                        glob,
-                                        path.display()
-                                    )
-                                } else {
-                                    format!("failed to enumerate files for glob `{glob}`")
-                                };
-                                let e = Report::msg(e).wrap_err(ctx_msg);
-                                eprintln!("{e:?}");
-                                None
-                            }
-                        })
-                        .collect::<Vec<_>>() // OPT: Can we get rid of this somehow?
-                })
-                .collect::<Vec<_>>();
-
-            if found_glob_walk_err {
-                log::error!(concat!(
-                    "failed to enumerate files with WPT report globs, ",
-                    "see above for more details"
-                ));
-                return Err(AlreadyReportedToCommandline);
-            }
-
-            files
-        };
-
-        if report_paths_from_glob.is_empty() && !report_globs.is_empty() {
-            if report_paths.is_empty() {
-                log::error!(concat!(
-                    "reports were specified exclusively via glob search, ",
-                    "but none were found; bailing"
-                ));
-                return Err(AlreadyReportedToCommandline);
-            } else {
-                log::warn!(concat!(
-                    "reports were specified via path and glob search, ",
-                    "but none were found via glob; ",
-                    "continuing with report paths"
-                ))
-            }
+        FileSpec {
+            paths: report_paths,
+            globs: report_globs,
         }
-
-        let exec_report_paths = report_paths
-            .into_iter()
-            .chain(report_paths_from_glob)
-            .collect::<Vec<_>>();
-
-        log::trace!("working with the following WPT report files: {exec_report_paths:#?}");
-        log::info!("working with {} WPT report files", exec_report_paths.len());
-
-        Ok(exec_report_paths)
+        .into_paths("WPT report(s)")
     }
 }
 
