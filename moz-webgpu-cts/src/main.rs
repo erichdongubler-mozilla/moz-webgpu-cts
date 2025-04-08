@@ -262,11 +262,11 @@ impl ExecReportSpec {
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
 enum UpdateExpectedPreset {
-    /// alias: `new-fx`
+    /// alias: `new-fx`, `new-build`
     #[value(alias("new-fx"))]
     #[value(alias("new-build"))]
     ResetContradictory,
-    /// alias: `same-fx`
+    /// alias: `same-fx`, `same-build`
     #[value(alias("same-fx"))]
     #[value(alias("same-build"))]
     Merge,
