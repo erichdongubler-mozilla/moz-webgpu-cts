@@ -22,7 +22,8 @@ use whippit::{
         ParseError, SectionHeader,
     },
     reexport::chumsky::{
-        input::Emitter,
+        extra::ParserExtra,
+        input::{Emitter, Input, StrInput},
         prelude::Rich,
         primitive::{any, choice, end, group, just, one_of},
         span::SimpleSpan,
@@ -1284,24 +1285,30 @@ impl Display for TestOutcome {
     }
 }
 
+impl TestOutcome {
+    pub(crate) fn parser<'a, I, E>() -> impl Parser<'a, I, TestOutcome, E> + Clone
+    where
+        I: Input<'a, Token = char> + StrInput<'a, char>,
+        E: ParserExtra<'a, I>,
+    {
+        choice((
+            keyword(OK).to(TestOutcome::Ok),
+            keyword(PASS).to(TestOutcome::Pass),
+            keyword(FAIL).to(TestOutcome::Fail),
+            keyword(CRASH).to(TestOutcome::Crash),
+            keyword(TIMEOUT).to(TestOutcome::Timeout),
+            keyword(ERROR).to(TestOutcome::Error),
+            keyword(SKIP).to(TestOutcome::Skip),
+        ))
+    }
+}
+
 impl<'a> Properties<'a> for TestProps<TestOutcome> {
     type ParsedProperty = TestProp<TestOutcome>;
     fn property_parser(
         helper: &mut PropertiesParseHelper<'a>,
     ) -> Boxed<'a, 'a, &'a str, Self::ParsedProperty, ParseError<'a>> {
-        TestProp::property_parser(
-            helper,
-            choice((
-                keyword(OK).to(TestOutcome::Ok),
-                keyword(PASS).to(TestOutcome::Pass),
-                keyword(FAIL).to(TestOutcome::Fail),
-                keyword(CRASH).to(TestOutcome::Crash),
-                keyword(TIMEOUT).to(TestOutcome::Timeout),
-                keyword(ERROR).to(TestOutcome::Error),
-                keyword(SKIP).to(TestOutcome::Skip),
-            )),
-        )
-        .boxed()
+        TestProp::property_parser(helper, TestOutcome::parser()).boxed()
     }
 
     fn add_property(&mut self, prop: Self::ParsedProperty, emitter: &mut Emitter<Rich<'a, char>>) {
@@ -1343,22 +1350,28 @@ impl Display for SubtestOutcome {
     }
 }
 
+impl SubtestOutcome {
+    pub(crate) fn parser<'a, I, E>() -> impl Parser<'a, I, SubtestOutcome, E> + Clone
+    where
+        I: Input<'a, Token = char> + StrInput<'a, char>,
+        E: ParserExtra<'a, I>,
+    {
+        choice((
+            keyword(PASS).to(SubtestOutcome::Pass),
+            keyword(FAIL).to(SubtestOutcome::Fail),
+            keyword(TIMEOUT).to(SubtestOutcome::Timeout),
+            keyword(CRASH).to(SubtestOutcome::Crash),
+            keyword(NOTRUN).to(SubtestOutcome::NotRun),
+        ))
+    }
+}
+
 impl<'a> Properties<'a> for TestProps<SubtestOutcome> {
     type ParsedProperty = TestProp<SubtestOutcome>;
     fn property_parser(
         helper: &mut PropertiesParseHelper<'a>,
     ) -> Boxed<'a, 'a, &'a str, Self::ParsedProperty, ParseError<'a>> {
-        TestProp::property_parser(
-            helper,
-            choice((
-                keyword(PASS).to(SubtestOutcome::Pass),
-                keyword(FAIL).to(SubtestOutcome::Fail),
-                keyword(TIMEOUT).to(SubtestOutcome::Timeout),
-                keyword(CRASH).to(SubtestOutcome::Crash),
-                keyword(NOTRUN).to(SubtestOutcome::NotRun),
-            )),
-        )
-        .boxed()
+        TestProp::property_parser(helper, SubtestOutcome::parser()).boxed()
     }
 
     fn add_property(&mut self, prop: Self::ParsedProperty, emitter: &mut Emitter<Rich<'a, char>>) {
