@@ -3,6 +3,7 @@ members = ["moz-webgpu-cts", "whippit"]
 resolver = "2"
 
 [workspace.dependencies]
+env_logger = "0.11.7"
 format = "0.2.4"
 indexmap = "2.0.0"
 insta = "1.38.0"
