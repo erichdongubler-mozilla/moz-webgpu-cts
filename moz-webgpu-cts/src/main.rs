@@ -1,3 +1,4 @@
+mod aggregate_timings_from_logs;
 mod file_spec;
 mod process_reports;
 mod report;
@@ -45,7 +46,7 @@ use process_reports::{
     should_update_expected::{self, ShouldUpdateExpected},
     ProcessReportsArgs,
 };
-use wax::Glob;
+use wax::{walk::Entry as _, Glob};
 use whippit::{
     metadata::SectionHeader,
     reexport::chumsky::{self, prelude::Rich},
@@ -125,6 +126,11 @@ enum Subcommand {
         /// What do when only `SKIP` outcomes are found for tests and subtests.
         #[clap(value_enum, long, default_value_t = OnSkipOnly::Reconcile)]
         on_skip_only: OnSkipOnly,
+    },
+    AggregateTimingsFromLogs {
+        log_paths: Vec<PathBuf>,
+        #[clap(long = "glob", value_name = "LOG_GLOB")]
+        log_globs: Vec<String>,
     },
     /// Parse test metadata, apply automated fixups, and re-emit it in normalized form.
     #[clap(name = "fixup", alias = "fmt")]
@@ -313,6 +319,26 @@ fn run(cli: Cli) -> ExitCode {
                 },
                 on_skip_only.into(),
             ) {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(AlreadyReportedToCommandline) => ExitCode::FAILURE,
+            }
+        }
+        Subcommand::AggregateTimingsFromLogs {
+            log_paths,
+            log_globs,
+        } => {
+            let log_paths_res = FileSpec {
+                paths: log_paths,
+                globs: log_globs,
+            }
+            .into_paths("log file(s)");
+
+            let log_paths = match log_paths_res {
+                Ok(ok) => ok,
+                Err(AlreadyReportedToCommandline) => return ExitCode::FAILURE,
+            };
+
+            match aggregate_timings_from_logs::aggregate_timings_from_logs(browser, log_paths) {
                 Ok(()) => ExitCode::SUCCESS,
                 Err(AlreadyReportedToCommandline) => ExitCode::FAILURE,
             }
@@ -1168,7 +1194,7 @@ fn render_metadata_parse_errors<'a>(
         #[label]
         span: SourceSpan,
         #[source_code]
-        source_code: NamedSource,
+        source_code: NamedSource<Arc<String>>,
         inner: Rich<'static, char>,
     }
     let source_code = file_contents.clone();
@@ -1177,7 +1203,7 @@ fn render_metadata_parse_errors<'a>(
         let error = ParseError {
             source_code: NamedSource::new(path.to_str().unwrap(), source_code.clone()),
             inner: error.clone().into_owned(),
-            span: SourceSpan::new(span.start.into(), (span.end - span.start).into()),
+            span: SourceSpan::new(span.start.into(), span.end - span.start),
         };
         let error = Report::new(error);
         eprintln!("{error:?}");
