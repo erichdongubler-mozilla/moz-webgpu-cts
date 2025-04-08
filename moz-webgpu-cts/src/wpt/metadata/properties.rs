@@ -12,6 +12,10 @@ use serde::Serialize;
 
 use crate::wpt::metadata::{maybe_collapsed::MaybeCollapsed, BuildProfile, Platform};
 
+pub use self::disabled_string::DisabledString;
+
+mod disabled_string;
+
 /// A non-empty set of expected outcomes in a [`Test`] or [`Subtest`].
 ///
 /// The default expected test outcome is a "good" outcome, where testing passes. The `Out` type
