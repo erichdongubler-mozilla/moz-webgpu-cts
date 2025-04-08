@@ -1083,9 +1083,11 @@ name = "whippit"
 version = "0.6.2"
 dependencies = [
  "chumsky",
+ "env_logger",
  "format",
  "indexmap",
  "insta",
+ "log",
  "serde",
 ]
 
