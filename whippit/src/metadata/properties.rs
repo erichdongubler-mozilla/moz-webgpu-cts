@@ -58,7 +58,6 @@ where
 /// [`File`]: crate::metadata::File
 /// [`Test`]: crate::metadata::Test
 /// [`Subtest`]: crate::metadata::Subtest
-/// [`File::parser`]: crate::metadata::File::parser
 pub trait Properties<'a>
 where
     Self: Clone + Default + Sized,
