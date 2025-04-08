@@ -284,7 +284,7 @@ fn run(cli: Cli) -> ExitCode {
             exec_report_spec,
             process_reports::ReportProcessingPreset::MigrateTestStructure,
             &mut should_update_expected::NeverUpdateExpected,
-            OnSkipOnly::Reconcile.into(),
+            OnSkipOnly::Ignore.into(),
         ) {
             Ok(()) => ExitCode::SUCCESS,
             Err(AlreadyReportedToCommandline) => ExitCode::FAILURE,
