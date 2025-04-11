@@ -521,7 +521,10 @@ pub(crate) fn process_reports(
                 &mut |meta_props, reported, key| {
                     let (platform, build_profile) = key;
                     (match on_skip_only {
-                        OnSkipOnly::Ignore => reported[&platform][&build_profile] != skip,
+                        OnSkipOnly::Ignore => reported
+                            .get(&platform)
+                            .and_then(|r| r.get(&build_profile))
+                            .is_none_or(|ex| ex != &skip),
                         OnSkipOnly::Reconcile => true,
                     }) && should_update_expected.test(meta_props, reported, key)
                 },
