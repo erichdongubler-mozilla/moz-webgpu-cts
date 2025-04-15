@@ -68,7 +68,7 @@ where
 
     /// Retrieve a parser for a single property that [`Self::add_property`] can accept.
     fn property_parser(
-        helper: &mut PropertiesParseHelper<'a>,
+        helper: PropertiesParseHelper<'a>,
     ) -> Boxed<'a, 'a, &'a str, Self::ParsedProperty, ParseError<'a>>;
 
     /// Accumulate a parsed property into this data structure.
@@ -80,6 +80,7 @@ where
 
 /// A helper passed to implementors of [`Properties::property_parser`]. The major affordance of
 /// this API is the [`PropertiesParseHelper::parser`] API.
+#[derive(Clone)]
 pub struct PropertiesParseHelper<'a> {
     indentation: u8,
     _disable_ctor: PhantomData<&'a mut ()>,
@@ -180,7 +181,7 @@ impl<'a> PropertiesParseHelper<'a> {
     /// );
     /// ```
     pub fn parser<K, C, V, Pk, Pc, Pv>(
-        &mut self,
+        &self,
         key_ident_parser: Pk,
         condition_parser: Pc,
         value_parser: Pv,

@@ -77,7 +77,7 @@ impl<'a> Properties<'a> for FileProps {
     type ParsedProperty = (SimpleSpan, FileProp);
 
     fn property_parser(
-        helper: &mut PropertiesParseHelper<'a>,
+        helper: PropertiesParseHelper<'a>,
     ) -> Boxed<'a, 'a, &'a str, Self::ParsedProperty, ParseError<'a>> {
         let conditional_term = Expr::parser(Value::parser().map(|expr| expr.to_static()));
 
@@ -114,7 +114,7 @@ impl<'a> Properties<'a> for FileProps {
             )
             .map(|((), prefs)| FileProp::Prefs(prefs));
 
-        let tags = tags_parser(helper, conditional_term.clone()).map(FileProp::Tags);
+        let tags = tags_parser(helper.clone(), conditional_term.clone()).map(FileProp::Tags);
 
         let disabled = helper
             .parser(
@@ -182,7 +182,7 @@ impl<'a> Properties<'a> for FileProps {
 }
 
 fn tags_parser<'a, T>(
-    helper: &mut PropertiesParseHelper<'a>,
+    helper: PropertiesParseHelper<'a>,
     conditional_term: impl Parser<'a, &'a str, T, ParseError<'a>>,
 ) -> impl Parser<'a, &'a str, PropertyValue<T, Vec<String>>, ParseError<'a>> {
     use crate::chumsky::{error::Error, util::MaybeRef};
@@ -232,7 +232,7 @@ fn tags_parser<'a, T>(
 
 #[test]
 fn file_props() {
-    let parser = FileProps::property_parser(&mut PropertiesParseHelper::new(0));
+    let parser = FileProps::property_parser(PropertiesParseHelper::new(0));
 
     insta::assert_debug_snapshot!(
         parser.parse("prefs: []"),
@@ -1051,7 +1051,7 @@ where
     Out: EnumSetType,
 {
     fn property_parser<'a, P>(
-        helper: &mut PropertiesParseHelper<'a>,
+        helper: PropertiesParseHelper<'a>,
         outcome_parser: P,
     ) -> impl Parser<'a, &'a str, TestProp<Out>, ParseError<'a>>
     where
@@ -1300,7 +1300,7 @@ impl TestOutcome {
 impl<'a> Properties<'a> for TestProps<TestOutcome> {
     type ParsedProperty = TestProp<TestOutcome>;
     fn property_parser(
-        helper: &mut PropertiesParseHelper<'a>,
+        helper: PropertiesParseHelper<'a>,
     ) -> Boxed<'a, 'a, &'a str, Self::ParsedProperty, ParseError<'a>> {
         TestProp::property_parser(helper, TestOutcome::parser()).boxed()
     }
@@ -1360,7 +1360,7 @@ impl SubtestOutcome {
 impl<'a> Properties<'a> for TestProps<SubtestOutcome> {
     type ParsedProperty = TestProp<SubtestOutcome>;
     fn property_parser(
-        helper: &mut PropertiesParseHelper<'a>,
+        helper: PropertiesParseHelper<'a>,
     ) -> Boxed<'a, 'a, &'a str, Self::ParsedProperty, ParseError<'a>> {
         TestProp::property_parser(helper, SubtestOutcome::parser()).boxed()
     }

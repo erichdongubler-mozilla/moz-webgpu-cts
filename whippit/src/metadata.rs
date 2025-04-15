@@ -71,7 +71,7 @@ where
     filler()
         .ignore_then(choice((
             test_parser().map(Item::Test),
-            F::Properties::property_parser(&mut PropertiesParseHelper::new(0)).map(Item::Property),
+            F::Properties::property_parser(PropertiesParseHelper::new(0)).map(Item::Property),
         )))
         .then_ignore(filler())
         .map_with(|test, e| (e.span(), test))
@@ -502,7 +502,7 @@ where
 
     let items = choice((
         subtest_parser().map(|(name, subtest)| Item::Subtest { name, subtest }),
-        T::Properties::property_parser(&mut PropertiesParseHelper::new(1))
+        T::Properties::property_parser(PropertiesParseHelper::new(1))
             .labelled("test property")
             .map(Item::Property),
         newline().labelled("empty line").map(|()| Item::Newline),
@@ -900,7 +900,7 @@ where
         .then_ignore(newline().or(end()))
         .labelled("subtest section header")
         .then(
-            S::Properties::property_parser(&mut PropertiesParseHelper::new(2))
+            S::Properties::property_parser(PropertiesParseHelper::new(2))
                 .labelled("subtest property")
                 .repeated()
                 .collect::<Vec<_>>()

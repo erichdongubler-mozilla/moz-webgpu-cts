@@ -122,7 +122,7 @@ impl<'a> Properties<'a> for UnstructuredProperties<'a> {
         PropertyValue<conditional::Expr<conditional::Value<'a>>, &'a str>,
     );
     fn property_parser(
-        helper: &mut PropertiesParseHelper<'a>,
+        helper: PropertiesParseHelper<'a>,
     ) -> Boxed<'a, 'a, &'a str, Self::ParsedProperty, ParseError<'a>> {
         helper
             .parser(
