@@ -23,11 +23,12 @@ use whippit::{
     },
     reexport::chumsky::{
         extra::ParserExtra,
-        input::{Emitter, Input, StrInput},
+        input::{Emitter, Input, SliceInput, StrInput},
+        label::LabelError,
         prelude::Rich,
         primitive::{any, choice, end, group, just, one_of},
         span::SimpleSpan,
-        text::{ascii, inline_whitespace, keyword, newline},
+        text::{ascii, inline_whitespace, keyword, newline, TextExpected},
         IterParser, Parser,
     },
 };
@@ -183,7 +184,7 @@ fn tags_parser<'a, T>(
     helper: PropertiesParseHelper,
     conditional_term: impl Parser<'a, &'a str, T, ParseError<'a>>,
 ) -> impl Parser<'a, &'a str, PropertyValue<T, Vec<String>>, ParseError<'a>> {
-    use crate::chumsky::{error::Error, util::MaybeRef};
+    use crate::chumsky::util::MaybeRef;
 
     let tag_ident = {
         let underscore_or_hyphen = |c| matches!(c, '_' | '-');
@@ -192,11 +193,13 @@ fn tags_parser<'a, T>(
                 if c.is_ascii_alphabetic() || underscore_or_hyphen(c) {
                     Ok(c)
                 } else {
-                    Err(Error::<&'a str>::expected_found(
-                        [],
-                        Some(MaybeRef::Val(c)),
-                        span,
-                    ))
+                    Err(
+                        LabelError::<'_, &'a str, TextExpected<'a, &'a str>>::expected_found(
+                            [],
+                            Some(MaybeRef::Val(c)),
+                            span,
+                        ),
+                    )
                 }
             })
             .then(
@@ -1058,6 +1061,8 @@ where
     {
         let conditional_term = Expr::parser(Value::parser()).validate(|prop_val, e, emitter| {
             let mut acc = Applicability::default();
+            let span = e.span();
+            let slice = e.slice();
             let try_match_var =
                 |acc: &mut Applicability, val: &_, inverted: bool, emitter: &mut Emitter<_>| {
                     match val {
@@ -1069,20 +1074,20 @@ where
                             };
                             if let Some(_old) = acc.build_profile.replace(build_profile) {
                                 emitter.emit(Rich::custom(
-                                    e.span(),
+                                    span,
                                     "multiple `debug` conditions specified, discarding oldest",
                                 ))
                             }
                         }
                         _ => {
                             emitter.emit(Rich::custom(
-                                e.span(),
+                                span,
                                 format!(
                                     concat!(
                                         "{:?} is not a variable evaluatable with ",
                                         "tests and subtests for WebGPU's purposes, discarding"
                                     ),
-                                    e.slice()
+                                    slice,
                                 ),
                             ));
                         }
@@ -1106,13 +1111,13 @@ where
                         if let Some(platform) = platform {
                             if let Some(_old) = acc.platform.replace(platform) {
                                 emitter.emit(Rich::custom(
-                                    e.span(),
+                                    span,
                                     "multiple `os` conditions specified, discarding oldest",
                                 ))
                             }
                         } else {
                             emitter.emit(Rich::custom(
-                                e.span(),
+                                span,
                                 format!(
                                     "{lit:?}{}",
                                     concat!(
@@ -1124,14 +1129,14 @@ where
                         }
                     }
                     _ => emitter.emit(Rich::custom(
-                        e.span(),
+                        span,
                         format!(
                             "{:?}{}",
                             concat!(
                                 " is not an comparison evaluatable ",
                                 "for WebGPU's purposes, discarding"
                             ),
-                            e.slice()
+                            slice
                         ),
                     )),
                 };
@@ -1142,13 +1147,13 @@ where
                         match &**term {
                             Expr::Value(v) => try_match_var(&mut acc, v, false, emitter),
                             Expr::And(_, _) => emitter.emit(Rich::custom(
-                                e.span(),
+                                span,
                                 "`and` clauses too deep here, discarding",
                             )),
                             Expr::Not(term) => match &**term {
                                 Expr::Value(v) => try_match_var(&mut acc, v, true, emitter),
                                 _ => emitter.emit(Rich::custom(
-                                    e.span(),
+                                    span,
                                     "conditional clause inside `not` too deep here, discarding",
                                 )),
                             },
@@ -1280,8 +1285,13 @@ impl Display for TestOutcome {
 impl TestOutcome {
     pub(crate) fn parser<'a, I, E>() -> impl Parser<'a, I, TestOutcome, E> + Clone
     where
-        I: Input<'a, Token = char> + StrInput<'a, char>,
+        I: Input<'a, Token = char> + SliceInput<'a> + StrInput<'a>,
+        I::Slice: PartialEq + PartialEq<&'a str>,
+        &'a str: PartialEq<I::Slice>,
         E: ParserExtra<'a, I>,
+        E::Error: LabelError<'a, I, I::Slice>
+            + LabelError<'a, I, &'a str>
+            + LabelError<'a, I, TextExpected<'a, I>>,
     {
         choice((
             keyword(OK).to(TestOutcome::Ok),
@@ -1341,10 +1351,11 @@ impl Display for SubtestOutcome {
 }
 
 impl SubtestOutcome {
-    pub(crate) fn parser<'a, I, E>() -> impl Parser<'a, I, SubtestOutcome, E> + Clone
+    pub(crate) fn parser<'a, E>() -> impl Parser<'a, &'a str, SubtestOutcome, E> + Clone
     where
-        I: Input<'a, Token = char> + StrInput<'a, char>,
-        E: ParserExtra<'a, I>,
+        E: ParserExtra<'a, &'a str>,
+        E::Error:
+            LabelError<'a, &'a str, &'a str> + LabelError<'a, &'a str, TextExpected<'a, &'a str>>,
     {
         choice((
             keyword(PASS).to(SubtestOutcome::Pass),
