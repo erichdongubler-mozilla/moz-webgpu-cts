@@ -32,7 +32,7 @@ use self::properties::{Properties, PropertiesParseHelper};
 pub mod properties;
 
 /// An error emitted by [`file_parser`] and [other WPT metadata parsing logic][self].
-pub type ParseError<'a> = Full<Rich<'a, char>, (), ()>;
+pub type ParseError<'a> = chumsky::extra::Err<Rich<'a, char>>;
 
 /// Behavior that needs to be defined to parse [the WPT metadata format][self] with
 /// [`file_parser`].
@@ -1157,9 +1157,9 @@ impl SectionHeader {
             loop {
                 match input.peek() {
                     None => {
-                        let start = input.offset();
+                        let start = input.cursor();
                         input.skip();
-                        let span = input.span_since(start);
+                        let span = input.span_since(&start);
                         return Err(Rich::custom(
                             span,
                             "reached end of input before ending section header",
@@ -1184,7 +1184,7 @@ impl SectionHeader {
                 if c.is_control() {
                     let span_idx = e.span().start.checked_add(idx).unwrap();
                     emitter.emit(Rich::custom(
-                        SimpleSpan::new(span_idx, span_idx),
+                        SimpleSpan::from(span_idx..span_idx + 1),
                         "found illegal character in section header",
                     ));
                 }
