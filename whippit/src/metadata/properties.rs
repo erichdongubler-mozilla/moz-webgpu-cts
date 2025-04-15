@@ -13,7 +13,7 @@ use chumsky::{
     prelude::Rich,
     primitive::{choice, end, group, just},
     text::{inline_whitespace, newline},
-    Boxed, Parser,
+    Parser,
 };
 
 use crate::metadata::{indent, ParseError};
@@ -69,7 +69,7 @@ where
     /// Retrieve a parser for a single property that [`Self::add_property`] can accept.
     fn property_parser(
         helper: PropertiesParseHelper<'a>,
-    ) -> Boxed<'a, 'a, &'a str, Self::ParsedProperty, ParseError<'a>>;
+    ) -> impl Parser<'a, &'a str, Self::ParsedProperty, ParseError<'a>>;
 
     /// Accumulate a parsed property into this data structure.
     ///

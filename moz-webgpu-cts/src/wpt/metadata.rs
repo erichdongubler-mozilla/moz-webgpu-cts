@@ -28,7 +28,7 @@ use whippit::{
         primitive::{any, choice, end, group, just, one_of},
         span::SimpleSpan,
         text::{ascii, inline_whitespace, keyword, newline},
-        Boxed, IterParser, Parser,
+        IterParser, Parser,
     },
 };
 
@@ -78,7 +78,7 @@ impl<'a> Properties<'a> for FileProps {
 
     fn property_parser(
         helper: PropertiesParseHelper<'a>,
-    ) -> Boxed<'a, 'a, &'a str, Self::ParsedProperty, ParseError<'a>> {
+    ) -> impl Parser<'a, &'a str, Self::ParsedProperty, ParseError<'a>> {
         let conditional_term = Expr::parser(Value::parser().map(|expr| expr.to_static()));
 
         let prefs = helper
@@ -140,9 +140,7 @@ impl<'a> Properties<'a> for FileProps {
                 FileProp::ImplementationStatus(implementation_status)
             });
 
-        choice((prefs, tags, disabled, implementation_status))
-            .map_with(|prop, e| (e.span(), prop))
-            .boxed()
+        choice((prefs, tags, disabled, implementation_status)).map_with(|prop, e| (e.span(), prop))
     }
 
     fn add_property(&mut self, prop: Self::ParsedProperty, emitter: &mut Emitter<Rich<'a, char>>) {
@@ -1301,8 +1299,8 @@ impl<'a> Properties<'a> for TestProps<TestOutcome> {
     type ParsedProperty = TestProp<TestOutcome>;
     fn property_parser(
         helper: PropertiesParseHelper<'a>,
-    ) -> Boxed<'a, 'a, &'a str, Self::ParsedProperty, ParseError<'a>> {
-        TestProp::property_parser(helper, TestOutcome::parser()).boxed()
+    ) -> impl Parser<'a, &'a str, Self::ParsedProperty, ParseError<'a>> {
+        TestProp::property_parser(helper, TestOutcome::parser())
     }
 
     fn add_property(&mut self, prop: Self::ParsedProperty, emitter: &mut Emitter<Rich<'a, char>>) {
@@ -1361,8 +1359,8 @@ impl<'a> Properties<'a> for TestProps<SubtestOutcome> {
     type ParsedProperty = TestProp<SubtestOutcome>;
     fn property_parser(
         helper: PropertiesParseHelper<'a>,
-    ) -> Boxed<'a, 'a, &'a str, Self::ParsedProperty, ParseError<'a>> {
-        TestProp::property_parser(helper, SubtestOutcome::parser()).boxed()
+    ) -> impl Parser<'a, &'a str, Self::ParsedProperty, ParseError<'a>> {
+        TestProp::property_parser(helper, SubtestOutcome::parser())
     }
 
     fn add_property(&mut self, prop: Self::ParsedProperty, emitter: &mut Emitter<Rich<'a, char>>) {
