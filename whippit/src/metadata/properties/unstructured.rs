@@ -122,7 +122,7 @@ impl<'a> Properties<'a> for UnstructuredProperties<'a> {
         PropertyValue<conditional::Expr<conditional::Value<'a>>, &'a str>,
     );
     fn property_parser(
-        helper: PropertiesParseHelper<'a>,
+        helper: PropertiesParseHelper,
     ) -> impl Parser<'a, &'a str, Self::ParsedProperty, ParseError<'a>> {
         helper.parser(
             ident().map_with(|key, e| (e.span(), key)),

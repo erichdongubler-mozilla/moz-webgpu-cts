@@ -77,7 +77,7 @@ impl<'a> Properties<'a> for FileProps {
     type ParsedProperty = (SimpleSpan, FileProp);
 
     fn property_parser(
-        helper: PropertiesParseHelper<'a>,
+        helper: PropertiesParseHelper,
     ) -> impl Parser<'a, &'a str, Self::ParsedProperty, ParseError<'a>> {
         let conditional_term = Expr::parser(Value::parser().map(|expr| expr.to_static()));
 
@@ -180,7 +180,7 @@ impl<'a> Properties<'a> for FileProps {
 }
 
 fn tags_parser<'a, T>(
-    helper: PropertiesParseHelper<'a>,
+    helper: PropertiesParseHelper,
     conditional_term: impl Parser<'a, &'a str, T, ParseError<'a>>,
 ) -> impl Parser<'a, &'a str, PropertyValue<T, Vec<String>>, ParseError<'a>> {
     use crate::chumsky::{error::Error, util::MaybeRef};
@@ -1049,7 +1049,7 @@ where
     Out: EnumSetType,
 {
     fn property_parser<'a, P>(
-        helper: PropertiesParseHelper<'a>,
+        helper: PropertiesParseHelper,
         outcome_parser: P,
     ) -> impl Parser<'a, &'a str, TestProp<Out>, ParseError<'a>>
     where
@@ -1298,7 +1298,7 @@ impl TestOutcome {
 impl<'a> Properties<'a> for TestProps<TestOutcome> {
     type ParsedProperty = TestProp<TestOutcome>;
     fn property_parser(
-        helper: PropertiesParseHelper<'a>,
+        helper: PropertiesParseHelper,
     ) -> impl Parser<'a, &'a str, Self::ParsedProperty, ParseError<'a>> {
         TestProp::property_parser(helper, TestOutcome::parser())
     }
@@ -1358,7 +1358,7 @@ impl SubtestOutcome {
 impl<'a> Properties<'a> for TestProps<SubtestOutcome> {
     type ParsedProperty = TestProp<SubtestOutcome>;
     fn property_parser(
-        helper: PropertiesParseHelper<'a>,
+        helper: PropertiesParseHelper,
     ) -> impl Parser<'a, &'a str, Self::ParsedProperty, ParseError<'a>> {
         TestProp::property_parser(helper, SubtestOutcome::parser())
     }
