@@ -46,7 +46,7 @@ where
 #[derive(Debug, Default)]
 pub(crate) struct TestEntry {
     pub entry: Entry<TestOutcome>,
-    pub subtests: IndexMap<String, Entry<SubtestOutcome>>,
+    pub subtests: BTreeMap<String, Entry<SubtestOutcome>>,
 }
 
 #[derive(Debug)]
@@ -186,6 +186,93 @@ pub(crate) fn process_reports(
     let mut other_entries_by_test = IndexMap::<TestEntryPath<'_>, TestEntry>::default();
     let old_meta_file_paths = meta_files_by_path.keys().cloned().collect::<Vec<_>>();
 
+    log::debug!("loading metadata for comparison to reports…");
+    for (path, file) in meta_files_by_path {
+        let File { properties, tests } = file;
+
+        let file_rel_path = path.strip_prefix(checkout).unwrap();
+
+        file_props_by_file.insert(
+            Utf8PathBuf::from(file_rel_path.to_str().unwrap()),
+            properties,
+        );
+
+        for (SectionHeader(name), test) in tests {
+            let Test {
+                properties,
+                subtests,
+            } = test;
+
+            let test_entry_path =
+                match TestEntryPath::from_metadata_test(browser, file_rel_path, &name) {
+                    Ok(ok) => ok,
+                    Err(e) => {
+                        log::error!("{e}");
+                        return Err(AlreadyReportedToCommandline);
+                    }
+                };
+
+            let freak_out_do_nothing =
+                |what: &dyn Display| log::error!("hoo boy, not sure what to do yet: {what}");
+
+            let mut reported_dupe_already = false;
+            let mut dupe_err = || {
+                if !reported_dupe_already {
+                    freak_out_do_nothing(&format_args!(
+                        concat!(
+                            "duplicate entry for {:?}",
+                            "discarding previous entries with ",
+                            "this and further dupes"
+                        ),
+                        test_entry_path
+                    ))
+                }
+                reported_dupe_already = true;
+            };
+
+            let TestEntry {
+                entry: test_entry,
+                subtests: subtest_entries,
+            } = if let Some(cts_path) = cts_path(&test_entry_path) {
+                let entry = entries_by_cts_path.entry(cts_path).or_default();
+                if let Some(_old) = entry
+                    .metadata_path
+                    .replace(test_entry_path.clone().into_owned())
+                {
+                    dupe_err();
+                }
+                &mut entry.entry
+            } else {
+                other_entries_by_test
+                    .entry(test_entry_path.clone().into_owned())
+                    .or_default()
+            };
+
+            let test_entry_path = &test_entry_path;
+
+            if let Some(_old) = test_entry.meta_props.replace(properties) {
+                dupe_err();
+            }
+
+            for (SectionHeader(subtest_name), subtest) in subtests {
+                let Subtest { properties } = subtest;
+                let subtest_entry = subtest_entries.entry(subtest_name.clone()).or_default();
+                if let Some(_old) = subtest_entry.meta_props.replace(properties) {
+                    if !reported_dupe_already {
+                        freak_out_do_nothing(&format_args!(
+                            concat!(
+                                "duplicate subtest in {:?} named {:?}, ",
+                                "discarding previous entries with ",
+                                "this and further dupes"
+                            ),
+                            test_entry_path, subtest_name
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
     log::debug!("gathering reported test outcomes for reconciliation with metadata…");
 
     let (exec_reports_sender, exec_reports_receiver) = channel();
@@ -318,93 +405,6 @@ pub(crate) fn process_reports(
                     build_profile,
                     outcome,
                 );
-            }
-        }
-    }
-
-    log::debug!("loading metadata for comparison to reports…");
-    for (path, file) in meta_files_by_path {
-        let File { properties, tests } = file;
-
-        let file_rel_path = path.strip_prefix(checkout).unwrap();
-
-        file_props_by_file.insert(
-            Utf8PathBuf::from(file_rel_path.to_str().unwrap()),
-            properties,
-        );
-
-        for (SectionHeader(name), test) in tests {
-            let Test {
-                properties,
-                subtests,
-            } = test;
-
-            let test_entry_path =
-                match TestEntryPath::from_metadata_test(browser, file_rel_path, &name) {
-                    Ok(ok) => ok,
-                    Err(e) => {
-                        log::error!("{e}");
-                        return Err(AlreadyReportedToCommandline);
-                    }
-                };
-
-            let freak_out_do_nothing =
-                |what: &dyn Display| log::error!("hoo boy, not sure what to do yet: {what}");
-
-            let mut reported_dupe_already = false;
-            let mut dupe_err = || {
-                if !reported_dupe_already {
-                    freak_out_do_nothing(&format_args!(
-                        concat!(
-                            "duplicate entry for {:?}",
-                            "discarding previous entries with ",
-                            "this and further dupes"
-                        ),
-                        test_entry_path
-                    ))
-                }
-                reported_dupe_already = true;
-            };
-
-            let TestEntry {
-                entry: test_entry,
-                subtests: subtest_entries,
-            } = if let Some(cts_path) = cts_path(&test_entry_path) {
-                let entry = entries_by_cts_path.entry(cts_path).or_default();
-                if let Some(_old) = entry
-                    .metadata_path
-                    .replace(test_entry_path.clone().into_owned())
-                {
-                    dupe_err();
-                }
-                &mut entry.entry
-            } else {
-                other_entries_by_test
-                    .entry(test_entry_path.clone().into_owned())
-                    .or_default()
-            };
-
-            let test_entry_path = &test_entry_path;
-
-            if let Some(_old) = test_entry.meta_props.replace(properties) {
-                dupe_err();
-            }
-
-            for (SectionHeader(subtest_name), subtest) in subtests {
-                let Subtest { properties } = subtest;
-                let subtest_entry = subtest_entries.entry(subtest_name.clone()).or_default();
-                if let Some(_old) = subtest_entry.meta_props.replace(properties) {
-                    if !reported_dupe_already {
-                        freak_out_do_nothing(&format_args!(
-                            concat!(
-                                "duplicate subtest in {:?} named {:?}, ",
-                                "discarding previous entries with ",
-                                "this and further dupes"
-                            ),
-                            test_entry_path, subtest_name
-                        ));
-                    }
-                }
             }
         }
     }
@@ -582,7 +582,7 @@ pub(crate) fn process_reports(
                         },
                     ))
                 })
-                .collect::<IndexMap<_, _>>();
+                .collect::<BTreeMap<_, _>>();
 
             Some((test_entry_path, (properties, subtests)))
         },
