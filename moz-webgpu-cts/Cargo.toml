@@ -2,7 +2,7 @@
 name = "moz-webgpu-cts"
 authors.workspace = true
 description = "Tools to work with Web Platform Tests metadata for WebGPU CTS in Firefox"
-version = "2.0.4"
+version = "3.0.0"
 edition = "2021"
 repository = "https://github.com/ErichDonGubler/moz-webgpu-cts"
 license = "MIT or Apache-2.0"
@@ -40,7 +40,7 @@ thiserror = { workspace = true }
 wax = { version = "0.6.0", features = [
   "miette",
 ], git = "https://github.com/ErichDonGubler/wax", branch = "static-miette-diags" }
-whippit = { version = "0.6.2", path = "../whippit", default-features = false, features = [
+whippit = { version = "0.6.3", path = "../whippit", default-features = false, features = [
   "serde1",
 ] }
 

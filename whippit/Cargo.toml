@@ -2,7 +2,7 @@
 name = "whippit"
 authors.workspace = true
 description = "Parsers for Web Platform Tests reports and metadata"
-version = "0.6.2"
+version = "0.6.3"
 edition = "2021"
 repository = "https://github.com/ErichDonGubler/moz-webgpu-cts"
 license = "MIT or Apache-2.0"
