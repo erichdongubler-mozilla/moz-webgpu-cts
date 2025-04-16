@@ -10,8 +10,8 @@ use std::{
 
 use camino::Utf8PathBuf;
 use enumset::EnumSetType;
-use format::lazy_format;
 use indexmap::IndexMap;
+use lazy_format::lazy_format;
 use miette::{IntoDiagnostic, Report, WrapErr};
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 use whippit::metadata::SectionHeader;

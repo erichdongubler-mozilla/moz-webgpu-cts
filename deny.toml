@@ -1,5 +1,5 @@
 [licenses]
-allow = ["Apache-2.0", "ISC", "MIT", "Unicode-DFS-2016", "Zlib"]
+allow = ["Apache-2.0", "ISC", "MIT", "MPL-2.0", "Unicode-DFS-2016", "Zlib"]
 
 [sources]
 allow-git = [

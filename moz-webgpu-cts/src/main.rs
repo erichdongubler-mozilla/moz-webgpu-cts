@@ -35,10 +35,10 @@ use crate::wpt::path::Browser;
 use camino::Utf8PathBuf;
 use clap::{Parser, ValueEnum};
 use enumset::{EnumSet, EnumSetType};
-use format::lazy_format;
 use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
 use joinery::JoinableIterator;
+use lazy_format::{lazy_format, make_lazy_format};
 use miette::{miette, Diagnostic, IntoDiagnostic, NamedSource, Report, SourceSpan, WrapErr};
 use path_dsl::path;
 use process_reports::{
@@ -835,7 +835,7 @@ fn run(cli: Cli) -> ExitCode {
                 let tests_with_intermittent_failures = (show_zero_count_item
                     || num_tests_with_intermittent_failures_somewhere > 0
                     || num_subtests_with_intermittent_failures_somewhere > 0)
-                    .then_some(lazy_format!(|f| {
+                    .then_some(make_lazy_format!(|f| {
                         write!(
                             f,
                             concat!(
@@ -864,7 +864,7 @@ fn run(cli: Cli) -> ExitCode {
                 });
                 let tests_with_perma_timeouts_somewhere = (show_zero_count_item
                     || num_tests_with_perma_timeouts_somewhere > 0)
-                    .then_some(lazy_format!(|f| {
+                    .then_some(make_lazy_format!(|f| {
                         write!(
                             f,
                             concat!(
@@ -877,7 +877,7 @@ fn run(cli: Cli) -> ExitCode {
                     }));
                 let tests_with_intermittent_timeouts_somewhere = (show_zero_count_item
                     || num_tests_with_intermittent_timeouts_somewhere > 0)
-                    .then_some(lazy_format!(|f| {
+                    .then_some(make_lazy_format!(|f| {
                         write!(
                             f,
                             concat!(
@@ -894,7 +894,7 @@ fn run(cli: Cli) -> ExitCode {
                     items: [Option<&'a dyn Display>; SIZE],
                 ) -> Option<Box<dyn Display + 'a>> {
                     items.iter().any(Option::is_some).then(move || {
-                        Box::new(lazy_format!(move |f| {
+                        Box::new(make_lazy_format!(|f| {
                             let items = items
                                 .iter()
                                 .filter_map(|opt| *opt)
