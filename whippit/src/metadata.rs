@@ -25,7 +25,7 @@ use chumsky::{
     text::newline,
     IterParser, Parser,
 };
-use format::lazy_format;
+use lazy_format::make_lazy_format;
 
 use self::properties::{Properties, PropertiesParseHelper};
 
@@ -1204,7 +1204,7 @@ impl SectionHeader {
     pub fn escaped(&self) -> impl Display + '_ {
         let Self(inner) = self;
 
-        lazy_format!(|f| {
+        make_lazy_format!(|f| {
             let mut escaped_start = 0;
             for (idx, c) in inner.char_indices() {
                 // NOTE: keep in sync. with the escaping in `Self::parser`!

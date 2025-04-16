@@ -7,8 +7,8 @@ use std::{
 use clap::ValueEnum;
 use enum_map::Enum;
 use enumset::EnumSetType;
-use format::lazy_format;
 use joinery::JoinableIterator;
+use lazy_format::{lazy_format, make_lazy_format};
 use maybe_collapsed::MaybeCollapsed;
 use serde::{Deserialize, Serialize};
 use strum::EnumIter;
@@ -552,7 +552,7 @@ fn format_file_properties(props: &FileProps) -> impl Display + '_ {
         }
         Ok(())
     }
-    lazy_format!(|f| {
+    make_lazy_format!(|f| {
         let FileProps {
             implementation_status,
             disabled,
@@ -734,7 +734,7 @@ impl metadata::Subtest<'_> for Subtest {
 }
 
 pub fn format_file(file: &File) -> impl Display + '_ {
-    lazy_format!(|f| {
+    make_lazy_format!(|f| {
         let File { properties, tests } = file;
         let properties = format_file_properties(properties);
         let tests = tests
@@ -746,7 +746,7 @@ pub fn format_file(file: &File) -> impl Display + '_ {
 }
 
 fn format_test<'a>(name: &'a SectionHeader, test: &'a Test) -> impl Display + 'a {
-    lazy_format!(|f| {
+    make_lazy_format!(|f| {
         let Test {
             subtests,
             properties,
@@ -761,7 +761,7 @@ fn format_test<'a>(name: &'a SectionHeader, test: &'a Test) -> impl Display + 'a
                 .iter()
                 .map(|(name, subtest)| {
                     let Subtest { properties } = subtest;
-                    lazy_format!(move |f| write!(
+                    make_lazy_format!(|f| write!(
                         f,
                         "  [{}]\n{}",
                         name.escaped(),
@@ -777,8 +777,8 @@ fn format_test_properties<Out>(indentation: u8, property: &TestProps<Out>) -> im
 where
     Out: Default + Display + EnumSetType + Eq + PartialEq,
 {
-    lazy_format!(move |f| {
-        let indent = lazy_format!(move |f| write!(
+    make_lazy_format!(|f| {
+        let indent = make_lazy_format!(|f| write!(
             f,
             "{}",
             vec![""; usize::from(indentation) + 1]
@@ -843,7 +843,7 @@ where
                                 Platform::Linux => "linux",
                                 Platform::MacOs => "mac",
                             };
-                            lazy_format!(move |f| write!(f, "os == {platform_str:?}"))
+                            make_lazy_format!(|f| write!(f, "os == {platform_str:?}"))
                         };
                         match t {
                             MaybeCollapsed::Collapsed(t) => {

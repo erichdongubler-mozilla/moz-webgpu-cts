@@ -6,9 +6,9 @@ use std::{
 
 use camino::{Utf8Component, Utf8Path};
 use clap::ValueEnum;
-use format::lazy_format;
 use itertools::Itertools;
 use joinery::JoinableIterator;
+use lazy_format::make_lazy_format;
 use strum::{EnumIter, IntoEnumIterator};
 
 /// A browser supported by [crate::main], used for [`TestEntryPath`]s.
@@ -392,7 +392,7 @@ impl<'a> TestEntryPath<'a> {
         let base_name = path.file_name().unwrap();
         let file_extension = js_exec_scope.file_extension();
 
-        lazy_format!(move |f| {
+        make_lazy_format!(|f| {
             write!(f, "{base_name}{file_extension}")?;
             if let Some(variant) = variant {
                 write!(f, "{variant}")?;
@@ -411,7 +411,7 @@ impl<'a> TestEntryPath<'a> {
                 },
             test_entry: _,
         } = self;
-        lazy_format!(move |f| write!(
+        make_lazy_format!(|f| write!(
             f,
             "{}{}/{}",
             root_dir.url_prefix(),
@@ -441,7 +441,7 @@ impl<'a> TestEntryPath<'a> {
             .join_with(std::path::MAIN_SEPARATOR);
         let file_extension = r#type.file_extension();
 
-        lazy_format!(move |f| {
+        make_lazy_format!(|f| {
             write!(
                 f,
                 "{root_dir_dir}{}{path}{file_extension}.ini",

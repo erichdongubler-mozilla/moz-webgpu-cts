@@ -107,7 +107,7 @@ where
             f.debug_list()
                 .entries(
                     self.iter()
-                        .map(|out| format::Debug(move |f| write!(f, "{out}"))),
+                        .map(|out| lazy_format::make_lazy_format!(|f| write!(f, "{out}"))),
                 )
                 .finish()
         }
