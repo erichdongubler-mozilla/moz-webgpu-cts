@@ -105,10 +105,22 @@ where
             write!(f, "{perma}")
         } else {
             f.debug_list()
-                .entries(
-                    self.iter()
-                        .map(|out| lazy_format::make_lazy_format!(|f| write!(f, "{out}"))),
-                )
+                .entries({
+                    struct Debug<T>(T)
+                    where
+                        T: Fn(&mut Formatter<'_>) -> fmt::Result;
+
+                    impl<T> fmt::Debug for Debug<T>
+                    where
+                        T: Fn(&mut Formatter<'_>) -> fmt::Result,
+                    {
+                        fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+                            self.0(f)
+                        }
+                    }
+
+                    self.iter().map(|out| Debug(move |f| write!(f, "{out}")))
+                })
                 .finish()
         }
     }
