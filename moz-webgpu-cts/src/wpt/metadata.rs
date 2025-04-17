@@ -13,6 +13,7 @@ use maybe_collapsed::MaybeCollapsed;
 use serde::{Deserialize, Serialize};
 use strum::EnumIter;
 use whippit::{
+    keyword,
     metadata::{
         self, file_parser,
         properties::{
@@ -22,13 +23,14 @@ use whippit::{
         ParseError, SectionHeader,
     },
     reexport::chumsky::{
+        self,
         extra::ParserExtra,
         input::{Emitter, Input, SliceInput, StrInput},
         label::LabelError,
         prelude::Rich,
         primitive::{any, choice, end, group, just, one_of},
         span::SimpleSpan,
-        text::{ascii, inline_whitespace, keyword, newline, TextExpected},
+        text::{ascii, inline_whitespace, newline, TextExpected},
         IterParser, Parser,
     },
 };
@@ -1285,8 +1287,8 @@ impl Display for TestOutcome {
 impl TestOutcome {
     pub(crate) fn parser<'a, I, E>() -> impl Parser<'a, I, TestOutcome, E> + Clone
     where
-        I: Input<'a, Token = char> + SliceInput<'a> + StrInput<'a>,
-        I::Slice: PartialEq + PartialEq<&'a str>,
+        I: Input<'a, Token = char> + SliceInput<'a, Slice = &'a str> + StrInput<'a>,
+        I::Slice: PartialEq + PartialEq<&'a str> + chumsky::container::OrderedSeq<'a, char>,
         &'a str: PartialEq<I::Slice>,
         E: ParserExtra<'a, I>,
         E::Error: LabelError<'a, I, I::Slice>

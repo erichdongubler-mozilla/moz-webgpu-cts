@@ -11,11 +11,14 @@ use {
 use chumsky::{
     prelude::Rich,
     primitive::{any, end, group, just},
-    text::{ascii::keyword, newline},
+    text::newline,
     IterParser, Parser,
 };
 
-use crate::metadata::{indent, ParseError};
+use crate::{
+    keyword,
+    metadata::{indent, ParseError},
+};
 
 pub use self::expr::{Expr, Literal, Value};
 
@@ -28,18 +31,18 @@ where
     Pc: Parser<'a, &'a str, C, ParseError<'a>>,
     Pv: Parser<'a, &'a str, V, ParseError<'a>>,
 {
-    // group((indent(indentation), keyword("if"), just(' ')))
-    //     .ignore_then(
-    condition_parser
-        .nested_in(
-            any()
-                .and_is(newline().or(just(':').to(())).not())
-                .repeated()
-                .at_least(1)
-                .to_slice(),
+    group((indent(indentation), keyword("if"), just(' ')))
+        .ignore_then(
+            condition_parser
+                .nested_in(
+                    any()
+                        .and_is(newline().or(just(':').to(())).not())
+                        .repeated()
+                        .at_least(1)
+                        .to_slice(),
+                )
+                .map(|_| todo!()),
         )
-        .map(|_| todo!())
-        // )
         .then_ignore(group((just(':').to(()), just(' ').or_not().to(()))))
         .then(
             value_parser
