@@ -1,6 +1,7 @@
 use std::{
     io::{self, BufRead},
     ops::Range,
+    time::Duration,
 };
 
 use bstr::{BStr, ByteSlice};
@@ -68,7 +69,7 @@ where
                         source,
                     })?;
             Ok(LogLine {
-                _line_num: line_idx,
+                line_num: line_idx,
                 kind,
             })
         });
@@ -140,7 +141,7 @@ pub(super) enum LogLineReadErrorKind {
 
 #[derive(Clone, Debug)]
 pub(super) struct LogLine {
-    pub _line_num: u64,
+    pub line_num: u64,
     pub kind: LogLineKind,
 }
 
@@ -180,6 +181,7 @@ impl SuiteLogLineKind {
 #[derive(Clone, Debug)]
 #[cfg_attr(test, derive(Eq, PartialEq))]
 pub(super) struct LogLineSpans {
+    offset_from_start_of_line: usize,
     offset_in_buf: usize,
     length: usize,
 }
@@ -198,6 +200,11 @@ impl LogLineSpans {
     pub fn get_from<'a>(&self, s: &'a [u8]) -> &'a [u8] {
         s.get(self.buf_slice_idx()).unwrap()
     }
+
+    #[track_caller]
+    pub fn truncate_before_in(&self, s: &mut String) {
+        s.truncate(self.offset_in_buf)
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -210,11 +217,33 @@ pub(super) struct TestLogLine {
 #[derive(Clone, Debug)]
 #[cfg_attr(test, derive(Eq, PartialEq))]
 pub(super) enum TestLogLineKind {
-    Start { test_url_path: LogLineSpans },
+    Start {
+        test_url_path: LogLineSpans,
+    },
     Info,
     LeakCheck,
-    FinishTestExpected { _test_name: LogLineSpans },
-    FinishTestUnexpected,
+    FinishTestExpected {
+        test_name: LogLineSpans,
+        // outcome: TestOutcome,
+        // took: Duration,
+    },
+    FinishSubtest {
+        test_name: LogLineSpans,
+        subtest_name: LogLineSpans,
+        outcome: SubtestOutcome,
+    },
+    FinishTestUnexpected {
+        test_name: LogLineSpans,
+        // outcome: TestOutcome,
+        // expected_outcome: TestOutcome,
+    },
+    FinishTestWithSubtestsOk {
+        took: Duration,
+    },
+    TestUnexpectedTook {
+        expected_outcome: TestOutcome,
+        took: Duration,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -290,6 +319,29 @@ impl Outcome {
         .parse(input)
         .into_output()
     }
+
+    pub fn to_test_outcome(self) -> Option<TestOutcome> {
+        Some(match self {
+            Self::Pass => TestOutcome::Pass,
+            Self::Fail => TestOutcome::Fail,
+            Self::Skip => TestOutcome::Skip,
+            Self::Crash => TestOutcome::Crash,
+            Self::Timeout => TestOutcome::Timeout,
+            Self::Error => TestOutcome::Error,
+            Self::Ok => TestOutcome::Ok,
+            Self::NotRun => return None,
+        })
+    }
+
+    pub fn to_subtest_outcome(self) -> Option<SubtestOutcome> {
+        Some(match self {
+            Self::Pass => SubtestOutcome::Pass,
+            Self::Fail => SubtestOutcome::Fail,
+            Self::Timeout => SubtestOutcome::Timeout,
+            Self::NotRun => SubtestOutcome::NotRun,
+            Self::Crash | Self::Skip | Self::Error | Self::Ok => return None,
+        })
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -328,12 +380,17 @@ pub(super) enum ParseTestStartError {
 pub(super) enum ParseExpectedTestEndError {
     SectionDividerBwDiscriminantAndTestPath { span: LogLineSpans },
     TestPath { inner: TestPathParseError },
+    SectionDividerBwTestPathAndTook { span: LogLineSpans },
+    Took { inner: TookParseError },
 }
 
 #[derive(Clone, Debug)]
 #[cfg_attr(test, derive(Eq, PartialEq))]
 pub(super) enum ParseUnexpectedTestEndError {
     SectionDividerBwDiscriminantAndTestPath { span: LogLineSpans },
+    TestPath { inner: TestPathParseError },
+    SectionDividerBwTestPathAndExpected { span: LogLineSpans },
+    Expected { inner: ExpectedParseError },
 }
 
 #[derive(Clone, Debug)]
@@ -342,6 +399,25 @@ pub(super) struct TestPathParseError {
     pub discriminant_span: LogLineSpans,
     pub test_path_span: LogLineSpans,
     pub msg: String,
+}
+
+#[derive(Clone, Debug)]
+#[cfg_attr(test, derive(Eq, PartialEq))]
+pub(super) enum TookParseError {
+    ParseUnit {
+        expected_ms_span: LogLineSpans,
+    },
+    ParseMillis {
+        span: LogLineSpans,
+        source: std::num::ParseIntError,
+    },
+}
+
+#[derive(Clone, Debug)]
+#[cfg_attr(test, derive(Eq, PartialEq))]
+pub(super) enum ExpectedParseError {
+    ParseSentinel { span: LogLineSpans },
+    ParseOutcome { span: LogLineSpans },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
@@ -542,6 +618,7 @@ fn classify_log_line_inner(
     let mut save_span = |simple_span: SimpleSpan| {
         **should_save_spans = true;
         LogLineSpans {
+            offset_from_start_of_line: simple_span.start,
             offset_in_buf: slice_start + simple_span.start,
             length: simple_span.end - simple_span.start,
         }
@@ -681,7 +758,7 @@ fn classify_log_line_inner(
 
                 test(TestLogLineKind::Info)
             }
-            Some(TestLogLineDiscriminant::Expected(_outcome)) => {
+            Some(TestLogLineDiscriminant::Expected(outcome)) => {
                 let (rest, rest_span) = match section_divider!(
                     rest,
                     rest_span,
@@ -708,7 +785,7 @@ fn classify_log_line_inner(
                         rest_span.start + span.end,
                     )
                 });
-                let [(test_path, test_path_span), (_took_section, _took_span)] = {
+                let [(test_path, test_path_span), (took_section, took_span)] = {
                     let res = any::<_, Full<Simple<_>, &BStr, ()>>()
                         .and_is(mozlog_test_message_section_divider().not())
                         .repeated()
@@ -766,11 +843,58 @@ fn classify_log_line_inner(
                     break 'kind None;
                 }
 
+                // let took_section = took_section.map_span(|span| {
+                //     SimpleSpan::new(
+                //         took_span.start + span.start,
+                //         took_span.start + span.end,
+                //     )
+                // });
+
+                // let took = {
+                //     let took_res = digits::<_, _, Full<EmptyErr, &str, ()>>(10)
+                //         .to_slice()
+                //         .map_with(|millis, e| (millis, e.span()))
+                //         .delimited_by(just("took "), just("ms"))
+                //         .parse(took_section)
+                //         .into_result()
+                //         .map_err(|_e| TookParseError::ParseUnit {
+                //             expected_ms_span: save_span(took_span),
+                //         })
+                //         .and_then(|(millis, millis_span)| {
+                //             millis.parse().map(Duration::from_millis).map_err(
+                //                 |source| TookParseError::ParseMillis {
+                //                     span: save_span(millis_span),
+                //                     source,
+                //                 },
+                //             )
+                //         })
+                //         .map_err(|inner| {
+                //             RecognizedLogLineParseErrorKind::ExpectedTestEnd(
+                //                 ParseExpectedTestEndError::Took { inner },
+                //             )
+                //         });
+                //     match took_res {
+                //         Ok(some) => some,
+                //         Err(e) => {
+                //             unrecoverable_err_sink(e);
+                //             break 'kind None;
+                //         }
+                //     }
+                // };
+
+                // let outcome = match outcome.to_test_outcome() {
+                //     Some(some) => some,
+                //     None => todo!("bruh IDK what to do with {outcome:?} yet"),
+                // };
+
                 test(TestLogLineKind::FinishTestExpected {
-                    _test_name: save_span(test_path_span),
-                })
+                        test_name: save_span(test_path_span),
+                        // outcome,
+                        // took,
+                    }
+                )
             }
-            Some(TestLogLineDiscriminant::Unexpected(_outcome)) => {
+            Some(TestLogLineDiscriminant::Unexpected(outcome)) => {
                 let (rest, rest_span) = match section_divider!(
                     rest,
                     rest_span,
@@ -800,7 +924,7 @@ fn classify_log_line_inner(
                 });
                 let [
                     (test_path, test_path_span),
-                    (_expected_section, _expected_span)
+                    (expected_section, expected_span)
                 ] = {
                     let res = any::<_, Full<Simple<u8>, &BStr, ()>>()
                         .and_is(mozlog_test_message_section_divider().not())
@@ -859,7 +983,60 @@ fn classify_log_line_inner(
                     break 'kind None;
                 }
 
-                test(TestLogLineKind::FinishTestUnexpected)
+                // let expected_section = expected_section.map_span(|span| {
+                //     SimpleSpan::new(
+                //         expected_span.start + span.start,
+                //         expected_span.start + span.end,
+                //     )
+                // });
+                //
+                // let expected_outcome = {
+                //     let expected_res = just::<'_, _, _, Full<EmptyErr, &str, ()>> ("expected ")
+                //         .ignore_then(
+                //             any().repeated().to_slice()
+                //         .map_with(|outcome, e| (outcome, e.span()))
+                //
+                //             )
+                //         .parse(expected_section)
+                //         .into_result()
+                //         .map_err(|_e| ExpectedParseError::ParseSentinel{
+                //             span: save_span(expected_span),
+                //         } )
+                //         .and_then(|(outcome, outcome_span)| {
+                //             TestOutcome::parser::<'_, _, Full<EmptyErr, &str, ()>>().parse(outcome).into_result()
+                //             .map_err(|mut e| {
+                //                 assert!(e.len() == 1);
+                //                 e.pop().unwrap()
+                //             })
+                //             .map_err(|_e| ExpectedParseError::ParseOutcome
+                //                 { span: save_span(outcome_span) })
+                //         })
+                //         .map_err(|inner|
+                //             ParseUnexpectedTestEndError::Expected { inner  }
+                //         )
+                //         .map_err(
+                //             RecognizedLogLineParseErrorKind::UnexpectedTestEnd
+                //         )
+                //         ;
+                //     match expected_res {
+                //         Ok(some) => some,
+                //         Err(e) => {
+                //             unrecoverable_err_sink(e);
+                //             break 'kind None;
+                //         }
+                //     }
+                // };
+
+                // let outcome = match outcome.to_test_outcome() {
+                //     Some(some) => some,
+                //     None => todo!("bruh IDK what to do with {outcome:?} yet"),
+                // };
+
+                test(TestLogLineKind::FinishTestUnexpected {
+                    test_name: save_span(test_path_span),
+                    // outcome,
+                    // expected_outcome,
+                })
             }
             None => {
                 unrecoverable_err_sink(
@@ -919,6 +1096,7 @@ fn classify_good_lines() {
             timestamp: DateTime::parse_from_rfc3339("2024-08-02T22:11:54.874Z").unwrap(),
             kind: TestLogLineKind::Start {
                 test_url_path: LogLineSpans {
+                    offset_from_start_of_line: 65,
                     offset_in_buf: 65,
                     length: 124,
                 }
@@ -933,7 +1111,8 @@ fn classify_good_lines() {
         LogLineKind::Test(TestLogLine {
             timestamp: DateTime::parse_from_rfc3339("2024-08-02T22:17:15.803Z").unwrap(),
             kind: TestLogLineKind::FinishTestExpected {
-                _test_name: LogLineSpans {
+                test_name: LogLineSpans {
+                    offset_from_start_of_line: 62,
                     offset_in_buf: 62,
                     length: 170,
                 },
@@ -971,6 +1150,7 @@ fn classify_bad_lines() {
             kind: RecognizedLogLineParseErrorKind::UnrecognizedDiscriminant {
                 discriminant_kind: SuiteOrTest::Test,
                 span: LogLineSpans {
+                    offset_from_start_of_line: 57,
                     offset_in_buf: 57,
                     length: 4,
                 }
@@ -988,10 +1168,12 @@ fn classify_bad_lines() {
             kind: RecognizedLogLineParseErrorKind::TestStart(ParseTestStartError::ParseTestPath {
                 inner: TestPathParseError {
                     discriminant_span: LogLineSpans {
+                        offset_from_start_of_line: 57,
                         offset_in_buf: 57,
                         length: 5,
                     },
                     test_path_span: LogLineSpans {
+                        offset_from_start_of_line: 65,
                         offset_in_buf: 65,
                         length: 25,
                     },

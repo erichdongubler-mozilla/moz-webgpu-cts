@@ -3,7 +3,7 @@ mod log_line_reader;
 use std::{
     collections::BTreeMap,
     fs::File,
-    io::{stdout, BufReader},
+    io::{self, stdout, BufReader},
     path::{Path, PathBuf},
     time::Duration,
 };
@@ -13,10 +13,10 @@ use bstr::{BStr, ByteSlice as _};
 use chrono::{DateTime, FixedOffset};
 use lazy_format::lazy_format;
 use log_line_reader::{
-    LogLine, LogLineKind, LogLineReader, LogLineSpans, ParseExpectedTestEndError,
-    ParseTestStartError, ParseUnexpectedTestEndError, RecognizedLogLineParseError,
-    RecognizedLogLineParseErrorKind, SuiteLogLine, SuiteLogLineKind, TestLogLine, TestLogLineKind,
-    TestPathParseError,
+    ExpectedParseError, LogLine, LogLineKind, LogLineReader, LogLineSpans,
+    ParseExpectedTestEndError, ParseTestStartError, ParseUnexpectedTestEndError,
+    RecognizedLogLineParseError, RecognizedLogLineParseErrorKind, SuiteLogLine, SuiteLogLineKind,
+    TestLogLine, TestLogLineKind, TestPathParseError, TookParseError,
 };
 use miette::{diagnostic, LabeledSpan, Report, SourceSpan};
 
@@ -95,9 +95,20 @@ fn process_log(
         WaitingForSuiteStart,
         SuiteStarted,
         TestStarted {
-            _timestamp: DateTime<FixedOffset>,
-            _test_url_path: &'a TestEntryPath<'static>,
+            timestamp: DateTime<FixedOffset>,
+            test_url_path: &'a TestEntryPath<'static>,
         },
+    }
+
+    struct Expected<T> {
+        line_num: u64,
+        inner: T,
+    }
+
+    impl<T> Expected<T> {
+        pub fn into_inner(self) -> T {
+            self.inner
+        }
     }
 
     struct Unexpected {}
@@ -106,7 +117,7 @@ fn process_log(
         state: &TestLogParserState,
         mut next_line: N,
         f: F,
-    ) -> Result<T, AlreadyReportedToCommandline>
+    ) -> Result<Expected<T>, AlreadyReportedToCommandline>
     where
         N: FnMut() -> Option<Result<LogLine, AlreadyReportedToCommandline>>,
         F: FnOnce(&LogLineKind) -> Result<T, Unexpected>,
@@ -114,9 +125,9 @@ fn process_log(
         match next_line() {
             Some(line) => {
                 let line = line?;
-                let LogLine { _line_num: _, kind } = &line;
+                let &LogLine { line_num, ref kind } = &line;
                 match f(kind) {
-                    Ok(ok) => Ok(ok),
+                    Ok(inner) => Ok(Expected { line_num, inner }),
                     Err(Unexpected {}) => {
                         // TODO: diagnostic render plz
                         log::error!("was in state {state:?} and got unexpected {line:?}");
@@ -163,7 +174,8 @@ fn process_log(
                 LogLineKind::Other => Ok(false),
                 _ => Err(Unexpected {}),
             },
-        )?;
+        )?
+        .into_inner();
 
         if found_suite_start {
             break;
@@ -184,7 +196,8 @@ fn process_log(
                 LogLineKind::Other => Ok(None),
                 _ => Err(Unexpected {}),
             },
-        )?;
+        )?
+        .into_inner();
 
         if let Some((timestamp, inner)) = inner {
             started_test_url_path = extract_test_url_path(&inner, buf)?;
@@ -207,8 +220,8 @@ fn process_log(
         }
         let line_after_test_start = expect_line(
             &TestLogParserState::TestStarted {
-                _timestamp: started_test_timestamp,
-                _test_url_path: &started_test_url_path,
+                timestamp: started_test_timestamp,
+                test_url_path: &started_test_url_path,
             },
             || next_line(buf),
             |kind| match kind {
@@ -235,11 +248,15 @@ fn process_log(
                     TestLogLineKind::LeakCheck
                     | TestLogLineKind::Info
                     | TestLogLineKind::FinishTestExpected { .. }
-                    | TestLogLineKind::FinishTestUnexpected => Ok(LineAfterTestStart::Ignore),
+                    | TestLogLineKind::FinishSubtest { .. }
+                    | TestLogLineKind::FinishTestUnexpected { .. }
+                    | TestLogLineKind::FinishTestWithSubtestsOk { .. }
+                    | TestLogLineKind::TestUnexpectedTook { .. } => Ok(LineAfterTestStart::Ignore),
                 },
                 LogLineKind::Other => Ok(LineAfterTestStart::Ignore),
             },
-        )?;
+        )?
+        .into_inner();
 
         let mut add_test_entry = |path, timestamp: DateTime<FixedOffset>| {
             log_path_entry.insert(
@@ -299,7 +316,7 @@ fn render_test_log_line_err(log_path: &Path, buf: &BStr, e: RecognizedLogLinePar
         ]
     };
     let section_divider_bw = |span, after_what, before_what| {
-        diagnostic!(
+        miette::diagnostic!(
             labels = vec![LabeledSpan::new_primary_with_span(None, span)],
             "{}expected a `mozlog` section divider (` | `) after {} and before {}",
             log_and_line_prepend,
@@ -309,7 +326,7 @@ fn render_test_log_line_err(log_path: &Path, buf: &BStr, e: RecognizedLogLinePar
     };
     let diagnostic = match kind {
         RecognizedLogLineParseErrorKind::Timestamp { source, span } => {
-            diagnostic!(
+            miette::diagnostic!(
                 labels = vec![LabeledSpan::new_primary_with_span(None, span)],
                 "{log_and_line_prepend}{source}"
             )
@@ -319,7 +336,7 @@ fn render_test_log_line_err(log_path: &Path, buf: &BStr, e: RecognizedLogLinePar
             span,
         } => {
             let discriminant = span.get_from(buf);
-            diagnostic!(
+            miette::diagnostic!(
                 labels = vec![LabeledSpan::new_primary_with_span(None, span)],
                 "{log_and_line_prepend}unrecognized discriminant {:?} for discriminant {:?}",
                 discriminant,
@@ -330,7 +347,7 @@ fn render_test_log_line_err(log_path: &Path, buf: &BStr, e: RecognizedLogLinePar
             ParseTestStartError::SectionDividerBwDiscriminantAndTestPath { span } => {
                 section_divider_bw(span, "`TEST-START`", "test path")
             }
-            ParseTestStartError::ParseTestPath { inner } => diagnostic!(
+            ParseTestStartError::ParseTestPath { inner } => miette::diagnostic!(
                 labels = test_path_parse_labels(inner),
                 "{log_and_line_prepend}failed to parse `START`ed test path"
             ),
@@ -348,15 +365,58 @@ fn render_test_log_line_err(log_path: &Path, buf: &BStr, e: RecognizedLogLinePar
             ParseExpectedTestEndError::SectionDividerBwDiscriminantAndTestPath { span } => {
                 section_divider_bw(span, "`TEST-*`", "test path")
             }
-            ParseExpectedTestEndError::TestPath { inner } => diagnostic!(
+            ParseExpectedTestEndError::TestPath { inner } => miette::diagnostic!(
                 labels = test_path_parse_labels(inner),
                 "{log_and_line_prepend}failed to parse test path"
             ),
+            ParseExpectedTestEndError::SectionDividerBwTestPathAndTook { span } => {
+                section_divider_bw(span, "test path", "duration")
+            }
+            ParseExpectedTestEndError::Took { inner } => {
+                let log_and_line_prepend = lazy_format!("{log_and_line_prepend}`took` duration ");
+                match inner {
+                    TookParseError::ParseMillis { span, source } => miette::diagnostic!(
+                        labels = vec![LabeledSpan::new_primary_with_span(
+                            Some(source.to_string()),
+                            span
+                        )],
+                        "{log_and_line_prepend}had invalid milliseconds count"
+                    ),
+                    TookParseError::ParseUnit { expected_ms_span } => miette::diagnostic!(
+                        labels = vec![LabeledSpan::new_primary_with_span(
+                            Some("expected here".to_owned()),
+                            expected_ms_span
+                        )],
+                        "{log_and_line_prepend}expected section of the form `took <count>ms`"
+                    ),
+                }
+            }
         },
         RecognizedLogLineParseErrorKind::UnexpectedTestEnd(e) => match e {
             ParseUnexpectedTestEndError::SectionDividerBwDiscriminantAndTestPath { span } => {
                 section_divider_bw(span, "TEST-UNEXPECTED-<outcome>", "test path")
             }
+            ParseUnexpectedTestEndError::TestPath { inner } => miette::diagnostic!(
+                labels = test_path_parse_labels(inner),
+                // TODO: How does this look?
+                "{log_and_line_prepend}failed to parse `UNEXPECTED` test path"
+            ),
+            ParseUnexpectedTestEndError::SectionDividerBwTestPathAndExpected { span } => {
+                section_divider_bw(span, "test path", "expected outcome")
+            }
+            ParseUnexpectedTestEndError::Expected { inner } => match inner {
+                ExpectedParseError::ParseSentinel { span } => miette::diagnostic!(
+                    labels = vec![LabeledSpan::new_primary_with_span(None, span)],
+                    "{log_and_line_prepend}expected section of the form `expected <outcome>`"
+                ),
+                ExpectedParseError::ParseOutcome { span } => miette::diagnostic!(
+                    labels = vec![LabeledSpan::new_primary_with_span(
+                        Some("not a known test outcome".to_owned()),
+                        span
+                    )],
+                    "{log_and_line_prepend}failed to parse expected outcome"
+                ),
+            },
         },
     }
     .with_help(concat!(
