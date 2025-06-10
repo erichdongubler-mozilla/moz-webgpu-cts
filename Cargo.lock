@@ -1257,6 +1257,7 @@ dependencies = [
 name = "whippit-lsp"
 version = "0.1.0"
 dependencies = [
+ "log",
  "lsp-server",
  "lsp-types",
  "serde_json",
