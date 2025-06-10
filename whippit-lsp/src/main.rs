@@ -2,9 +2,12 @@ use std::{error::Error, fs, io};
 
 use lsp_server::{Connection, Message, Response};
 use lsp_types::{
-    DocumentFormattingParams, FormattingOptions, InitializeParams, OneOf, Position,
-    ServerCapabilities, TextDocumentIdentifier, TextEdit, WorkDoneProgressParams,
-    request::{Formatting, Request as _},
+    DocumentFormattingParams, FormattingOptions, InitializeParams, OneOf, PartialResultParams,
+    Position, SemanticToken, SemanticTokenModifier, SemanticTokenType, SemanticTokens,
+    SemanticTokensFullOptions, SemanticTokensLegend, SemanticTokensOptions, SemanticTokensParams,
+    SemanticTokensResult, SemanticTokensServerCapabilities, ServerCapabilities,
+    TextDocumentIdentifier, TextEdit, WorkDoneProgressParams,
+    request::{Formatting, Request as _, SemanticTokensFullRequest},
 };
 use tracing::level_filters::LevelFilter;
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt as _, util::SubscriberInitExt as _};
@@ -33,6 +36,26 @@ fn main() -> Result<(), Box<dyn Error + Sync + Send>> {
 
         let server_capabilities = serde_json::to_value(&ServerCapabilities {
             document_formatting_provider: Some(OneOf::Left(true)),
+            semantic_tokens_provider: Some(
+                SemanticTokensServerCapabilities::SemanticTokensOptions(SemanticTokensOptions {
+                    legend: SemanticTokensLegend {
+                        token_types: vec![
+                            SemanticTokenType::TYPE,
+                            SemanticTokenType::PROPERTY,
+                            SemanticTokenType::COMMENT,
+                            SemanticTokenType::STRING,
+                            SemanticTokenType::NUMBER,
+                            SemanticTokenType::VARIABLE,
+                            SemanticTokenType::OPERATOR,
+                            SemanticTokenType::ENUM_MEMBER,
+                            SemanticTokenType::KEYWORD,
+                        ],
+                        token_modifiers: vec![SemanticTokenModifier::DECLARATION],
+                    },
+                    full: Some(SemanticTokensFullOptions::Bool(true)),
+                    ..Default::default()
+                }),
+            ),
             ..Default::default()
         })
         .unwrap();
@@ -129,6 +152,119 @@ fn main_loop(
                                     new_text: file_contents,
                                 }])
                             });
+
+                        let _ = connection
+                            .sender
+                            .send(Message::Response(Response::new_ok(id, response)));
+                    }
+                    SemanticTokensFullRequest::METHOD => {
+                        let (id, params) = req.extract(SemanticTokensFullRequest::METHOD).unwrap();
+                        let SemanticTokensParams {
+                            work_done_progress_params,
+                            partial_result_params,
+                            text_document,
+                        } = params;
+
+                        let WorkDoneProgressParams { work_done_token } = work_done_progress_params;
+                        assert!(work_done_token.is_none());
+
+                        let PartialResultParams {
+                            partial_result_token,
+                        } = partial_result_params;
+                        assert!(partial_result_token.is_none());
+
+                        let TextDocumentIdentifier { uri } = text_document;
+
+                        // TODO: Break this logic out into its own file!
+                        let response = if uri.scheme().is_some_and(|s| s.eq_lowercase("file")) {
+                            let path = uri.path();
+                            // // TODO: don't `unwrap` this plz
+                            // let file_contents = fs::read_to_string(&path).unwrap();
+
+                            log::warn!(
+                                "got a request, but I'm sending junk instead: {}",
+                                uri.as_str()
+                            );
+                            let data = vec![
+                                SemanticToken {
+                                    delta_line: 0,
+                                    delta_start: 0,
+                                    length: 130,
+                                    token_type: 0,
+                                    token_modifiers_bitset: 1,
+                                },
+                                SemanticToken {
+                                    delta_line: 1,
+                                    delta_start: 2,
+                                    length: 4,
+                                    token_type: 1,
+                                    token_modifiers_bitset: 0,
+                                },
+                                SemanticToken {
+                                    delta_line: 0,
+                                    delta_start: 4 + 3,
+                                    length: 6,
+                                    token_type: 3,
+                                    token_modifiers_bitset: 0,
+                                },
+                                SemanticToken {
+                                    delta_line: 0,
+                                    delta_start: 6 + 2,
+                                    length: 11,
+                                    token_type: 3,
+                                    token_modifiers_bitset: 0,
+                                },
+                                SemanticToken {
+                                    delta_line: 1,
+                                    delta_start: 2,
+                                    length: 21,
+                                    token_type: 1,
+                                    token_modifiers_bitset: 0,
+                                },
+                                SemanticToken {
+                                    delta_line: 1,
+                                    delta_start: 4,
+                                    length: 2,
+                                    token_type: 8,
+                                    token_modifiers_bitset: 0,
+                                },
+                                SemanticToken {
+                                    delta_line: 0,
+                                    delta_start: 2 + 1,
+                                    length: 2,
+                                    token_type: 5,
+                                    token_modifiers_bitset: 0,
+                                },
+                                SemanticToken {
+                                    delta_line: 0,
+                                    delta_start: 2 + 1,
+                                    length: 2,
+                                    token_type: 6,
+                                    token_modifiers_bitset: 0,
+                                },
+                                SemanticToken {
+                                    delta_line: 0,
+                                    delta_start: 2 + 1,
+                                    length: 5,
+                                    token_type: 3,
+                                    token_modifiers_bitset: 0,
+                                },
+                                SemanticToken {
+                                    delta_line: 0,
+                                    delta_start: 5 + 2,
+                                    length: 7,
+                                    token_type: 7,
+                                    token_modifiers_bitset: 0,
+                                },
+                            ];
+
+                            Some(SemanticTokensResult::Tokens(SemanticTokens {
+                                data,
+                                ..Default::default()
+                            }))
+                        } else {
+                            None
+                        };
 
                         let _ = connection
                             .sender
