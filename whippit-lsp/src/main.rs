@@ -1,9 +1,14 @@
-use std::{error::Error, io};
+use std::{error::Error, fs, io};
 
-use lsp_server::{Connection, Message};
-use lsp_types::{InitializeParams, ServerCapabilities};
+use lsp_server::{Connection, Message, Response};
+use lsp_types::{
+    DocumentFormattingParams, FormattingOptions, InitializeParams, OneOf, Position,
+    ServerCapabilities, TextDocumentIdentifier, TextEdit, WorkDoneProgressParams,
+    request::{Formatting, Request as _},
+};
 use tracing::level_filters::LevelFilter;
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt as _, util::SubscriberInitExt as _};
+use whippit::{metadata::properties::unstructured::UnstructuredFile, reexport::chumsky::Parser};
 
 fn main() -> Result<(), Box<dyn Error + Sync + Send>> {
     tracing_subscriber::registry()
@@ -27,6 +32,7 @@ fn main() -> Result<(), Box<dyn Error + Sync + Send>> {
         tracing::trace!("generating server capabilities…");
 
         let server_capabilities = serde_json::to_value(&ServerCapabilities {
+            document_formatting_provider: Some(OneOf::Left(true)),
             ..Default::default()
         })
         .unwrap();
@@ -73,8 +79,61 @@ fn main_loop(
                     return Ok(());
                 }
                 tracing::trace!("got request: {req:?}");
-                #[expect(clippy::match_single_binding)]
                 match &*req.method {
+                    Formatting::METHOD => {
+                        let (id, params) = req.extract(Formatting::METHOD).unwrap();
+
+                        let DocumentFormattingParams {
+                            text_document,
+                            options,
+                            work_done_progress_params,
+                        } = params;
+
+                        let TextDocumentIdentifier { uri } = text_document;
+
+                        let FormattingOptions { .. } = options;
+                        // TODO: validate that options match what we'll impose, otherwise warn.
+
+                        let WorkDoneProgressParams { work_done_token } = work_done_progress_params;
+                        assert!(work_done_token.is_none());
+
+                        // TODO: Break this logic out into its own file!
+                        let response = uri
+                            .scheme()
+                            .is_some_and(|s| s.eq_lowercase("file"))
+                            .then(|| uri.path())
+                            .and_then(|path| {
+                                // TODO: don't `unwrap` this plz
+                                let file_contents = fs::read_to_string(path.as_str()).unwrap();
+                                let file = dbg!(
+                                    whippit::metadata::file_parser::<'_, UnstructuredFile<'_>>()
+                                        .parse(&file_contents)
+                                )
+                                .into_output()?;
+                                let file_contents =
+                                    whippit::metadata::properties::unstructured::format(&file)
+                                        .to_string();
+                                Some(vec![TextEdit {
+                                    range: lsp_types::Range {
+                                        start: Position {
+                                            line: 0,
+                                            character: 0,
+                                        },
+                                        // TODO: Is this okay? Do we actually need to compute the end
+                                        // indices?
+                                        end: Position {
+                                            line: u32::MAX,
+                                            character: u32::MAX,
+                                        },
+                                    },
+                                    new_text: file_contents,
+                                }])
+                            });
+
+                        let _ = connection
+                            .sender
+                            .send(Message::Response(Response::new_ok(id, response)));
+                    }
                     _ => {
                         panic!("bruh IDK what this is: {req:?}")
                     }
