@@ -1262,6 +1262,7 @@ dependencies = [
  "serde_json",
  "tracing",
  "tracing-subscriber",
+ "whippit",
 ]
 
 [[package]]
