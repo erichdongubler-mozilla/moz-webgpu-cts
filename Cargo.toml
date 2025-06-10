@@ -1,5 +1,5 @@
 [workspace]
-members = ["moz-webgpu-cts", "whippit"]
+members = ["moz-webgpu-cts", "whippit", "whippit-lsp"]
 resolver = "2"
 
 [workspace.dependencies]
