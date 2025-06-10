@@ -1,9 +1,15 @@
 #![cfg(any(test, feature = "unstructured-properties"))]
 
+use std::fmt::{Display, Formatter};
+
 use chumsky::{input::Emitter, prelude::Rich, span::SimpleSpan, text::ascii::ident, Boxed, Parser};
 use indexmap::IndexMap;
+use lazy_format::make_lazy_format;
 
-use crate::metadata::{File, ParseError, SectionHeader, Subtest, Subtests, Test, Tests};
+use crate::metadata::{
+    properties::{ConditionalValue, Expr, Literal, Value},
+    File, ParseError, SectionHeader, Subtest, Subtests, Test, Tests,
+};
 
 use super::{
     conditional::{self, unstructured_value},
@@ -20,6 +26,68 @@ impl<'a> UnstructuredFile<'a> {
     pub fn parser() -> impl Parser<'a, &'a str, UnstructuredFile<'a>, ParseError<'a>> {
         crate::metadata::file_parser()
     }
+}
+
+pub fn format<'a>(file: &'a UnstructuredFile<'_>) -> impl Display + 'a {
+    make_lazy_format!(|f| {
+        let UnstructuredFile { properties, tests } = file;
+
+        for (key, val) in properties {
+            write!(f, "{key}:")?;
+            match val {
+                PropertyValue::Unconditional(val) => write!(f, " {val}")?,
+                PropertyValue::Conditional(val) => {
+                    let ConditionalValue {
+                        conditions,
+                        fallback,
+                    } = val;
+
+                    let write_val = |f: &mut Formatter<'_>, val: &_| match val {
+                        Value::Variable(name) => f.write_str(name),
+                        Value::Literal(val) => match val {
+                            Literal::String(val) => write!(f, "\"{val}\""),
+                        },
+                    };
+
+                    for (condition, val) in conditions {
+                        f.write_str("  if ")?;
+                        match condition {
+                            Expr::Value(val) => write_val(f, val)?,
+                            Expr::And(lhs, rhs) => match (&**lhs, &**rhs) {
+                                (Expr::Value(lhs), Expr::Value(rhs)) => {
+                                    write_val(f, lhs)?;
+                                    f.write_str(" and ")?;
+                                    write_val(f, rhs)?;
+                                }
+                                _ => todo!("the rest of the owl"),
+                            },
+                            Expr::Not(expr) => {
+                                f.write_str("not ")?;
+                                match &**expr {
+                                    Expr::Value(val) => write_val(f, val)?,
+                                    _ => todo!("the rest of the owl"),
+                                }
+                            }
+                            Expr::Eq(lhs, rhs) => match (&**lhs, &**rhs) {
+                                (Expr::Value(lhs), Expr::Value(rhs)) => {
+                                    write_val(f, lhs)?;
+                                    f.write_str(" == ")?;
+                                    write_val(f, rhs)?;
+                                }
+                                _ => todo!("the rest of the owl"),
+                            },
+                        }
+                        writeln!(f, ": {val}")?;
+                    }
+                    if let Some(val) = fallback {
+                        writeln!(f, "  {val}")?;
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    })
 }
 
 impl<'a> File<'a> for UnstructuredFile<'a> {
