@@ -939,7 +939,6 @@ fn run(cli: Cli) -> ExitCode {
                 let sections = sections.iter().filter_map(Option::as_ref).join_with("");
                 println!("{platform:?}:{sections}")
             });
-            println!("Full analysis: {analysis:#?}");
             ExitCode::SUCCESS
         }
         Subcommand::UpdateBacklog {
