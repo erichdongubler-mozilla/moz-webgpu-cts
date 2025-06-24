@@ -138,7 +138,7 @@ impl<'a> Properties<'a> for UnstructuredProperties<'a> {
         if self.insert(key, value).is_some() {
             emitter.emit(Rich::custom(
                 key_span,
-                format!("duplicate {:?} property", key),
+                format!("duplicate {key:?} property"),
             ));
         }
     }
