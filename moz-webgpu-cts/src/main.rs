@@ -529,11 +529,11 @@ fn run(cli: Cli) -> ExitCode {
                 }
             }
 
-            let test_count = u64::try_from(tests_by_name.len()).unwrap();
-            let subtest_count = tests_by_name
+            let test_count = tests_by_name.len();
+            let subtest_count: usize = tests_by_name
                 .values()
-                .map(|test| u64::try_from(test.inner.subtests.len()).unwrap())
-                .sum::<u64>();
+                .map(|test| test.inner.subtests.len())
+                .sum();
             let mut analysis = Analysis::default();
 
             for (test_name, test) in tests_by_name {
