@@ -17,6 +17,7 @@ use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 use whippit::metadata::SectionHeader;
 
 use crate::{
+    metadata::ImplementationStatus,
     report::{
         ExecutionReport, RunInfo, SubtestExecutionResult, TestExecutionEntry, TestExecutionResult,
     },
@@ -456,10 +457,6 @@ pub(crate) fn process_reports(
                 subtests: subtest_entries,
             } = test_entry;
 
-            if properties.is_none() {
-                log::info!("new test entry: {test_entry_path:?}")
-            }
-
             if test_reported.is_empty() {
                 let test_entry_path = &test_entry_path;
                 let msg = lazy_format!("no entries found in reports for {:?}", test_entry_path);
@@ -477,7 +474,15 @@ pub(crate) fn process_reports(
                 }
             }
 
-            let mut properties = properties.unwrap_or_default();
+            let mut properties = properties.unwrap_or_else(|| {
+                log::info!("new test entry: {test_entry_path:?}");
+                TestProps {
+                    implementation_status: Some(ExpandedPropertyValue::unconditional(
+                        ImplementationStatus::Backlog,
+                    )),
+                    ..Default::default()
+                }
+            });
 
             let skip = TestOutcome::Skip;
             for (platform, build_profile, reported) in
