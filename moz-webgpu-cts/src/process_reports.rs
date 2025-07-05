@@ -17,6 +17,7 @@ use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 use whippit::metadata::SectionHeader;
 
 use crate::{
+    metadata::ImplementationStatus,
     report::{
         ExecutionReport, RunInfo, SubtestExecutionResult, TestExecutionEntry, TestExecutionResult,
     },
@@ -475,7 +476,12 @@ pub(crate) fn process_reports(
 
             let mut properties = properties.unwrap_or_else(|| {
                 log::info!("new test entry: {test_entry_path:?}");
-                Default::default()
+                TestProps {
+                    implementation_status: Some(ExpandedPropertyValue::unconditional(
+                        ImplementationStatus::Backlog,
+                    )),
+                    ..Default::default()
+                }
             });
 
             let skip = TestOutcome::Skip;
