@@ -11,7 +11,7 @@ use std::{
 use camino::Utf8PathBuf;
 use enumset::EnumSetType;
 use indexmap::IndexMap;
-use lazy_format::lazy_format;
+use lazy_format::make_lazy_format;
 use miette::{IntoDiagnostic, Report, WrapErr};
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 use whippit::metadata::SectionHeader;
@@ -57,6 +57,7 @@ pub(crate) struct ProcessReportsArgs<'a> {
     pub preset: ReportProcessingPreset,
     pub should_update_expected: &'a mut dyn should_update_expected::ShouldUpdateExpected,
     pub meta_files_by_path: IndexMap<Arc<PathBuf>, File>,
+    pub on_missing: OnMissing,
     pub on_skip_only: OnSkipOnly,
 }
 
@@ -66,6 +67,40 @@ pub(crate) enum ReportProcessingPreset {
     MergeOutcomes,
     ResetAllOutcomes,
     MigrateTestStructure,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct OnMissing {
+    pub log_level: Option<log::Level>,
+    pub delete_because: Option<&'static str>,
+}
+
+impl OnMissing {
+    fn should_delete<F>(&self, msg: F) -> bool
+    where
+        F: Fn(&mut std::fmt::Formatter<'_>) -> std::fmt::Result,
+    {
+        let &Self {
+            log_level,
+            delete_because,
+        } = self;
+
+        if let Some(level) = log_level {
+            log::log!(
+                level,
+                "{}",
+                make_lazy_format!(|f| {
+                    if let Some(reason) = delete_because {
+                        write!(f, "removing metadata after {reason}, and ")?;
+                    }
+
+                    msg(f)
+                })
+            );
+        }
+
+        delete_because.is_some()
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -170,6 +205,7 @@ pub(crate) fn process_reports(
         preset,
         should_update_expected,
         meta_files_by_path,
+        on_missing,
         on_skip_only,
     } = args;
 
@@ -462,18 +498,14 @@ pub(crate) fn process_reports(
 
             if test_reported.is_empty() {
                 let test_entry_path = &test_entry_path;
-                let msg = lazy_format!("no entries found in reports for {:?}", test_entry_path);
-                match preset {
-                    ReportProcessingPreset::MergeOutcomes => log::warn!("{msg}"),
-                    ReportProcessingPreset::ResetAllOutcomes
-                    | ReportProcessingPreset::ResetContradictoryOutcomes => {
-                        log::warn!("removing metadata after {msg}");
-                        return None;
-                    }
-                    ReportProcessingPreset::MigrateTestStructure => {
-                        log::info!("removing metadata after {msg}");
-                        return None;
-                    }
+                if on_missing.should_delete(|f| {
+                    write!(
+                        f,
+                        "no entries were found in reports for {:?}",
+                        test_entry_path
+                    )
+                }) {
+                    return None;
                 }
             }
 
@@ -543,22 +575,17 @@ pub(crate) fn process_reports(
                     if subtest_reported.is_empty() {
                         let test_entry_path = &test_entry_path;
                         let subtest_name = &subtest_name;
-                        let msg = lazy_format!(
-                            "no subtest entries found in reports for {:?}, subtest {:?}",
-                            test_entry_path,
-                            subtest_name,
-                        );
-                        match preset {
-                            ReportProcessingPreset::MergeOutcomes => log::warn!("{msg}"),
-                            ReportProcessingPreset::ResetAllOutcomes
-                            | ReportProcessingPreset::ResetContradictoryOutcomes => {
-                                log::warn!("removing metadata after {msg}");
-                                return None;
-                            }
-                            ReportProcessingPreset::MigrateTestStructure => {
-                                log::info!("removing metadata after {msg}");
-                                return None;
-                            }
+                        if on_missing.should_delete(|f| {
+                            write!(
+                                f,
+                                concat!(
+                                    "no subtest entries found in reports ",
+                                    "for {:?}, subtest {:?}"
+                                ),
+                                test_entry_path, subtest_name,
+                            )
+                        }) {
+                            return None;
                         }
                     }
 

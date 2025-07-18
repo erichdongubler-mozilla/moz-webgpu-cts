@@ -123,6 +123,10 @@ enum Subcommand {
         /// `implementation-status`es that changes should be applied to.
         #[clap(value_enum, long, default_value = "backlog")]
         implementation_status: Vec<ImplementationStatus>,
+        /// Assumptions about report coverage that affect cases where tests are present in
+        /// metadata, but not in reports.
+        #[clap(flatten)]
+        on_missing: Option<OnMissing>,
         /// What do when only `SKIP` outcomes are found for tests and subtests.
         #[clap(value_enum, long, default_value_t = OnSkipOnly::Reconcile)]
         on_skip_only: OnSkipOnly,
@@ -201,6 +205,32 @@ impl From<UpdateExpectedPreset> for process_reports::ReportProcessingPreset {
             UpdateExpectedPreset::ResetContradictory => Self::ResetContradictoryOutcomes,
             UpdateExpectedPreset::Merge => Self::MergeOutcomes,
             UpdateExpectedPreset::ResetAll => Self::ResetAllOutcomes,
+        }
+    }
+}
+
+/// See [`Subcommand::UpdateExpected::on_missing`].
+#[derive(Clone, Debug, Parser)]
+pub(crate) struct OnMissing {
+    #[clap(long = "on-missing-log-level")]
+    log_level: Option<log::Level>,
+    #[clap(long = "on-missing-delete-because")]
+    delete_because: Option<String>,
+}
+
+impl From<OnMissing> for process_reports::OnMissing {
+    fn from(value: OnMissing) -> Self {
+        let OnMissing {
+            log_level,
+            delete_because,
+        } = value;
+
+        let delete_because = delete_because.map(|s| &*s.leak());
+
+        // OPT: big hack, oh goodness
+        Self {
+            log_level,
+            delete_because,
         }
     }
 }
@@ -290,6 +320,10 @@ fn run(cli: Cli) -> ExitCode {
             exec_report_spec,
             process_reports::ReportProcessingPreset::MigrateTestStructure,
             &mut should_update_expected::NeverUpdateExpected,
+            process_reports::OnMissing {
+                log_level: Some(log::Level::Info),
+                delete_because: None,
+            },
             OnSkipOnly::Ignore.into(),
         ) {
             Ok(()) => ExitCode::SUCCESS,
@@ -299,6 +333,7 @@ fn run(cli: Cli) -> ExitCode {
             exec_report_spec,
             preset,
             implementation_status,
+            on_missing,
             on_skip_only,
         } => {
             assert!(
@@ -309,6 +344,20 @@ fn run(cli: Cli) -> ExitCode {
                 )
             );
             let allowed_implementation_statuses = EnumSet::from_iter(implementation_status);
+
+            let on_missing = on_missing.map(Into::into).unwrap_or_else(|| match preset {
+                UpdateExpectedPreset::Merge => process_reports::OnMissing {
+                    log_level: Some(log::Level::Warn),
+                    delete_because: None,
+                },
+                UpdateExpectedPreset::ResetAll | UpdateExpectedPreset::ResetContradictory => {
+                    process_reports::OnMissing {
+                        log_level: Some(log::Level::Warn),
+                        delete_because: Some("expecting full test coverage"),
+                    }
+                }
+            });
+
             match process_reports(
                 browser,
                 &checkout,
@@ -317,6 +366,7 @@ fn run(cli: Cli) -> ExitCode {
                 &mut should_update_expected::ImplementationStatusFilter {
                     allowed: allowed_implementation_statuses,
                 },
+                on_missing,
                 on_skip_only.into(),
             ) {
                 Ok(()) => ExitCode::SUCCESS,
@@ -1372,6 +1422,7 @@ fn process_reports(
     exec_report_spec: ExecReportSpec,
     preset: process_reports::ReportProcessingPreset,
     should_update_expected: &mut dyn ShouldUpdateExpected,
+    on_missing: process_reports::OnMissing,
     on_skip_only: process_reports::OnSkipOnly,
 ) -> Result<(), AlreadyReportedToCommandline> {
     let exec_report_paths = exec_report_spec.paths()?;
@@ -1386,6 +1437,7 @@ fn process_reports(
         preset,
         should_update_expected,
         meta_files_by_path,
+        on_missing,
         on_skip_only,
     })?;
 
