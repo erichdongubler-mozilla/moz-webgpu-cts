@@ -70,6 +70,7 @@ pub(crate) enum ReportProcessingPreset {
     MergeOutcomes,
     ResetAllOutcomes,
     MigrateTestStructure,
+    ResetPermas,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -180,6 +181,9 @@ fn reconcile<Out>(
                 None => meta,
             },
             ReportProcessingPreset::MigrateTestStructure => |meta, _rep| meta,
+            ReportProcessingPreset::ResetPermas => {
+                |meta, rep| rep.filter(|rep| rep.is_permanent()).unwrap_or(meta)
+            }
         };
 
         ExpandedPropertyValue::from_query(|platform, build_profile| {
@@ -600,17 +604,22 @@ pub(crate) fn process_reports(
                     if subtest_reported.is_empty() {
                         let test_entry_path = &test_entry_path;
                         let subtest_name = &subtest_name;
-                        if on_missing.should_delete(|f| {
-                            write!(
-                                f,
-                                concat!(
-                                    "no subtest entries found in reports ",
-                                    "for {:?}, subtest {:?}"
-                                ),
-                                test_entry_path, subtest_name,
-                            )
-                        }) {
-                            return None;
+(??)                        let msg = lazy_format!(
+(??)                            "no subtest entries found in reports for {:?}, subtest {:?}",
+(??)                            test_entry_path,
+(??)                            subtest_name,
+(??)                        );
+(??)                        match preset {
+(??)                            ReportProcessingPreset::MergeOutcomes => log::warn!("{msg}"),
+(??)                            ReportProcessingPreset::ResetAllOutcomes
+(??)                            | ReportProcessingPreset::ResetContradictoryOutcomes => {
+(??)                                log::warn!("removing metadata after {msg}");
+(??)                                return None;
+(??)                            }
+(??)                            ReportProcessingPreset::MigrateTestStructure => {
+(??)                                log::info!("removing metadata after {msg}");
+(??)                                return None;
+(??)                            }
                         }
                     }
 

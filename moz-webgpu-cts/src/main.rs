@@ -191,6 +191,7 @@ enum UpdateExpectedPreset {
     #[value(alias("same-build"))]
     Merge,
     ResetAll,
+    ResetPermas,
 }
 
 impl From<UpdateExpectedPreset> for process_reports::ReportProcessingPreset {
@@ -199,6 +200,7 @@ impl From<UpdateExpectedPreset> for process_reports::ReportProcessingPreset {
             UpdateExpectedPreset::ResetContradictory => Self::ResetContradictoryOutcomes,
             UpdateExpectedPreset::Merge => Self::MergeOutcomes,
             UpdateExpectedPreset::ResetAll => Self::ResetAllOutcomes,
+            UpdateExpectedPreset::ResetPermas => Self::ResetPermas,
         }
     }
 }
