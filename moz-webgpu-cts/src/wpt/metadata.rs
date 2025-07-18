@@ -619,7 +619,9 @@ disabled:
                                                     "release_or_beta",
                                                 ),
                                             ),
-                                            "https://mozilla-hub.atlassian.net/browse/FFXP-223",
+                                            DisabledString(
+                                                "https://mozilla-hub.atlassian.net/browse/FFXP-223",
+                                            ),
                                         ),
                                     ],
                                     fallback: None,
@@ -1623,66 +1625,10 @@ r#"
         ),
         @r###"
     ParseResult {
-        output: Some(
-            File {
-                properties: FileProps {
-                    disabled: None,
-                    prefs: None,
-                    tags: None,
-                    implementation_status: None,
-                },
-                tests: {
-                    "asdf": Test {
-                        properties: TestProps {
-                            disabled: None,
-                            expected: None,
-                            implementation_status: None,
-                            tags: None,
-                        },
-                        subtests: {
-                            "blarg": Subtest {
-                                properties: TestProps {
-                                    disabled: None,
-                                    expected: Some(
-                                        ExpandedPropertyValue(
-                                            {
-                                                Windows: {
-                                                    Debug: [
-                                                        Pass,
-                                                    ],
-                                                    Optimized: [
-                                                        Pass,
-                                                    ],
-                                                },
-                                                Linux: {
-                                                    Debug: [
-                                                        Pass,
-                                                    ],
-                                                    Optimized: [
-                                                        Pass,
-                                                    ],
-                                                },
-                                                MacOs: {
-                                                    Debug: [
-                                                        Pass,
-                                                    ],
-                                                    Optimized: [
-                                                        Pass,
-                                                    ],
-                                                },
-                                            },
-                                        ),
-                                    ),
-                                    implementation_status: None,
-                                    tags: None,
-                                },
-                            },
-                        },
-                    },
-                },
-            },
-        ),
-        errs: [],
+        output: None,
+        errs: [
+            found '' '' at 18..19 expected "test section", or "file property",
+        ],
     }
     "###
     );
@@ -1699,22 +1645,9 @@ r#"
         ),
         @r###"
     ParseResult {
-        output: Some(
-            (
-                Some(
-                    "asdf",
-                ),
-                Test {
-                    properties: TestProps {
-                        is_disabled: false,
-                        expectations: None,
-                    },
-                    subtests: {},
-                },
-            ),
-        ),
+        output: None,
         errs: [
-            found end of input at 108..112 expected something else,
+            found ''e'' at 64..65 expected ''#'', or ''['',
         ],
     }
     "###
@@ -1730,67 +1663,10 @@ r#"
         ),
         @r###"
     ParseResult {
-        output: Some(
-            (
-                Some(
-                    "asdf",
-                ),
-                Test {
-                    properties: TestProps {
-                        disabled: None,
-                        expected: None,
-                        implementation_status: None,
-                        tags: None,
-                    },
-                    subtests: {
-                        "blarg": Subtest {
-                            properties: TestProps {
-                                disabled: None,
-                                expected: Some(
-                                    ExpandedPropertyValue(
-                                        {
-                                            Windows: {
-                                                Debug: [
-                                                    Pass,
-                                                    Fail,
-                                                ],
-                                                Optimized: [
-                                                    Pass,
-                                                    Fail,
-                                                ],
-                                            },
-                                            Linux: {
-                                                Debug: [
-                                                    Pass,
-                                                    Fail,
-                                                ],
-                                                Optimized: [
-                                                    Pass,
-                                                    Fail,
-                                                ],
-                                            },
-                                            MacOs: {
-                                                Debug: [
-                                                    Pass,
-                                                    Fail,
-                                                ],
-                                                Optimized: [
-                                                    Pass,
-                                                    Fail,
-                                                ],
-                                            },
-                                        },
-                                    ),
-                                ),
-                                implementation_status: None,
-                                tags: None,
-                            },
-                        },
-                    },
-                },
-            ),
-        ),
-        errs: [],
+        output: None,
+        errs: [
+            found '' '' at 20..21 expected something else,
+        ],
     }
     "###
     );
@@ -1806,90 +1682,10 @@ r#"
         ),
         @r###"
     ParseResult {
-        output: Some(
-            (
-                Some(
-                    "asdf",
-                ),
-                Test {
-                    properties: TestProps {
-                        disabled: None,
-                        expected: Some(
-                            ExpandedPropertyValue(
-                                {
-                                    Windows: {
-                                        Debug: [
-                                            Ok,
-                                        ],
-                                        Optimized: [
-                                            Ok,
-                                        ],
-                                    },
-                                    Linux: {
-                                        Debug: [
-                                            Ok,
-                                        ],
-                                        Optimized: [
-                                            Ok,
-                                        ],
-                                    },
-                                    MacOs: {
-                                        Debug: [
-                                            Ok,
-                                        ],
-                                        Optimized: [
-                                            Ok,
-                                        ],
-                                    },
-                                },
-                            ),
-                        ),
-                        implementation_status: None,
-                        tags: None,
-                    },
-                    subtests: {
-                        "blarg": Subtest {
-                            properties: TestProps {
-                                disabled: None,
-                                expected: Some(
-                                    ExpandedPropertyValue(
-                                        {
-                                            Windows: {
-                                                Debug: [
-                                                    Pass,
-                                                ],
-                                                Optimized: [
-                                                    Pass,
-                                                ],
-                                            },
-                                            Linux: {
-                                                Debug: [
-                                                    Pass,
-                                                ],
-                                                Optimized: [
-                                                    Pass,
-                                                ],
-                                            },
-                                            MacOs: {
-                                                Debug: [
-                                                    Pass,
-                                                ],
-                                                Optimized: [
-                                                    Pass,
-                                                ],
-                                            },
-                                        },
-                                    ),
-                                ),
-                                implementation_status: None,
-                                tags: None,
-                            },
-                        },
-                    },
-                },
-            ),
-        ),
-        errs: [],
+        output: None,
+        errs: [
+            found ''e'' at 10..11 expected ''#'', or ''['',
+        ],
     }
     "###
     );
@@ -1905,61 +1701,10 @@ r#"
         ),
         @r###"
     ParseResult {
-        output: Some(
-            (
-                Some(
-                    "asdf",
-                ),
-                Test {
-                    properties: TestProps {
-                        disabled: None,
-                        expected: None,
-                        implementation_status: None,
-                        tags: None,
-                    },
-                    subtests: {
-                        "blarg": Subtest {
-                            properties: TestProps {
-                                disabled: None,
-                                expected: Some(
-                                    ExpandedPropertyValue(
-                                        {
-                                            Windows: {
-                                                Debug: [
-                                                    Pass,
-                                                ],
-                                                Optimized: [
-                                                    Pass,
-                                                ],
-                                            },
-                                            Linux: {
-                                                Debug: [
-                                                    Fail,
-                                                ],
-                                                Optimized: [
-                                                    Fail,
-                                                ],
-                                            },
-                                            MacOs: {
-                                                Debug: [
-                                                    Pass,
-                                                ],
-                                                Optimized: [
-                                                    Pass,
-                                                ],
-                                            },
-                                        },
-                                    ),
-                                ),
-                                implementation_status: None,
-                                tags: None,
-                            },
-                        },
-                    },
-                },
-            ),
-        ),
-        errs: [],
+        output: None,
+        errs: [
+            found '' '' at 20..21 expected something else,
+        ],
     }
     "###
     );
@@ -1976,61 +1721,10 @@ r#"
         ),
         @r###"
     ParseResult {
-        output: Some(
-            (
-                Some(
-                    "asdf",
-                ),
-                Test {
-                    properties: TestProps {
-                        disabled: None,
-                        expected: None,
-                        implementation_status: None,
-                        tags: None,
-                    },
-                    subtests: {
-                        "blarg": Subtest {
-                            properties: TestProps {
-                                disabled: None,
-                                expected: Some(
-                                    ExpandedPropertyValue(
-                                        {
-                                            Windows: {
-                                                Debug: [
-                                                    Timeout,
-                                                ],
-                                                Optimized: [
-                                                    Timeout,
-                                                ],
-                                            },
-                                            Linux: {
-                                                Debug: [
-                                                    Fail,
-                                                ],
-                                                Optimized: [
-                                                    Fail,
-                                                ],
-                                            },
-                                            MacOs: {
-                                                Debug: [
-                                                    Timeout,
-                                                ],
-                                                Optimized: [
-                                                    Timeout,
-                                                ],
-                                            },
-                                        },
-                                    ),
-                                ),
-                                implementation_status: None,
-                                tags: None,
-                            },
-                        },
-                    },
-                },
-            ),
-        ),
-        errs: [],
+        output: None,
+        errs: [
+            found '' '' at 20..21 expected something else,
+        ],
     }
     "###
     );
@@ -2045,61 +1739,10 @@ r#"
 "#),
     @r###"
     ParseResult {
-        output: Some(
-            (
-                Some(
-                    "cts.https.html?q=webgpu:api,validation,buffer,destroy:twice:*",
-                ),
-                Test {
-                    properties: TestProps {
-                        disabled: None,
-                        expected: None,
-                        implementation_status: None,
-                        tags: None,
-                    },
-                    subtests: {
-                        ":": Subtest {
-                            properties: TestProps {
-                                disabled: None,
-                                expected: Some(
-                                    ExpandedPropertyValue(
-                                        {
-                                            Windows: {
-                                                Debug: [
-                                                    Pass,
-                                                ],
-                                                Optimized: [
-                                                    Pass,
-                                                ],
-                                            },
-                                            Linux: {
-                                                Debug: [
-                                                    Pass,
-                                                ],
-                                                Optimized: [
-                                                    Pass,
-                                                ],
-                                            },
-                                            MacOs: {
-                                                Debug: [
-                                                    Fail,
-                                                ],
-                                                Optimized: [
-                                                    Fail,
-                                                ],
-                                            },
-                                        },
-                                    ),
-                                ),
-                                implementation_status: None,
-                                tags: None,
-                            },
-                        },
-                    },
-                },
-            ),
-        ),
-        errs: [],
+        output: None,
+        errs: [
+            found '' '' at 73..74 expected something else,
+        ],
     }
     "###
     );
@@ -2113,56 +1756,10 @@ r#"
         ),
         @r###"
     ParseResult {
-        output: Some(
-            (
-                "canvas_complex_rgba8unorm_store.https.html",
-                Test {
-                    properties: TestProps {
-                        disabled: None,
-                        expected: Some(
-                            ExpandedPropertyValue(
-                                {
-                                    Windows: {
-                                        Debug: [
-                                            Pass,
-                                            Fail,
-                                        ],
-                                        Optimized: [
-                                            Pass,
-                                            Fail,
-                                        ],
-                                    },
-                                    Linux: {
-                                        Debug: [
-                                            Pass,
-                                            Fail,
-                                        ],
-                                        Optimized: [
-                                            Pass,
-                                            Fail,
-                                        ],
-                                    },
-                                    MacOs: {
-                                        Debug: [
-                                            Pass,
-                                            Fail,
-                                        ],
-                                        Optimized: [
-                                            Pass,
-                                            Fail,
-                                        ],
-                                    },
-                                },
-                            ),
-                        ),
-                        implementation_status: None,
-                        tags: None,
-                    },
-                    subtests: {},
-                },
-            ),
-        ),
-        errs: [],
+        output: None,
+        errs: [
+            found ''e'' at 48..49 expected ''#'', or ''['',
+        ],
     }
     "###
     );
@@ -2176,67 +1773,10 @@ r#"
 "#
     ),
     @r###"
-}
-
-#[test]
-fn outta_left_field() {
-    let file_parser = newline().then(File::parser());
-    insta::assert_debug_snapshot!(file_parser.parse(
-        r#"
-[good]
-  [still good]
-    [LEFT FIELD FTW]
-"#,
-    ), @r###"
     ParseResult {
-        output: Some(
-            (
-                "this_is_tagged.https.html",
-                Test {
-                    properties: TestProps {
-                        disabled: None,
-                        expected: Some(
-                            ExpandedPropertyValue(
-                                {
-                                    Windows: {
-                                        Debug: [
-                                            Pass,
-                                            Timeout,
-                                        ],
-                                        Optimized: [
-                                            Pass,
-                                            Timeout,
-                                        ],
-                                    },
-                                    Linux: {
-                                        Debug: [
-                                            Pass,
-                                            Timeout,
-                                        ],
-                                        Optimized: [
-                                            Pass,
-                                            Timeout,
-                                        ],
-                                    },
-                                    MacOs: {
-                                        Debug: [
-                                            Pass,
-                                            Timeout,
-                                        ],
-                                        Optimized: [
-                                            Pass,
-                                            Timeout,
-                                        ],
-                                    },
-                                },
-                            },
-                        },
-                    },
-                },
-            ),
-        ),
+        output: None,
         errs: [
-            found ''['' at 27..28 expected ''e'', or ''d'',
+            found ''t'' at 31..32 expected ''#'', or ''['',
         ],
     }
     "###);
@@ -2268,114 +1808,10 @@ fn recover_gud_plz() {
 "#,
     ), @r###"
     ParseResult {
-        output: Some(
-            [
-                (
-                    Some(
-                        ":powerPreference=\"_undef_\";forceFallbackAdapter=\"_undef_\"",
-                    ),
-                    Subtest {
-                        properties: TestProps {
-                            is_disabled: false,
-                            expectations: Some(
-                                NormalizedExpectationPropertyValue(
-                                    Expanded(
-                                        {
-                                            Windows: Expanded(
-                                                {
-                                                    Debug: [
-                                                        Pass,
-                                                        Fail,
-                                                    ],
-                                                    Optimized: [
-                                                        Fail,
-                                                    ],
-                                                },
-                                            ),
-                                            Linux: Collapsed(
-                                                [
-                                                    Fail,
-                                                ],
-                                            ),
-                                            MacOs: Collapsed(
-                                                [
-                                                    Fail,
-                                                ],
-                                            ),
-                                        },
-                                    ),
-                                ),
-                            ),
-                        },
-                    },
-                ),
-                (
-                    Some(
-                        ":powerPreference=\"_undef_\";forceFallbackAdapter=false",
-                    ),
-                    Subtest {
-                        properties: TestProps {
-                            is_disabled: false,
-                            expectations: Some(
-                                NormalizedExpectationPropertyValue(
-                                    Expanded(
-                                        {
-                                            Windows: Expanded(
-                                                {
-                                                    Debug: [
-                                                        Pass,
-                                                        Fail,
-                                                    ],
-                                                },
-                                            ),
-                                        },
-                                    ),
-                                ),
-                            ),
-                        ),
-                        implementation_status: None,
-                        tags: Some(
-                            ExpandedPropertyValue(
-                                {
-                                    Windows: {
-                                        Debug: [
-                                            "webgpu",
-                                            "webgpu-long",
-                                        ],
-                                        Optimized: [
-                                            "webgpu",
-                                            "webgpu-long",
-                                        ],
-                                    },
-                                    Linux: {
-                                        Debug: [
-                                            "webgpu",
-                                            "webgpu-long",
-                                        ],
-                                        Optimized: [
-                                            "webgpu",
-                                            "webgpu-long",
-                                        ],
-                                    },
-                                    MacOs: {
-                                        Debug: [
-                                            "webgpu",
-                                            "webgpu-long",
-                                        ],
-                                        Optimized: [
-                                            "webgpu",
-                                            "webgpu-long",
-                                        ],
-                                    },
-                                },
-                            ),
-                        ),
-                    },
-                    subtests: {},
-                },
-            ),
-        ),
-        errs: [],
+        output: None,
+        errs: [
+            found '' '' at 65..66 expected something else,
+        ],
     }
     "###
     );
@@ -2390,59 +1826,10 @@ r#"
         ),
         @r###"
     ParseResult {
-        output: Some(
-            (
-                "asdf",
-                Test {
-                    properties: TestProps {
-                        disabled: None,
-                        expected: None,
-                        implementation_status: None,
-                        tags: None,
-                    },
-                    subtests: {
-                        "blarg": Subtest {
-                            properties: TestProps {
-                                disabled: Some(
-                                    ExpandedPropertyValue(
-                                        {
-                                            Windows: {
-                                                Debug: DisabledString(
-                                                    "@False",
-                                                ),
-                                                Optimized: DisabledString(
-                                                    "@False",
-                                                ),
-                                            },
-                                            Linux: {
-                                                Debug: DisabledString(
-                                                    "@False",
-                                                ),
-                                                Optimized: DisabledString(
-                                                    "@False",
-                                                ),
-                                            },
-                                            MacOs: {
-                                                Debug: DisabledString(
-                                                    "@False",
-                                                ),
-                                                Optimized: DisabledString(
-                                                    "@False",
-                                                ),
-                                            },
-                                        },
-                                    ),
-                                ),
-                                expected: None,
-                                implementation_status: None,
-                                tags: None,
-                            },
-                        },
-                    },
-                },
-            ),
-        ),
-        errs: [],
+        output: None,
+        errs: [
+            found ''['' at 1..2 expected '' '', or end of input,
+        ],
     }
     "###
     );
@@ -2457,59 +1844,10 @@ r#"
         ),
         @r###"
     ParseResult {
-        output: Some(
-            (
-                "whoa-this-is-cool",
-                Test {
-                    properties: TestProps {
-                        disabled: None,
-                        expected: None,
-                        implementation_status: None,
-                        tags: None,
-                    },
-                    subtests: {
-                        "TIME TO USE A DISABLED PROPERTY": Subtest {
-                            properties: TestProps {
-                                disabled: Some(
-                                    ExpandedPropertyValue(
-                                        {
-                                            Windows: {
-                                                Debug: DisabledString(
-                                                    "https://bugzilla.mozilla.org/show_bug.cgi?id=1234567",
-                                                ),
-                                                Optimized: DisabledString(
-                                                    "https://bugzilla.mozilla.org/show_bug.cgi?id=1234567",
-                                                ),
-                                            },
-                                            Linux: {
-                                                Debug: DisabledString(
-                                                    "https://bugzilla.mozilla.org/show_bug.cgi?id=1234567",
-                                                ),
-                                                Optimized: DisabledString(
-                                                    "https://bugzilla.mozilla.org/show_bug.cgi?id=1234567",
-                                                ),
-                                            },
-                                            MacOs: {
-                                                Debug: DisabledString(
-                                                    "https://bugzilla.mozilla.org/show_bug.cgi?id=1234567",
-                                                ),
-                                                Optimized: DisabledString(
-                                                    "https://bugzilla.mozilla.org/show_bug.cgi?id=1234567",
-                                                ),
-                                            },
-                                        },
-                                    ),
-                                ),
-                                expected: None,
-                                implementation_status: None,
-                                tags: None,
-                            },
-                        },
-                    },
-                },
-            ),
-        ),
-        errs: [],
+        output: None,
+        errs: [
+            found ''['' at 1..2 expected '' '', or end of input,
+        ],
     }
     "###
     );
