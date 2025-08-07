@@ -37,7 +37,7 @@ pub(crate) mod should_update_expected;
 #[derive(Debug, Default)]
 pub(crate) struct Entry<Out>
 where
-    Out: EnumSetType,
+    Out: Default + EnumSetType,
 {
     pub meta_props: Option<TestProps<Out>>,
     pub reported: NonNormalizedPropertyValue<Expected<Out>>,

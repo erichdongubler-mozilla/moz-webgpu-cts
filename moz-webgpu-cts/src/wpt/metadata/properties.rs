@@ -8,7 +8,7 @@ use std::{
 use enum_map::EnumMap;
 use enumset::{EnumSet, EnumSetType};
 use itertools::Itertools;
-use serde::Serialize;
+use serde::{ser::SerializeMap, Serialize};
 
 use crate::wpt::metadata::{maybe_collapsed::MaybeCollapsed, BuildProfile, Platform};
 
@@ -224,8 +224,32 @@ impl<Out> Eq for Expected<Out> where Out: EnumSetType + Eq {}
 
 /// A completely flat representation of [`NormalizedPropertyValue`] suitable for byte
 /// representation in memory.
-#[derive(Debug, Default, Clone, Copy, Eq, PartialEq, Serialize)]
+#[derive(Debug, Default, Clone, Copy, Eq, PartialEq)]
 pub struct ExpandedPropertyValue<T>(ExpandedPropertyValueData<T>);
+
+impl<T> Serialize for ExpandedPropertyValue<T>
+where
+    T: Eq + Serialize,
+{
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        if let Some(unconditional) = self.as_unconditional() {
+            unconditional.serialize(serializer)
+        } else {
+            let mut map_ser = serializer.serialize_map(Some(self.0.len()))?;
+            for (key, value) in self.0.iter() {
+                if let Some(value) = value.values().all_equal_value().ok() {
+                    map_ser.serialize_entry(&key, value)?;
+                } else {
+                    map_ser.serialize_entry(&key, value)?;
+                }
+            }
+            map_ser.end()
+        }
+    }
+}
 
 impl<T> Index<(Platform, BuildProfile)> for ExpandedPropertyValue<T> {
     type Output = T;
@@ -241,6 +265,19 @@ impl<Out> IndexMut<(Platform, BuildProfile)> for ExpandedPropertyValue<Out> {
         (platform, build_profile): (Platform, BuildProfile),
     ) -> &mut Self::Output {
         &mut self.0[platform][build_profile]
+    }
+}
+
+impl<T> ExpandedPropertyValue<T>
+where
+    T: Eq,
+{
+    pub fn as_unconditional(&self) -> Option<&T> {
+        self.0
+            .values()
+            .flat_map(|inner| inner.values())
+            .all_equal_value()
+            .ok()
     }
 }
 

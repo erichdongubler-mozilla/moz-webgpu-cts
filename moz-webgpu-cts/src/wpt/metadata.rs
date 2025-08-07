@@ -42,9 +42,25 @@ use insta::assert_debug_snapshot;
 pub(crate) mod maybe_collapsed;
 pub(crate) mod properties;
 
+fn is_default<T>(t: &T) -> bool
+where
+    T: Default + PartialEq,
+{
+    t == &Default::default()
+}
+
+fn is_none_or_default<T>(t: &Option<T>) -> bool
+where
+    T: Default + PartialEq,
+{
+    t.as_ref().is_none_or(is_default)
+}
+
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct File {
+    #[serde(default, skip_serializing_if = "is_default")]
     pub properties: FileProps,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub tests: BTreeMap<SectionHeader, Test>,
 }
 
@@ -64,12 +80,16 @@ impl metadata::File<'_> for File {
     }
 }
 
-#[derive(Clone, Debug, Default, Serialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
 pub struct FileProps {
+    #[serde(default, skip_serializing_if = "is_none_or_default")]
     pub disabled: Option<PropertyValue<Expr<Value<'static>>, DisabledString>>,
     #[expect(clippy::type_complexity)]
+    #[serde(default, skip_serializing_if = "is_none_or_default")]
     pub prefs: Option<PropertyValue<Expr<Value<'static>>, Vec<(String, String)>>>,
+    #[serde(default, skip_serializing_if = "is_none_or_default")]
     pub tags: Option<PropertyValue<Expr<Value<'static>>, Vec<String>>>,
+    #[serde(default, skip_serializing_if = "is_none_or_default")]
     pub implementation_status: Option<PropertyValue<Expr<Value<'static>>, ImplementationStatus>>,
 }
 
@@ -670,9 +690,11 @@ impl<'a> metadata::Tests<'a> for Tests {
     }
 }
 
-#[derive(Clone, Debug, Default, Serialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
 pub struct Test {
+    #[serde(default, skip_serializing_if = "is_default")]
     pub properties: TestProps<TestOutcome>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub subtests: BTreeMap<SectionHeader, Subtest>,
 }
 
@@ -720,8 +742,9 @@ impl<'a> metadata::Subtests<'a> for Subtests {
     }
 }
 
-#[derive(Clone, Debug, Default, Serialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
 pub struct Subtest {
+    #[serde(default, skip_serializing_if = "is_default")]
     pub properties: TestProps<SubtestOutcome>,
 }
 
@@ -920,13 +943,18 @@ pub enum BuildProfile {
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
+#[serde(bound = "Out: Serialize")]
 pub struct TestProps<Out>
 where
-    Out: EnumSetType,
+    Out: Default + EnumSetType,
 {
+    #[serde(default, skip_serializing_if = "is_none_or_default")]
     pub disabled: Option<ExpandedPropertyValue<DisabledString>>,
+    #[serde(default, skip_serializing_if = "is_none_or_default")]
     pub expected: Option<ExpandedPropertyValue<Expected<Out>>>,
+    #[serde(default, skip_serializing_if = "is_none_or_default")]
     pub implementation_status: Option<ExpandedPropertyValue<ImplementationStatus>>,
+    #[serde(default, skip_serializing_if = "is_none_or_default")]
     pub tags: Option<ExpandedPropertyValue<Vec<String>>>,
 }
 
