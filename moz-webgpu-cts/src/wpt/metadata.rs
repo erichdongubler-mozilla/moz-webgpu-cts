@@ -1,6 +1,6 @@
 use std::{
     collections::BTreeMap,
-    fmt::{self, Display, Formatter},
+    fmt::{self, Debug, Display, Formatter},
     hash::Hash,
 };
 
@@ -32,9 +32,9 @@ use whippit::{
     },
 };
 
-use crate::wpt::metadata::properties::{
+use crate::{process_reports::ReportProcessingPreset, wpt::metadata::properties::{
     DisabledString, ExpandedPropertyValue, Expected, NormalizedPropertyValue,
-};
+}};
 
 #[cfg(test)]
 use insta::assert_debug_snapshot;
@@ -917,6 +917,10 @@ pub enum Platform {
 pub enum BuildProfile {
     Debug,
     Optimized,
+}
+
+pub trait Reconcile {
+    fn reconcile(&self, observed: Self, preset: ReportProcessingPreset) -> Self;
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]

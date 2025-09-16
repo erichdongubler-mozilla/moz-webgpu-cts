@@ -23,9 +23,7 @@ use crate::{
     taint_subtest_timeouts_by_suspicion,
     wpt::{
         metadata::{
-            properties::{ExpandedPropertyValue, Expected, NonNormalizedPropertyValue},
-            BuildProfile, File, FileProps, Platform, Subtest, SubtestOutcome, Test, TestOutcome,
-            TestProps,
+            properties::{ExpandedPropertyValue, Expected, NonNormalizedPropertyValue}, BuildProfile, File, FileProps, Platform, Reconcile, Subtest, SubtestOutcome, Test, TestOutcome, TestProps
         },
         path::{Browser, TestEntryPath},
     },
@@ -128,21 +126,10 @@ fn reconcile<Out>(
     ) -> bool,
 ) where
     Out: Debug + Default + EnumSetType,
+    Expected<Out>: Reconcile,
 {
     let reconciled = {
         let meta_expected = meta_props.expected.unwrap_or_default();
-
-        let resolve: fn(Expected<_>, Option<Expected<_>>) -> _ = match preset {
-            ReportProcessingPreset::ResetAllOutcomes => |_meta, rep| rep.unwrap_or_default(),
-            ReportProcessingPreset::ResetContradictoryOutcomes => {
-                |meta, rep| rep.filter(|rep| !meta.is_superset(rep)).unwrap_or(meta)
-            }
-            ReportProcessingPreset::MergeOutcomes => |meta, rep| match rep {
-                Some(rep) => meta | rep,
-                None => meta,
-            },
-            ReportProcessingPreset::MigrateTestStructure => |meta, _rep| meta,
-        };
 
         ExpandedPropertyValue::from_query(|platform, build_profile| {
             let key = (platform, build_profile);
@@ -151,7 +138,10 @@ fn reconcile<Out>(
                     .get(&platform)
                     .and_then(|rep| rep.get(&build_profile))
                     .copied();
-                resolve(meta_expected[key], reported)
+                reported.map_or(
+                    meta_expected[key],
+                    |reported| meta_expected[key].reconcile(reported, preset),
+                )
             } else {
                 meta_expected[key]
             }

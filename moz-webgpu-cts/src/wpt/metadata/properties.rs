@@ -10,7 +10,7 @@ use enumset::{EnumSet, EnumSetType};
 use itertools::Itertools;
 use serde::Serialize;
 
-use crate::wpt::metadata::{maybe_collapsed::MaybeCollapsed, BuildProfile, Platform};
+use crate::{process_reports::ReportProcessingPreset, wpt::metadata::{maybe_collapsed::MaybeCollapsed, BuildProfile, Platform, Reconcile}};
 
 pub use self::disabled_string::DisabledString;
 
@@ -34,6 +34,23 @@ where
 {
     fn default() -> Self {
         Self::permanent(Out::default())
+    }
+}
+
+impl<Out: EnumSetType> Reconcile for Expected<Out> {
+    fn reconcile(&self, observed: Self, preset: ReportProcessingPreset) -> Self {
+        match preset {
+            ReportProcessingPreset::ResetAllOutcomes => observed,
+            ReportProcessingPreset::ResetContradictoryOutcomes => {
+                if self.inner().is_superset(observed.inner()) {
+                    *self
+                } else {
+                    observed
+                }
+            }
+            ReportProcessingPreset::MergeOutcomes => Self(self.inner() | observed.inner()),
+            ReportProcessingPreset::MigrateTestStructure => *self,
+        }
     }
 }
 
