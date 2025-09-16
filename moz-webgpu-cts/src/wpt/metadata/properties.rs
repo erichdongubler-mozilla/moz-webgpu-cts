@@ -10,7 +10,7 @@ use enumset::{EnumSet, EnumSetType};
 use itertools::Itertools;
 use serde::Serialize;
 
-use crate::{process_reports::ReportProcessingPreset, wpt::metadata::{maybe_collapsed::MaybeCollapsed, BuildProfile, Platform, Reconcile}};
+use crate::{process_reports::ReportProcessingPreset, wpt::metadata::{maybe_collapsed::MaybeCollapsed, BuildProfile, Platform, Reconcile, SubtestOutcome, TestOutcome}};
 
 pub use self::disabled_string::DisabledString;
 
@@ -37,13 +37,35 @@ where
     }
 }
 
-impl<Out: EnumSetType> Reconcile for Expected<Out> {
+impl Reconcile for Expected<TestOutcome> {
     fn reconcile(&self, observed: Self, preset: ReportProcessingPreset) -> Self {
         match preset {
             ReportProcessingPreset::ResetAllOutcomes => observed,
             ReportProcessingPreset::ResetContradictoryOutcomes => {
                 if self.inner().is_superset(observed.inner()) {
                     *self
+                } else {
+                    observed
+                }
+            }
+            ReportProcessingPreset::MergeOutcomes => Self(self.inner() | observed.inner()),
+            ReportProcessingPreset::MigrateTestStructure => *self,
+        }
+    }
+}
+
+impl Reconcile for Expected<SubtestOutcome> {
+    fn reconcile(&self, observed: Self, preset: ReportProcessingPreset) -> Self {
+        let definitive: EnumSet<SubtestOutcome> =
+            SubtestOutcome::Pass | SubtestOutcome::Fail;
+
+        match preset {
+            ReportProcessingPreset::ResetAllOutcomes => observed,
+            ReportProcessingPreset::ResetContradictoryOutcomes => {
+                let self_definitive = self.inner() & definitive;
+                let observed_definitive = observed.inner() & definitive;
+                if self_definitive.is_superset(observed_definitive) {
+                    *self | observed
                 } else {
                     observed
                 }
