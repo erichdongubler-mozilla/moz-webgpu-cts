@@ -67,8 +67,8 @@ impl Reconcile for Expected<SubtestOutcome> {
         match preset {
             ReportProcessingPreset::ResetAllOutcomes => observed,
             ReportProcessingPreset::ResetContradictoryOutcomes => {
-                let self_definitive = self.inner() & definitive;
-                let observed_definitive = observed.inner() & definitive;
+                let [self_definitive, observed_definitive] =
+                    [self.inner(), observed.inner()].map(|o| o & definitive);
                 if self_definitive.is_superset(observed_definitive) {
                     *self | observed
                 } else {
