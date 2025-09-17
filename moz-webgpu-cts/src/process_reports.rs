@@ -24,8 +24,8 @@ use crate::{
     wpt::{
         metadata::{
             properties::{ExpandedPropertyValue, Expected, NonNormalizedPropertyValue},
-            BuildProfile, File, FileProps, Platform, Subtest, SubtestOutcome, Test, TestOutcome,
-            TestProps,
+            BuildProfile, File, FileProps, Platform, Reconcile, Subtest, SubtestOutcome, Test,
+            TestOutcome, TestProps,
         },
         path::{Browser, TestEntryPath},
     },
@@ -127,22 +127,10 @@ fn reconcile<Out>(
         (Platform, BuildProfile),
     ) -> bool,
 ) where
-    Out: Debug + Default + EnumSetType,
+    Out: Debug + Default + EnumSetType + Reconcile,
 {
     let reconciled = {
         let meta_expected = meta_props.expected.unwrap_or_default();
-
-        let resolve: fn(Expected<_>, Option<Expected<_>>) -> _ = match preset {
-            ReportProcessingPreset::ResetAllOutcomes => |_meta, rep| rep.unwrap_or_default(),
-            ReportProcessingPreset::ResetContradictoryOutcomes => {
-                |meta, rep| rep.filter(|rep| !meta.is_superset(rep)).unwrap_or(meta)
-            }
-            ReportProcessingPreset::MergeOutcomes => |meta, rep| match rep {
-                Some(rep) => meta | rep,
-                None => meta,
-            },
-            ReportProcessingPreset::MigrateTestStructure => |meta, _rep| meta,
-        };
 
         ExpandedPropertyValue::from_query(|platform, build_profile| {
             let key = (platform, build_profile);
@@ -151,7 +139,19 @@ fn reconcile<Out>(
                     .get(&platform)
                     .and_then(|rep| rep.get(&build_profile))
                     .copied();
-                resolve(meta_expected[key], reported)
+                reported.map_or(meta_expected[key], |reported| {
+                    let reconcile = match preset {
+                        ReportProcessingPreset::ResetContradictoryOutcomes => {
+                            Reconcile::reset_contradictory
+                        }
+                        ReportProcessingPreset::MergeOutcomes => Reconcile::merge,
+                        ReportProcessingPreset::ResetAllOutcomes => Reconcile::reset_all,
+                        ReportProcessingPreset::MigrateTestStructure => {
+                            Reconcile::migrate_test_structure
+                        }
+                    };
+                    Expected::new(reconcile(meta_expected[key].inner(), reported.inner())).unwrap()
+                })
             } else {
                 meta_expected[key]
             }

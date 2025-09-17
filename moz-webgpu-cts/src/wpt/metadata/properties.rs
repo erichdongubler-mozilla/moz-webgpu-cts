@@ -10,7 +10,9 @@ use enumset::{EnumSet, EnumSetType};
 use itertools::Itertools;
 use serde::Serialize;
 
-use crate::wpt::metadata::{maybe_collapsed::MaybeCollapsed, BuildProfile, Platform};
+use crate::wpt::metadata::{
+    maybe_collapsed::MaybeCollapsed, BuildProfile, Platform, Reconcile, SubtestOutcome, TestOutcome,
+};
 
 pub use self::disabled_string::DisabledString;
 
@@ -36,6 +38,10 @@ where
         Self::permanent(Out::default())
     }
 }
+
+impl Reconcile for TestOutcome {}
+
+impl Reconcile for SubtestOutcome {}
 
 impl<Out> Expected<Out>
 where

@@ -1,12 +1,12 @@
 use std::{
     collections::BTreeMap,
-    fmt::{self, Display, Formatter},
+    fmt::{self, Debug, Display, Formatter},
     hash::Hash,
 };
 
 use clap::ValueEnum;
 use enum_map::Enum;
-use enumset::EnumSetType;
+use enumset::{EnumSet, EnumSetType};
 use joinery::JoinableIterator;
 use lazy_format::{lazy_format, make_lazy_format};
 use maybe_collapsed::MaybeCollapsed;
@@ -917,6 +917,28 @@ pub enum Platform {
 pub enum BuildProfile {
     Debug,
     Optimized,
+}
+
+pub trait Reconcile: Copy + Clone + EnumSetType {
+    fn reset_all(_meta: EnumSet<Self>, observed: EnumSet<Self>) -> EnumSet<Self> {
+        observed
+    }
+
+    fn reset_contradictory(meta: EnumSet<Self>, observed: EnumSet<Self>) -> EnumSet<Self> {
+        if meta.is_superset(observed) {
+            meta
+        } else {
+            observed
+        }
+    }
+
+    fn merge(meta: EnumSet<Self>, observed: EnumSet<Self>) -> EnumSet<Self> {
+        meta | observed
+    }
+
+    fn migrate_test_structure(meta: EnumSet<Self>, _observed: EnumSet<Self>) -> EnumSet<Self> {
+        meta
+    }
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
