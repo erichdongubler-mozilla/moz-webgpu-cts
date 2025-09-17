@@ -41,7 +41,21 @@ where
 
 impl Reconcile for TestOutcome {}
 
-impl Reconcile for SubtestOutcome {}
+impl Reconcile for SubtestOutcome {
+    fn reset_definitively_contradictory(
+        meta: EnumSet<Self>,
+        observed: EnumSet<Self>,
+    ) -> EnumSet<Self> {
+        let definitive = SubtestOutcome::Pass | SubtestOutcome::Fail;
+
+        let [meta_definitive, observed_definitive] = [meta, observed].map(|o| o & definitive);
+        if meta_definitive.is_superset(observed_definitive) {
+            meta | observed
+        } else {
+            observed
+        }
+    }
+}
 
 impl<Out> Expected<Out>
 where

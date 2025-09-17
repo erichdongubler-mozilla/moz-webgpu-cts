@@ -182,6 +182,7 @@ enum UpdateExpectedPreset {
     #[value(alias("new-fx"))]
     #[value(alias("new-build"))]
     ResetContradictory,
+    ResetDefinitivelyContradictory,
     /// alias: `same-fx`, `same-build`
     #[value(alias("same-fx"))]
     #[value(alias("same-build"))]
@@ -193,6 +194,9 @@ impl From<UpdateExpectedPreset> for process_reports::ReportProcessingPreset {
     fn from(value: UpdateExpectedPreset) -> Self {
         match value {
             UpdateExpectedPreset::ResetContradictory => Self::ResetContradictoryOutcomes,
+            UpdateExpectedPreset::ResetDefinitivelyContradictory => {
+                Self::ResetDefinitivelyContradictoryOutcomes
+            }
             UpdateExpectedPreset::Merge => Self::MergeOutcomes,
             UpdateExpectedPreset::ResetAll => Self::ResetAllOutcomes,
         }

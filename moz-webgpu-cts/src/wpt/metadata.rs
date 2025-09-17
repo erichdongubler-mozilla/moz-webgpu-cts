@@ -932,6 +932,13 @@ pub trait Reconcile: Copy + Clone + EnumSetType {
         }
     }
 
+    fn reset_definitively_contradictory(
+        meta: EnumSet<Self>,
+        observed: EnumSet<Self>,
+    ) -> EnumSet<Self> {
+        Self::reset_contradictory(meta, observed)
+    }
+
     fn merge(meta: EnumSet<Self>, observed: EnumSet<Self>) -> EnumSet<Self> {
         meta | observed
     }

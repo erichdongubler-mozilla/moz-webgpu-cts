@@ -63,6 +63,7 @@ pub(crate) struct ProcessReportsArgs<'a> {
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum ReportProcessingPreset {
     ResetContradictoryOutcomes,
+    ResetDefinitivelyContradictoryOutcomes,
     MergeOutcomes,
     ResetAllOutcomes,
     MigrateTestStructure,
@@ -143,6 +144,9 @@ fn reconcile<Out>(
                     let reconcile = match preset {
                         ReportProcessingPreset::ResetContradictoryOutcomes => {
                             Reconcile::reset_contradictory
+                        }
+                        ReportProcessingPreset::ResetDefinitivelyContradictoryOutcomes => {
+                            Reconcile::reset_definitively_contradictory
                         }
                         ReportProcessingPreset::MergeOutcomes => Reconcile::merge,
                         ReportProcessingPreset::ResetAllOutcomes => Reconcile::reset_all,
@@ -466,7 +470,8 @@ pub(crate) fn process_reports(
                 match preset {
                     ReportProcessingPreset::MergeOutcomes => log::warn!("{msg}"),
                     ReportProcessingPreset::ResetAllOutcomes
-                    | ReportProcessingPreset::ResetContradictoryOutcomes => {
+                    | ReportProcessingPreset::ResetContradictoryOutcomes
+                    | ReportProcessingPreset::ResetDefinitivelyContradictoryOutcomes => {
                         log::warn!("removing metadata after {msg}");
                         return None;
                     }
@@ -551,7 +556,8 @@ pub(crate) fn process_reports(
                         match preset {
                             ReportProcessingPreset::MergeOutcomes => log::warn!("{msg}"),
                             ReportProcessingPreset::ResetAllOutcomes
-                            | ReportProcessingPreset::ResetContradictoryOutcomes => {
+                            | ReportProcessingPreset::ResetContradictoryOutcomes
+                            | ReportProcessingPreset::ResetDefinitivelyContradictoryOutcomes => {
                                 log::warn!("removing metadata after {msg}");
                                 return None;
                             }
