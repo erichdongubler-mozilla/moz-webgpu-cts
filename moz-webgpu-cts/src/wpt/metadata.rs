@@ -6,7 +6,7 @@ use std::{
 
 use clap::ValueEnum;
 use enum_map::Enum;
-use enumset::EnumSetType;
+use enumset::{EnumSet, EnumSetType};
 use joinery::JoinableIterator;
 use lazy_format::{lazy_format, make_lazy_format};
 use maybe_collapsed::MaybeCollapsed;
@@ -922,8 +922,26 @@ pub enum BuildProfile {
     Optimized,
 }
 
-pub trait Reconcile {
-    fn reconcile(&self, observed: Self, preset: ReportProcessingPreset) -> Self;
+pub trait Reconcile: Copy + Clone + EnumSetType {
+    fn reset_all(_meta: EnumSet<Self>, observed: EnumSet<Self>) -> EnumSet<Self> {
+        observed
+    }
+
+    fn reset_contradictory(meta: EnumSet<Self>, observed: EnumSet<Self>) -> EnumSet<Self> {
+        if meta.is_superset(observed) {
+            meta
+        } else {
+            observed
+        }
+    }
+
+    fn merge(meta: EnumSet<Self>, observed: EnumSet<Self>) -> EnumSet<Self> {
+        meta | observed
+    }
+
+    fn migrate_test_structure(meta: EnumSet<Self>, _observed: EnumSet<Self>) -> EnumSet<Self> {
+        meta
+    }
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
