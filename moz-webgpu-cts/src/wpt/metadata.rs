@@ -1241,11 +1241,12 @@ pub(crate) const CRASH: &str = "CRASH";
 pub(crate) const OK: &str = "OK";
 pub(crate) const ERROR: &str = "ERROR";
 
-#[derive(Debug, Deserialize, EnumSetType, Hash, Serialize)]
+#[derive(Debug, Default, Deserialize, EnumSetType, Hash, Serialize)]
 #[enumset(serialize_repr = "list")]
 #[enumset(serialize_deny_unknown)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum TestOutcome {
+    #[default]
     Ok,
     Pass,
     Fail,
@@ -1253,12 +1254,6 @@ pub enum TestOutcome {
     Crash,
     Error,
     Skip,
-}
-
-impl Default for TestOutcome {
-    fn default() -> Self {
-        Self::Ok
-    }
 }
 
 impl Display for TestOutcome {
@@ -1310,21 +1305,16 @@ impl<'a> Properties<'a> for TestProps<TestOutcome> {
     }
 }
 
-#[derive(Debug, Deserialize, EnumSetType, Hash, Serialize)]
+#[derive(Debug, Default, Deserialize, EnumSetType, Hash, Serialize)]
 #[enumset(serialize_repr = "list")]
 #[enumset(serialize_deny_unknown)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum SubtestOutcome {
+    #[default]
     Pass,
     Fail,
     Timeout,
     NotRun,
-}
-
-impl Default for SubtestOutcome {
-    fn default() -> Self {
-        Self::Pass
-    }
 }
 
 impl Display for SubtestOutcome {
