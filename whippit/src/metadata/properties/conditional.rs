@@ -28,18 +28,24 @@ where
     Pc: Parser<'a, &'a str, C, ParseError<'a>>,
     Pv: Parser<'a, &'a str, V, ParseError<'a>>,
 {
-    group((indent(indentation), keyword("if"), just(' ')))
-        .ignore_then(
-            condition_parser.nested_in(
-                any()
-                    .and_is(newline().or(just(':').to(())).not())
-                    .repeated()
-                    .at_least(1)
-                    .to_slice(),
-            ),
+    // group((indent(indentation), keyword("if"), just(' ')))
+    //     .ignore_then(
+    condition_parser
+        .nested_in(
+            any()
+                .and_is(newline().or(just(':').to(())).not())
+                .repeated()
+                .at_least(1)
+                .to_slice(),
         )
+        .map(|_| todo!())
+        // )
         .then_ignore(group((just(':').to(()), just(' ').or_not().to(()))))
-        .then(value_parser.nested_in(unstructured_value()))
+        .then(
+            value_parser
+                .nested_in(unstructured_value())
+                .map(|_| todo!()),
+        )
         .then_ignore(newline().or(end()))
         .labelled("conditional value rule")
 }

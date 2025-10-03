@@ -1,6 +1,6 @@
 #![cfg(any(test, feature = "unstructured-properties"))]
 
-use chumsky::{input::Emitter, prelude::Rich, span::SimpleSpan, text::ascii::ident, Boxed, Parser};
+use chumsky::{input::Emitter, prelude::Rich, span::SimpleSpan, text::ascii::ident, Parser};
 use indexmap::IndexMap;
 
 use crate::metadata::{File, ParseError, SectionHeader, Subtest, Subtests, Test, Tests};
@@ -122,15 +122,13 @@ impl<'a> Properties<'a> for UnstructuredProperties<'a> {
         PropertyValue<conditional::Expr<conditional::Value<'a>>, &'a str>,
     );
     fn property_parser(
-        helper: &mut PropertiesParseHelper<'a>,
-    ) -> Boxed<'a, 'a, &'a str, Self::ParsedProperty, ParseError<'a>> {
-        helper
-            .parser(
-                ident().map_with(|key, e| (e.span(), key)),
-                unstructured_conditional_term(),
-                unstructured_value(),
-            )
-            .boxed()
+        helper: PropertiesParseHelper,
+    ) -> impl Parser<'a, &'a str, Self::ParsedProperty, ParseError<'a>> {
+        helper.parser(
+            ident().map_with(|key, e| (e.span(), key)),
+            unstructured_conditional_term(),
+            unstructured_value(),
+        )
     }
 
     fn add_property(&mut self, prop: Self::ParsedProperty, emitter: &mut Emitter<Rich<'a, char>>) {

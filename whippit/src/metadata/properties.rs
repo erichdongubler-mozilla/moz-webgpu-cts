@@ -4,7 +4,7 @@ pub mod unstructured;
 #[cfg(any(test, feature = "unstructured-properties"))]
 pub use unstructured::UnstructuredProperties;
 
-use std::{fmt::Debug, marker::PhantomData};
+use std::fmt::Debug;
 
 pub use self::conditional::{ConditionalValue, Expr, Literal, Value};
 
@@ -13,7 +13,7 @@ use chumsky::{
     prelude::Rich,
     primitive::{choice, end, group, just},
     text::{inline_whitespace, newline},
-    Boxed, Parser,
+    Parser,
 };
 
 use crate::metadata::{indent, ParseError};
@@ -68,8 +68,8 @@ where
 
     /// Retrieve a parser for a single property that [`Self::add_property`] can accept.
     fn property_parser(
-        helper: &mut PropertiesParseHelper<'a>,
-    ) -> Boxed<'a, 'a, &'a str, Self::ParsedProperty, ParseError<'a>>;
+        helper: PropertiesParseHelper,
+    ) -> impl Parser<'a, &'a str, Self::ParsedProperty, ParseError<'a>>;
 
     /// Accumulate a parsed property into this data structure.
     ///
@@ -80,18 +80,15 @@ where
 
 /// A helper passed to implementors of [`Properties::property_parser`]. The major affordance of
 /// this API is the [`PropertiesParseHelper::parser`] API.
-pub struct PropertiesParseHelper<'a> {
+#[derive(Clone)]
+pub struct PropertiesParseHelper {
     indentation: u8,
-    _disable_ctor: PhantomData<&'a mut ()>,
 }
 
-impl<'a> PropertiesParseHelper<'a> {
+impl PropertiesParseHelper {
     #[cfg_attr(not(any(test, doctest)), doc(hidden))]
     pub fn new(indentation: u8) -> Self {
-        Self {
-            indentation,
-            _disable_ctor: PhantomData,
-        }
+        Self { indentation }
     }
 
     /// Create a parser for a single type of property, using the provided parsers for key,
@@ -179,8 +176,8 @@ impl<'a> PropertiesParseHelper<'a> {
     ///     ),
     /// );
     /// ```
-    pub fn parser<K, C, V, Pk, Pc, Pv>(
-        &mut self,
+    pub fn parser<'a, K, C, V, Pk, Pc, Pv>(
+        &self,
         key_ident_parser: Pk,
         condition_parser: Pc,
         value_parser: Pv,
