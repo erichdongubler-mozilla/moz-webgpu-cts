@@ -773,6 +773,49 @@ fn format_test<'a>(name: &'a SectionHeader, test: &'a Test) -> impl Display + 'a
     })
 }
 
+#[derive(Clone, Debug, Default)]
+struct ApplicabilityBeingParsed {
+    pub platform: Option<PlatformBeingParsed>,
+    pub build_profile: Option<BuildProfile>,
+}
+
+impl From<ApplicabilityBeingParsed> for Applicability {
+    fn from(value: ApplicabilityBeingParsed) -> Self {
+        let ApplicabilityBeingParsed {
+            platform,
+            build_profile,
+        } = value;
+        let platform = platform.into();
+        Self {
+            platform,
+            build_profile,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+enum PlatformBeingParsed {
+    Windows,
+    Linux(Option<LinuxVersion>),
+    MacOs,
+}
+
+impl PlatformBeingParsed {
+    fn to_parsed(self) -> Platform {
+        match value {
+            PlatformBeingParsed::Windows => Self::Windows,
+            PlatformBeingParsed::Linux => Self::Linux,
+            PlatformBeingParsed::Windows => Self::Windows,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+enum LinuxVersion {
+    Ubuntu2204,
+    Ubuntu2404,
+}
+
 fn format_test_properties<Out>(indentation: u8, property: &TestProps<Out>) -> impl Display + '_
 where
     Out: Default + Display + EnumSetType + Eq + PartialEq,
@@ -838,12 +881,19 @@ where
                     debug_assert!(!by_platform.is_empty());
                     for (platform, t) in by_platform {
                         let platform = {
-                            let platform_str = match platform {
-                                Platform::Windows => "win",
-                                Platform::Linux => "linux",
-                                Platform::MacOs => "mac",
+                            let (os, version) = match platform {
+                                Platform::Windows => ("win", None),
+                                Platform::LinuxUbuntu2204 => ("linux", Some("Ubuntu 22.04")),
+                                Platform::LinuxUbuntu2404 => ("linux", Some("Ubuntu 24.04")),
+                                Platform::MacOs => ("mac", None),
                             };
-                            make_lazy_format!(|f| write!(f, "os == {platform_str:?}"))
+                            make_lazy_format!(|f| {
+                                if let Some(version) = version {
+                                    write!(f, "os == {os:?} and version == {version:?}")
+                                } else {
+                                    write!(f, "os == {os:?}")
+                                }
+                            })
                         };
                         match t {
                             MaybeCollapsed::Collapsed(t) => {
@@ -909,7 +959,8 @@ where
 #[derive(Clone, Copy, Debug, Enum, EnumIter, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub enum Platform {
     Windows,
-    Linux,
+    LinuxUbuntu2204,
+    LinuxUbuntu2404,
     MacOs,
 }
 
@@ -1059,50 +1110,53 @@ where
         P: Clone + Parser<'a, &'a str, Out, ParseError<'a>>,
     {
         let conditional_term = Expr::parser(Value::parser()).validate(|prop_val, e, emitter| {
-            let mut acc = Applicability::default();
-            let try_match_var =
-                |acc: &mut Applicability, val: &_, inverted: bool, emitter: &mut Emitter<_>| {
-                    match val {
-                        Value::Variable(var_name) if var_name == "debug" => {
-                            let build_profile = if inverted {
-                                BuildProfile::Optimized
-                            } else {
-                                BuildProfile::Debug
-                            };
-                            if let Some(_old) = acc.build_profile.replace(build_profile) {
-                                emitter.emit(Rich::custom(
-                                    e.span(),
-                                    "multiple `debug` conditions specified, discarding oldest",
-                                ))
-                            }
-                        }
-                        _ => {
+            let mut acc = ApplicabilityBeingParsed::default();
+            let try_match_var = |acc: &mut ApplicabilityBeingParsed,
+                                 val: &_,
+                                 inverted: bool,
+                                 emitter: &mut Emitter<_>| {
+                match val {
+                    Value::Variable(var_name) if var_name == "debug" => {
+                        let build_profile = if inverted {
+                            BuildProfile::Optimized
+                        } else {
+                            BuildProfile::Debug
+                        };
+                        if let Some(_old) = acc.build_profile.replace(build_profile) {
                             emitter.emit(Rich::custom(
                                 e.span(),
-                                format!(
-                                    concat!(
-                                        "{:?} is not a variable evaluatable with ",
-                                        "tests and subtests for WebGPU's purposes, discarding"
-                                    ),
-                                    e.slice()
-                                ),
-                            ));
+                                "multiple `debug` conditions specified, discarding oldest",
+                            ))
                         }
                     }
-                };
+                    _ => {
+                        emitter.emit(Rich::custom(
+                            e.span(),
+                            format!(
+                                concat!(
+                                    "{:?} is not a variable evaluatable with ",
+                                    "tests and subtests for WebGPU's purposes, discarding"
+                                ),
+                                e.slice()
+                            ),
+                        ));
+                    }
+                }
+            };
 
-            let try_match_eq =
-                |acc: &mut Applicability, lhs: &_, rhs: &_, emitter: &mut Emitter<_>| match (
-                    lhs, rhs,
-                ) {
+            let try_match_eq = |acc: &mut ApplicabilityBeingParsed,
+                                lhs: &_,
+                                rhs: &_,
+                                emitter: &mut Emitter<_>| {
+                match (lhs, rhs) {
                     (
                         Expr::Value(Value::Variable(var)),
                         Expr::Value(Value::Literal(Literal::String(lit))),
                     ) if var == "os" => {
                         let platform = match &**lit {
-                            "mac" => Some(Platform::MacOs),
-                            "linux" => Some(Platform::Linux),
-                            "win" => Some(Platform::Windows),
+                            "mac" => Some(PlatformBeingParsed::MacOs),
+                            "linux" => Some(PlatformBeingParsed::Linux(None)),
+                            "win" => Some(PlatformBeingParsed::Windows),
                             _ => None,
                         };
                         if let Some(platform) = platform {
@@ -1125,6 +1179,47 @@ where
                             ))
                         }
                     }
+                    (
+                        Expr::Value(Value::Variable(var)),
+                        Expr::Value(Value::Literal(Literal::String(lit))),
+                    ) if var == "version" => {
+                        let version = match &**lit {
+                            "Ubuntu 22.04" => Some(LinuxVersion::Ubuntu2204),
+                            "Ubuntu 24.04" => Some(LinuxVersion::Ubuntu2404),
+                            _ => None,
+                        };
+                        if let Some(version) = version {
+                            match &mut acc.platform {
+                                Some(PlatformBeingParsed::Linux(v @ None)) => *v = Some(version),
+                                Some(PlatformBeingParsed::Linux(Some(_version))) => {
+                                    emitter.emit(Rich::custom(
+                                    e.span(),
+                                    "multiple `version` conditions specified, discarding oldest",
+                                ));
+                                }
+                                _ => {
+                                    emitter.emit(Rich::custom(
+                                        e.span(),
+                                        concat!(
+                                            "`version` check cannot be used ",
+                                            "except after `os == \"linux\"`"
+                                        ),
+                                    ));
+                                }
+                            }
+                        } else {
+                            emitter.emit(Rich::custom(
+                                e.span(),
+                                format!(
+                                    "{lit:?}{}",
+                                    concat!(
+                                        " is not a Linux version that the WebGPU ",
+                                        "team recognizes, discarding"
+                                    )
+                                ),
+                            ))
+                        }
+                    }
                     _ => emitter.emit(Rich::custom(
                         e.span(),
                         format!(
@@ -1136,7 +1231,8 @@ where
                             e.slice()
                         ),
                     )),
-                };
+                }
+            };
             match &prop_val {
                 Expr::Value(v) => try_match_var(&mut acc, v, false, emitter),
                 Expr::And(lhs, rhs) => {
@@ -1167,7 +1263,7 @@ where
                 },
                 Expr::Eq(lhs, rhs) => try_match_eq(&mut acc, &**lhs, &**rhs, emitter),
             };
-            acc
+            acc.into()
         });
         choice((
             helper
