@@ -1163,21 +1163,21 @@ fn render_metadata_parse_errors<'a>(
     errors: impl IntoIterator<Item = Rich<'a, char>>,
 ) {
     #[derive(Debug, Diagnostic, thiserror::Error)]
-    #[error("{inner}")]
+    #[error("{_inner}")]
     struct ParseError {
         #[label]
-        span: SourceSpan,
+        _span: SourceSpan,
         #[source_code]
-        source_code: NamedSource<Arc<String>>,
-        inner: Rich<'static, char>,
+        _source_code: NamedSource<Arc<String>>,
+        _inner: Rich<'static, char>,
     }
     let source_code = file_contents.clone();
     for error in errors {
         let span = error.span();
         let error = ParseError {
-            source_code: NamedSource::new(path.to_str().unwrap(), source_code.clone()),
-            inner: error.clone().into_owned(),
-            span: SourceSpan::new(span.start.into(), span.end - span.start),
+            _source_code: NamedSource::new(path.to_str().unwrap(), source_code.clone()),
+            _inner: error.clone().into_owned(),
+            _span: SourceSpan::new(span.start.into(), span.end - span.start),
         };
         let error = Report::new(error);
         eprintln!("{error:?}");
