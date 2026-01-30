@@ -320,7 +320,7 @@ impl<'a> TestEntryPath<'a> {
                 rel_meta_file_path: rel_meta_file_path.as_std_path(),
                 expected: expected_base_name.as_str(),
                 actual: base_name,
-                actual_span: 0..base_name.len(),
+                _actual_span: 0..base_name.len(),
             });
         }
 
@@ -484,7 +484,7 @@ pub enum MetadataTestEntryPathError<'a> {
         rel_meta_file_path: &'a Path,
         expected: &'a str,
         actual: &'a str,
-        actual_span: std::ops::Range<usize>,
+        _actual_span: std::ops::Range<usize>,
     },
     #[error(
         "failed to derive test path from metadata file at relative path {:?} given entry with test name {:?}",
