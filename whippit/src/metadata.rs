@@ -32,7 +32,7 @@ use self::properties::{Properties, PropertiesParseHelper};
 pub mod properties;
 
 /// An error emitted by [`file_parser`] and [other WPT metadata parsing logic][self].
-pub type ParseError<'a> = Full<Rich<'a, char>, (), ()>;
+pub type ParseError<'a> = chumsky::extra::Err<Rich<'a, char>>;
 
 /// Behavior that needs to be defined to parse [the WPT metadata format][self] with
 /// [`file_parser`].
@@ -71,7 +71,7 @@ where
     filler()
         .ignore_then(choice((
             test_parser().map(Item::Test),
-            F::Properties::property_parser(&mut PropertiesParseHelper::new(0)).map(Item::Property),
+            F::Properties::property_parser(PropertiesParseHelper::new(0)).map(Item::Property),
         )))
         .then_ignore(filler())
         .map_with(|test, e| (e.span(), test))
@@ -502,7 +502,7 @@ where
 
     let items = choice((
         subtest_parser().map(|(name, subtest)| Item::Subtest { name, subtest }),
-        T::Properties::property_parser(&mut PropertiesParseHelper::new(1))
+        T::Properties::property_parser(PropertiesParseHelper::new(1))
             .labelled("test property")
             .map(Item::Property),
         newline().labelled("empty line").map(|()| Item::Newline),
@@ -900,7 +900,7 @@ where
         .then_ignore(newline().or(end()))
         .labelled("subtest section header")
         .then(
-            S::Properties::property_parser(&mut PropertiesParseHelper::new(2))
+            S::Properties::property_parser(PropertiesParseHelper::new(2))
                 .labelled("subtest property")
                 .repeated()
                 .collect::<Vec<_>>()
@@ -1157,9 +1157,9 @@ impl SectionHeader {
             loop {
                 match input.peek() {
                     None => {
-                        let start = input.offset();
+                        let start = input.cursor();
                         input.skip();
-                        let span = input.span_since(start);
+                        let span = input.span_since(&start);
                         return Err(Rich::custom(
                             span,
                             "reached end of input before ending section header",
@@ -1184,7 +1184,7 @@ impl SectionHeader {
                 if c.is_control() {
                     let span_idx = e.span().start.checked_add(idx).unwrap();
                     emitter.emit(Rich::custom(
-                        SimpleSpan::new(span_idx, span_idx),
+                        SimpleSpan::from(span_idx..span_idx + 1),
                         "found illegal character in section header",
                     ));
                 }
