@@ -1204,6 +1204,7 @@ where
                     any()
                         .and_is(newline().not())
                         .repeated()
+                        .at_least(1)
                         .to_slice()
                         .map(String::from)
                         .map(DisabledString::new),
@@ -2182,6 +2183,74 @@ r#"
                                         },
                                     ),
                                 ),
+                                expected: None,
+                                implementation_status: None,
+                                tags: None,
+                            },
+                        },
+                    },
+                },
+            ),
+        ),
+        errs: [],
+    }
+    "###
+    );
+
+    assert_debug_snapshot!(
+        parser().parse(
+r#"
+[conditional-disabled-property]
+  disabled:
+    if debug: true
+  [:cfgKey="cfgVal"]
+"#
+        ),
+        @r###"
+    ParseResult {
+        output: Some(
+            (
+                "conditional-disabled-property",
+                Test {
+                    properties: TestProps {
+                        disabled: Some(
+                            ExpandedPropertyValue(
+                                {
+                                    Windows: {
+                                        Debug: DisabledString(
+                                            "true",
+                                        ),
+                                        Optimized: DisabledString(
+                                            "@False",
+                                        ),
+                                    },
+                                    Linux: {
+                                        Debug: DisabledString(
+                                            "true",
+                                        ),
+                                        Optimized: DisabledString(
+                                            "@False",
+                                        ),
+                                    },
+                                    MacOs: {
+                                        Debug: DisabledString(
+                                            "true",
+                                        ),
+                                        Optimized: DisabledString(
+                                            "@False",
+                                        ),
+                                    },
+                                },
+                            ),
+                        ),
+                        expected: None,
+                        implementation_status: None,
+                        tags: None,
+                    },
+                    subtests: {
+                        ":cfgKey=\"cfgVal\"": Subtest {
+                            properties: TestProps {
+                                disabled: None,
                                 expected: None,
                                 implementation_status: None,
                                 tags: None,
