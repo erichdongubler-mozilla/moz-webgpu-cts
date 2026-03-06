@@ -818,12 +818,9 @@ fn run(cli: Cli) -> ExitCode {
                 let PermaAndIntermittent {
                     perma: num_subtests_with_perma_failures_somewhere,
                     intermittent: num_subtests_with_intermittent_failures_somewhere,
-                } = subtests_with_failures_by_test.as_ref().map(|tests| {
-                    tests
-                        .iter()
-                        .flat_map(|(_name, subtests)| subtests.iter())
-                        .count()
-                });
+                } = subtests_with_failures_by_test
+                    .as_ref()
+                    .map(|tests| tests.values().flat_map(|subtests| subtests.iter()).count());
                 let tests_with_perma_failures = (show_zero_count_item
                     || num_tests_with_perma_failures_somewhere > 0
                     || num_subtests_with_perma_failures_somewhere > 0)
@@ -856,12 +853,9 @@ fn run(cli: Cli) -> ExitCode {
                 let PermaAndIntermittent {
                     perma: num_subtests_with_perma_timeouts_somewhere,
                     intermittent: num_subtests_with_intermittent_timeouts_somewhere,
-                } = subtests_with_timeouts_by_test.as_ref().map(|tests| {
-                    tests
-                        .iter()
-                        .flat_map(|(_name, subtests)| subtests.iter())
-                        .count()
-                });
+                } = subtests_with_timeouts_by_test
+                    .as_ref()
+                    .map(|tests| tests.values().flat_map(|subtests| subtests.iter()).count());
                 let tests_with_perma_timeouts_somewhere = (show_zero_count_item
                     || num_tests_with_perma_timeouts_somewhere > 0)
                     .then_some(make_lazy_format!(|f| {
