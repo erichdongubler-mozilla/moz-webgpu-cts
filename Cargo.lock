@@ -631,7 +631,7 @@ dependencies = [
  "exhaust",
  "indexmap",
  "insta",
- "itertools 0.11.0",
+ "itertools 0.14.0",
  "joinery",
  "lazy_format",
  "lets_find_up",
