@@ -1,3 +1,6 @@
+//! Abstractions for dealing with paths to WebGPU CTS tests. The key offerings of this module are
+//! the [`Browser`] and [`SpecPath`] APIs.
+
 use std::{
     borrow::Cow,
     fmt::{Debug, Display},

@@ -1,3 +1,5 @@
+//! Contains [`FileSpec`]s: an abstraction for consistently handling file paths and globs from [the CLI](crate::main).
+
 use std::{fmt::Display, path::PathBuf};
 
 use miette::Report;

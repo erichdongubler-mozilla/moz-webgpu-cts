@@ -1,3 +1,6 @@
+//! `moz-webgpu-cts`' custom subset of WPT metadata. The conceptual entry point of this module is
+//! the [`File`] API.
+
 use std::{
     collections::BTreeMap,
     fmt::{self, Display, Formatter},
@@ -601,6 +604,10 @@ fn format_file_properties(props: &FileProps) -> impl Display + '_ {
     })
 }
 
+/// A `implementation-status` property value; see also the `implementation-status` entry in [WPT
+/// upstream documentation].
+///
+/// [WPT upstream]: https://web-platform-tests.org/tools/wptrunner/docs/expectation.html#web-platform-tests-metadata
 #[derive(Debug, Default, EnumSetType, Serialize, ValueEnum)]
 pub enum ImplementationStatus {
     /// Indicates that functionality governing test(s) is implemented or currently being
@@ -906,6 +913,11 @@ where
     })
 }
 
+/// The subset of WPT run environments can be handled by `moz-webgpu-cts`. Part of
+/// [`Applicability`].
+///
+/// This is essentially the set of OSes, software versions, and hardware that Firefox's WebGPU team
+/// uses in CI for WebGPU. When that changes, this changes accordingly.
 #[derive(Clone, Copy, Debug, Enum, Exhaust, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub enum Platform {
     Windows,
@@ -913,6 +925,11 @@ pub enum Platform {
     MacOs,
 }
 
+/// The subset of browser build profiles can be handled by `moz-webgpu-cts`. Part of
+/// [`Applicability`].
+///
+/// This is essentially the set of profiles that Firefox's WebGPU team uses in CI for WebGPU. When
+/// that changes, this changes accordingly.
 #[derive(Clone, Copy, Debug, Enum, Exhaust, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub enum BuildProfile {
     Debug,
@@ -1020,6 +1037,10 @@ where
     }
 }
 
+/// The strict subset of WPT property conditionals that can be handled with `moz-webgpu-cts`.
+///
+/// The entire set of possible values here should be small enough that, when it is a key like in
+/// [`ExpandedPropertyValue`], significant performance gains are possible.
 #[derive(Clone, Debug, Default)]
 pub struct Applicability {
     pub platform: Option<Platform>,
