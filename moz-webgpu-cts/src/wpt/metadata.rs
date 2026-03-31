@@ -7,11 +7,11 @@ use std::{
 use clap::ValueEnum;
 use enum_map::Enum;
 use enumset::EnumSetType;
+use exhaust::Exhaust;
 use joinery::JoinableIterator;
 use lazy_format::{lazy_format, make_lazy_format};
 use maybe_collapsed::MaybeCollapsed;
 use serde::{Deserialize, Serialize};
-use strum::EnumIter;
 use whippit::{
     metadata::{
         self, file_parser,
@@ -906,14 +906,14 @@ where
     })
 }
 
-#[derive(Clone, Copy, Debug, Enum, EnumIter, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[derive(Clone, Copy, Debug, Enum, Exhaust, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub enum Platform {
     Windows,
     Linux,
     MacOs,
 }
 
-#[derive(Clone, Copy, Debug, Enum, EnumIter, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[derive(Clone, Copy, Debug, Enum, Exhaust, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub enum BuildProfile {
     Debug,
     Optimized,

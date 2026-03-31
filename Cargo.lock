@@ -388,6 +388,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "exhaust"
+version = "0.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "55753e2354c477cf7cb0089316c526e72be8610c330358c93d6f12f8d1fad756"
+dependencies = [
+ "exhaust-macros",
+ "itertools 0.14.0",
+ "mutants",
+]
+
+[[package]]
+name = "exhaust-macros"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "de248793548b04e7d29117107315b9cb6410c0b37dbb85038452eccfb489cda3"
+dependencies = [
+ "itertools 0.14.0",
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "fnv"
 version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -454,6 +477,15 @@ name = "itertools"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b1c173a5686ce8bfa551b3563d0c2170bf24ca44da99c7ca4bfdab5418c3fe57"
+dependencies = [
+ "either",
+]
+
+[[package]]
+name = "itertools"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2b192c782037fadd9cfa75548310488aabdbf3d2da73885b31bd0abd03351285"
 dependencies = [
  "either",
 ]
@@ -596,9 +628,10 @@ dependencies = [
  "enum-map",
  "enumset",
  "env_logger",
+ "exhaust",
  "indexmap",
  "insta",
- "itertools",
+ "itertools 0.14.0",
  "joinery",
  "lazy_format",
  "lets_find_up",
@@ -609,11 +642,16 @@ dependencies = [
  "rayon",
  "serde",
  "serde_json",
- "strum",
  "thiserror",
  "wax",
  "whippit",
 ]
+
+[[package]]
+name = "mutants"
+version = "0.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "add0ac067452ff1aca8c5002111bd6b1c895baee6e45fcbc44e0193aea17be56"
 
 [[package]]
 name = "natord"
@@ -795,12 +833,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rustversion"
-version = "1.0.14"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7ffc183a10b4478d04cbbbfc96d0873219d962dd5accaff2ffbd4ceb7df837f4"
-
-[[package]]
 name = "ryu"
 version = "1.0.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -871,28 +903,6 @@ name = "strsim"
 version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
-
-[[package]]
-name = "strum"
-version = "0.27.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f64def088c51c9510a8579e3c5d67c65349dcf755e5479ad3d010aa6454e2c32"
-dependencies = [
- "strum_macros",
-]
-
-[[package]]
-name = "strum_macros"
-version = "0.27.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c77a8c5abcaf0f9ce05d62342b7d298c346515365c36b673df4ebe3ced01fde8"
-dependencies = [
- "heck",
- "proc-macro2",
- "quote",
- "rustversion",
- "syn",
-]
 
 [[package]]
 name = "supports-color"
@@ -1033,7 +1043,7 @@ version = "0.6.0"
 source = "git+https://github.com/ErichDonGubler/wax?branch=static-miette-diags-0.7#63542ef14cd5ac824f78cf6c2864ca4b031a0ce6"
 dependencies = [
  "const_format",
- "itertools",
+ "itertools 0.11.0",
  "miette",
  "nom",
  "pori",
