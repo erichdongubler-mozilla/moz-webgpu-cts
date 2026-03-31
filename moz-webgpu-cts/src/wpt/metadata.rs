@@ -1118,7 +1118,7 @@ where
                                 format!(
                                     "{lit:?}{}",
                                     concat!(
-                                        " is not a platform that the WebGPU ",
+                                        " is not an `os` that the WebGPU ",
                                         "team recognizes, discarding"
                                     )
                                 ),
