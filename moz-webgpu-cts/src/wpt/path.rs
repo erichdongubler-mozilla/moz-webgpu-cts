@@ -6,10 +6,10 @@ use std::{
 
 use camino::{Utf8Component, Utf8Path};
 use clap::ValueEnum;
+use exhaust::Exhaust;
 use itertools::Itertools;
 use joinery::JoinableIterator;
 use lazy_format::make_lazy_format;
-use strum::{EnumIter, IntoEnumIterator};
 
 /// A browser supported by [crate::main], used for [`TestEntryPath`]s.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, ValueEnum)]
@@ -173,7 +173,7 @@ impl TestEntryType {
     fn iter() -> impl Iterator<Item = Self> {
         // NOTE: `Html`'s file extension is less specific than other file extensions, so try
         // matching it last.
-        JsExecScope::iter()
+        JsExecScope::exhaust()
             .map(|exec_scope| Self::Js { exec_scope })
             .chain([Self::Html])
     }
@@ -204,7 +204,7 @@ impl TestEntryType {
 }
 
 /// An executed JS test entry's test type, viz.,
-#[derive(Clone, Copy, Debug, EnumIter, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Exhaust, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(crate) enum JsExecScope {
     /// A `*.worker.js` test. See also [WPT upstream docs.' "Dedicated worker test (`.worker.js`)"
     /// section][upstream].
