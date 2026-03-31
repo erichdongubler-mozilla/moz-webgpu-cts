@@ -833,28 +833,28 @@ where
                         }
                     }
                 },
-                MaybeCollapsed::Expanded(by_platform) => {
+                MaybeCollapsed::Expanded(by_environment) => {
                     writeln!(f, "{ident}:")?;
-                    debug_assert!(!by_platform.is_empty());
-                    for (platform, t) in by_platform {
-                        let platform = {
-                            let platform_str = match platform {
-                                Platform::Windows => "win",
-                                Platform::Linux => "linux",
-                                Platform::MacOs => "mac",
+                    debug_assert!(!by_environment.is_empty());
+                    for (environment, t) in by_environment {
+                        let environment = {
+                            let os_str = match environment {
+                                Environment::Windows => "win",
+                                Environment::Linux => "linux",
+                                Environment::MacOs => "mac",
                             };
-                            make_lazy_format!(|f| write!(f, "os == {platform_str:?}"))
+                            make_lazy_format!(|f| write!(f, "os == {os_str:?}"))
                         };
                         match t {
                             MaybeCollapsed::Collapsed(t) => {
-                                if_not_default(t, || writeln!(f, "{if} {platform}: {t}"))?
+                                if_not_default(t, || writeln!(f, "{if} {environment}: {t}"))?
                             }
                             MaybeCollapsed::Expanded(by_build_profile) => {
                                 debug_assert!(!by_build_profile.is_empty());
                                 for (build_profile, t) in by_build_profile {
                                     let build_profile = disp_build_profile(*build_profile);
                                     if_not_default(t, || {
-                                        writeln!(f, "{if} {platform} and {build_profile}: {t}")
+                                        writeln!(f, "{if} {environment} and {build_profile}: {t}")
                                     })?;
                                 }
                             }
@@ -907,7 +907,7 @@ where
 }
 
 #[derive(Clone, Copy, Debug, Enum, Exhaust, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
-pub enum Platform {
+pub enum Environment {
     Windows,
     Linux,
     MacOs,
@@ -985,10 +985,10 @@ where
 
                             for (applicability, val) in &*conditions {
                                 let Applicability {
-                                    platform,
+                                    environment,
                                     build_profile,
                                 } = applicability;
-                                if platform.as_ref().is_none_or(|p2| *p2 == p)
+                                if environment.as_ref().is_none_or(|p2| *p2 == p)
                                     && build_profile.as_ref().is_none_or(|bp2| *bp2 == bp)
                                 {
                                     matched = Some(val.clone());
@@ -1022,7 +1022,7 @@ where
 
 #[derive(Clone, Debug, Default)]
 pub struct Applicability {
-    pub platform: Option<Platform>,
+    pub environment: Option<Environment>,
     pub build_profile: Option<BuildProfile>,
 }
 
@@ -1099,14 +1099,14 @@ where
                         Expr::Value(Value::Variable(var)),
                         Expr::Value(Value::Literal(Literal::String(lit))),
                     ) if var == "os" => {
-                        let platform = match &**lit {
-                            "mac" => Some(Platform::MacOs),
-                            "linux" => Some(Platform::Linux),
-                            "win" => Some(Platform::Windows),
+                        let environment = match &**lit {
+                            "mac" => Some(Environment::MacOs),
+                            "linux" => Some(Environment::Linux),
+                            "win" => Some(Environment::Windows),
                             _ => None,
                         };
-                        if let Some(platform) = platform {
-                            if let Some(_old) = acc.platform.replace(platform) {
+                        if let Some(environment) = environment {
+                            if let Some(_old) = acc.environment.replace(environment) {
                                 emitter.emit(Rich::custom(
                                     e.span(),
                                     "multiple `os` conditions specified, discarding oldest",
