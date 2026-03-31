@@ -3,8 +3,9 @@ use std::fmt::Debug;
 use enumset::EnumSet;
 
 use crate::wpt::metadata::{
+    applicability::{BuildProfile, Environment},
     properties::{Expected, NonNormalizedPropertyValue},
-    BuildProfile, ImplementationStatus, Platform, SubtestOutcome, TestOutcome, TestProps,
+    ImplementationStatus, SubtestOutcome, TestOutcome, TestProps,
 };
 
 pub(crate) trait ShouldUpdateExpected: Debug {
@@ -12,14 +13,14 @@ pub(crate) trait ShouldUpdateExpected: Debug {
         &mut self,
         meta_props: &TestProps<TestOutcome>,
         reported: &NonNormalizedPropertyValue<Expected<TestOutcome>>,
-        key: (Platform, BuildProfile),
+        key: (Environment, BuildProfile),
     ) -> bool;
     fn subtest(
         &mut self,
         meta_props: &TestProps<SubtestOutcome>,
         reported: &NonNormalizedPropertyValue<Expected<SubtestOutcome>>,
         parent_meta_props: &TestProps<TestOutcome>,
-        key: (Platform, BuildProfile),
+        key: (Environment, BuildProfile),
     ) -> bool;
 }
 
@@ -40,7 +41,7 @@ impl ShouldUpdateExpected for ImplementationStatusFilter {
         &mut self,
         meta_props: &TestProps<TestOutcome>,
         _reported: &NonNormalizedPropertyValue<Expected<TestOutcome>>,
-        key: (Platform, BuildProfile),
+        key: (Environment, BuildProfile),
     ) -> bool {
         let status = meta_props.implementation_status.unwrap_or_default()[key];
         self.is_allowed(status)
@@ -51,7 +52,7 @@ impl ShouldUpdateExpected for ImplementationStatusFilter {
         meta_props: &TestProps<SubtestOutcome>,
         _reported: &NonNormalizedPropertyValue<Expected<SubtestOutcome>>,
         parent_meta_props: &TestProps<TestOutcome>,
-        key: (Platform, BuildProfile),
+        key: (Environment, BuildProfile),
     ) -> bool {
         let status = meta_props
             .implementation_status
@@ -69,7 +70,7 @@ impl ShouldUpdateExpected for NeverUpdateExpected {
         &mut self,
         _meta_props: &TestProps<TestOutcome>,
         _reported: &NonNormalizedPropertyValue<Expected<TestOutcome>>,
-        _key: (Platform, BuildProfile),
+        _key: (Environment, BuildProfile),
     ) -> bool {
         false
     }
@@ -79,7 +80,7 @@ impl ShouldUpdateExpected for NeverUpdateExpected {
         _meta_props: &TestProps<SubtestOutcome>,
         _reported: &NonNormalizedPropertyValue<Expected<SubtestOutcome>>,
         _parent_meta_props: &TestProps<TestOutcome>,
-        _key: (Platform, BuildProfile),
+        _key: (Environment, BuildProfile),
     ) -> bool {
         false
     }

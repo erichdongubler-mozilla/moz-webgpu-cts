@@ -25,9 +25,9 @@ use crate::{
     taint_subtest_timeouts_by_suspicion,
     wpt::{
         metadata::{
+            applicability::{BuildProfile, Environment},
             properties::{ExpandedPropertyValue, Expected, NonNormalizedPropertyValue},
-            BuildProfile, File, FileProps, Platform, Subtest, SubtestOutcome, Test, TestOutcome,
-            TestProps,
+            File, FileProps, Subtest, SubtestOutcome, Test, TestOutcome, TestProps,
         },
         path::{Browser, TestEntryPath},
     },
@@ -97,13 +97,17 @@ fn cts_path(test_entry_path: &TestEntryPath<'_>) -> Option<String> {
 
 fn accumulate<Out>(
     recorded: &mut NonNormalizedPropertyValue<Expected<Out>>,
-    platform: Platform,
+    environment: Environment,
     build_profile: BuildProfile,
     reported_outcome: Out,
 ) where
     Out: Default + EnumSetType + Hash,
 {
-    match recorded.entry(platform).or_default().entry(build_profile) {
+    match recorded
+        .entry(environment)
+        .or_default()
+        .entry(build_profile)
+    {
         std::collections::btree_map::Entry::Vacant(entry) => {
             entry.insert(Expected::permanent(reported_outcome));
         }
@@ -126,7 +130,7 @@ fn reconcile<Out>(
     should_update_expected: &mut dyn FnMut(
         &TestProps<Out>,
         &NonNormalizedPropertyValue<Expected<Out>>,
-        (Platform, BuildProfile),
+        (Environment, BuildProfile),
     ) -> bool,
 ) where
     Out: Debug + Default + EnumSetType,
@@ -146,11 +150,11 @@ fn reconcile<Out>(
             ReportProcessingPreset::MigrateTestStructure => |meta, _rep| meta,
         };
 
-        ExpandedPropertyValue::from_query(|platform, build_profile| {
-            let key = (platform, build_profile);
+        ExpandedPropertyValue::from_query(|environment, build_profile| {
+            let key = (environment, build_profile);
             if should_update_expected(meta_props, &reported, key) {
                 let reported = reported
-                    .get(&platform)
+                    .get(&environment)
                     .and_then(|rep| rep.get(&build_profile))
                     .copied();
                 resolve(meta_expected[key], reported)
@@ -326,7 +330,7 @@ pub(crate) fn process_reports(
         let ExecutionReport {
             run_info:
                 RunInfo {
-                    platform,
+                    environment,
                     build_profile,
                 },
             entries,
@@ -387,7 +391,7 @@ pub(crate) fn process_reports(
 
             accumulate(
                 &mut test_entry.reported,
-                platform,
+                environment,
                 build_profile,
                 reported_outcome,
             );
@@ -403,7 +407,7 @@ pub(crate) fn process_reports(
                         .entry(subtest_name.clone())
                         .or_default()
                         .reported,
-                    platform,
+                    environment,
                     build_profile,
                     outcome,
                 );
@@ -482,7 +486,7 @@ pub(crate) fn process_reports(
             let mut properties = properties.unwrap_or_default();
 
             let skip = TestOutcome::Skip;
-            for (platform, build_profile, reported) in
+            for (environment, build_profile, reported) in
                 test_reported.iter_mut().flat_map(|(p, by_bp)| {
                     by_bp
                         .iter_mut()
@@ -501,13 +505,13 @@ pub(crate) fn process_reports(
                             concat!(
                                 "encountered `{}` among other outcomes ",
                                 "in aggregation of reported test outcomes ",
-                                "for {:?} with platform {:?} and build profile {:?}, ",
+                                "for {:?} with environment {:?} and build profile {:?}, ",
                                 " removing with the assumption that ",
                                 "this is an artifact of disjoint test runs"
                             ),
                             skip,
                             test_entry_path,
-                            platform,
+                            environment,
                             build_profile,
                         );
                         *reported = Expected::new(reported.inner() & !skip)
@@ -521,10 +525,10 @@ pub(crate) fn process_reports(
                 test_reported,
                 preset,
                 &mut |meta_props, reported, key| {
-                    let (platform, build_profile) = key;
+                    let (environment, build_profile) = key;
                     (match on_skip_only {
                         OnSkipOnly::Ignore => reported
-                            .get(&platform)
+                            .get(&environment)
                             .and_then(|r| r.get(&build_profile))
                             .is_none_or(|ex| ex != &skip),
                         OnSkipOnly::Reconcile => true,

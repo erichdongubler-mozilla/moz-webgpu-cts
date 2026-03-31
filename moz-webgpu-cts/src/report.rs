@@ -6,7 +6,10 @@ use serde::{
     Deserialize,
 };
 
-use crate::metadata::{BuildProfile, Platform, SubtestOutcome, TestOutcome};
+use crate::metadata::{
+    applicability::{BuildProfile, Environment},
+    SubtestOutcome, TestOutcome,
+};
 
 /// A `wptreport.json` file emitted by `wptrunner` and parsed by `moz-webgpu-cts` (which means it
 /// adheres to the strict subset that `moz-webgpu-cts` supports).
@@ -20,7 +23,7 @@ pub(crate) struct ExecutionReport {
 /// An [`ExecutionReport::run_info`].
 #[derive(Debug)]
 pub(crate) struct RunInfo {
-    pub platform: Platform,
+    pub environment: Environment,
     pub build_profile: BuildProfile,
 }
 
@@ -42,19 +45,23 @@ impl<'de> Deserialize<'de> for RunInfo {
             debug,
         } = ActualRunInfo::deserialize(deserializer)?;
 
-        let platform = match &*os {
+        let environment = match &*os {
             "win" => {
                 if processor == "x86_64" {
-                    Platform::Windows
+                    Environment::Windows
                 } else {
                     return Err(D::Error::custom(
-                        "platform was `win`, but `processor` was not `x86_64`",
+                        "environment was `win`, but `processor` was not `x86_64`",
                     ));
                 }
             }
-            "mac" => Platform::MacOs,
-            "linux" => Platform::Linux,
-            other => return Err(D::Error::custom(format!("unrecognized platform {other:?}"))),
+            "mac" => Environment::MacOs,
+            "linux" => Environment::Linux,
+            other => {
+                return Err(D::Error::custom(format!(
+                    "unrecognized environment {other:?}"
+                )))
+            }
         };
 
         let build_profile = if debug {
@@ -64,7 +71,7 @@ impl<'de> Deserialize<'de> for RunInfo {
         };
 
         Ok(RunInfo {
-            platform,
+            environment,
             build_profile,
         })
     }

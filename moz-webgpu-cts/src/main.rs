@@ -8,9 +8,9 @@ use self::{
     wpt::{
         metadata::{
             self,
+            applicability::Environment,
             properties::{ExpandedPropertyValue, Expected},
-            File, ImplementationStatus, Platform, Subtest, SubtestOutcome, Test, TestOutcome,
-            TestProps,
+            File, ImplementationStatus, Subtest, SubtestOutcome, Test, TestOutcome, TestProps,
         },
         path::TestEntryPath,
     },
@@ -250,10 +250,10 @@ impl UpdateBacklogDirection {
 
 #[derive(Clone, Copy, Debug, Parser)]
 enum UpdateBacklogCriteria {
-    /// Determine status based on `PASS` outcomes on all platforms from `backlog`.
+    /// Determine status based on `PASS` outcomes on all environments from `backlog`.
     PermaPassing {
         #[clap(long)]
-        only_across_all_platforms: bool,
+        only_across_all_environments: bool,
     },
 }
 
@@ -468,7 +468,7 @@ fn run(cli: Cli) -> ExitCode {
                 PermaAndIntermittent<BTreeMap<Arc<String>, IndexSet<Arc<String>>>>;
 
             #[derive(Clone, Debug, Default)]
-            struct PerPlatformAnalysis {
+            struct PerEnvironmentAnalysis {
                 tests_with_runner_errors: TestSet,
                 tests_with_disabled_or_skip: TestSet,
                 tests_with_crashes: TestSet,
@@ -479,15 +479,15 @@ fn run(cli: Cli) -> ExitCode {
 
             #[derive(Clone, Debug, Default)]
             struct Analysis {
-                windows: PerPlatformAnalysis,
-                linux: PerPlatformAnalysis,
-                mac_os: PerPlatformAnalysis,
+                windows: PerEnvironmentAnalysis,
+                linux: PerEnvironmentAnalysis,
+                mac_os: PerEnvironmentAnalysis,
             }
 
             impl Analysis {
-                pub fn for_each_platform_mut<F>(&mut self, mut f: F)
+                pub fn for_each_environment_mut<F>(&mut self, mut f: F)
                 where
-                    F: FnMut(&mut PerPlatformAnalysis),
+                    F: FnMut(&mut PerEnvironmentAnalysis),
                 {
                     let Self {
                         windows,
@@ -499,32 +499,32 @@ fn run(cli: Cli) -> ExitCode {
                     }
                 }
 
-                pub fn for_each_platform<F>(&self, mut f: F)
+                pub fn for_each_environment<F>(&self, mut f: F)
                 where
-                    F: FnMut(Platform, &PerPlatformAnalysis),
+                    F: FnMut(Environment, &PerEnvironmentAnalysis),
                 {
                     let Self {
                         windows,
                         linux,
                         mac_os,
                     } = self;
-                    for (platform, analysis) in [
-                        (Platform::Windows, windows),
-                        (Platform::Linux, linux),
-                        (Platform::MacOs, mac_os),
+                    for (environment, analysis) in [
+                        (Environment::Windows, windows),
+                        (Environment::Linux, linux),
+                        (Environment::MacOs, mac_os),
                     ] {
-                        f(platform, analysis)
+                        f(environment, analysis)
                     }
                 }
 
-                pub fn for_platform_mut<F>(&mut self, platform: Platform, mut f: F)
+                pub fn for_environment_mut<F>(&mut self, environment: Environment, mut f: F)
                 where
-                    F: FnMut(&mut PerPlatformAnalysis),
+                    F: FnMut(&mut PerEnvironmentAnalysis),
                 {
-                    match platform {
-                        Platform::Windows => f(&mut self.windows),
-                        Platform::Linux => f(&mut self.linux),
-                        Platform::MacOs => f(&mut self.mac_os),
+                    match environment {
+                        Environment::Windows => f(&mut self.windows),
+                        Environment::Linux => f(&mut self.linux),
+                        Environment::MacOs => f(&mut self.mac_os),
                     }
                 }
             }
@@ -556,7 +556,7 @@ fn run(cli: Cli) -> ExitCode {
                 let test_name = Arc::new(test_name);
 
                 if disabled.is_some_and(|d| d.iter().any(|(_, val)| val.is_disabled())) {
-                    analysis.for_each_platform_mut(|analysis| {
+                    analysis.for_each_environment_mut(|analysis| {
                         analysis
                             .tests_with_disabled_or_skip
                             .perma
@@ -609,7 +609,7 @@ fn run(cli: Cli) -> ExitCode {
                         expected: Expected<TestOutcome>,
                         mut receiver: F,
                     ) where
-                        F: FnMut(&mut dyn FnMut(&mut PerPlatformAnalysis)),
+                        F: FnMut(&mut dyn FnMut(&mut PerEnvironmentAnalysis)),
                     {
                         for outcome in expected.iter() {
                             match outcome {
@@ -654,15 +654,15 @@ fn run(cli: Cli) -> ExitCode {
                         }
                     }
 
-                    let apply_to_specific_platforms =
-                        |analysis: &mut Analysis, platform, expected| {
+                    let apply_to_specific_environments =
+                        |analysis: &mut Analysis, environment, expected| {
                             analyze_test_outcome(&test_name, expected, |f| {
-                                analysis.for_platform_mut(platform, f)
+                                analysis.for_environment_mut(environment, f)
                             })
                         };
 
-                    for ((platform, _build_profile), expected) in expected.into_iter() {
-                        apply_to_specific_platforms(&mut analysis, platform, expected)
+                    for ((environment, _build_profile), expected) in expected.into_iter() {
+                        apply_to_specific_environments(&mut analysis, environment, expected)
                     }
                 }
 
@@ -693,7 +693,7 @@ fn run(cli: Cli) -> ExitCode {
                             expected: Expected<SubtestOutcome>,
                             mut receiver: Fo,
                         ) where
-                            Fo: FnMut(&mut dyn FnMut(&mut PerPlatformAnalysis)),
+                            Fo: FnMut(&mut dyn FnMut(&mut PerEnvironmentAnalysis)),
                         {
                             for outcome in expected.iter() {
                                 match outcome {
@@ -722,27 +722,27 @@ fn run(cli: Cli) -> ExitCode {
                             }
                         }
 
-                        let apply_to_specific_platforms =
-                            |analysis: &mut Analysis, platform, expected| {
+                        let apply_to_specific_environments =
+                            |analysis: &mut Analysis, environment, expected| {
                                 analyze_subtest_outcome(&test_name, &subtest_name, expected, |f| {
-                                    analysis.for_platform_mut(platform, f)
+                                    analysis.for_environment_mut(environment, f)
                                 })
                             };
 
-                        for ((platform, _build_profile), expected) in expected.into_iter() {
-                            apply_to_specific_platforms(&mut analysis, platform, expected)
+                        for ((environment, _build_profile), expected) in expected.into_iter() {
+                            apply_to_specific_environments(&mut analysis, environment, expected)
                         }
                     }
                 }
             }
             log::info!("finished analysis, printing to `stdout`…");
             println!("Total: {test_count} test(s), {subtest_count} subtest(s)");
-            analysis.for_each_platform(|platform, analysis| {
+            analysis.for_each_environment(|environment, analysis| {
                 let show_zero_count_item = match on_zero_item {
                     OnZeroItem::Show => true,
                     OnZeroItem::Hide => false,
                 };
-                let PerPlatformAnalysis {
+                let PerEnvironmentAnalysis {
                     tests_with_runner_errors,
                     tests_with_disabled_or_skip,
                     tests_with_crashes,
@@ -931,7 +931,7 @@ fn run(cli: Cli) -> ExitCode {
                     ),
                 ];
                 let sections = sections.iter().filter_map(Option::as_ref).join_with("");
-                println!("{platform:?}:{sections}")
+                println!("{environment:?}:{sections}")
             });
             println!("Full analysis: {analysis:#?}");
             ExitCode::SUCCESS
@@ -980,7 +980,7 @@ fn run(cli: Cli) -> ExitCode {
                         subtests,
                     } = test;
                     let mut cases = ExpandedPropertyValue::default();
-                    for ((platform, build_profile), expected) in properties
+                    for ((environment, build_profile), expected) in properties
                         .expected
                         .as_ref()
                         .unwrap_or(&Default::default())
@@ -990,24 +990,24 @@ fn run(cli: Cli) -> ExitCode {
                             Some(TestOutcome::Ok | TestOutcome::Pass) => Case::PermaPass,
                             _ => Case::Other,
                         };
-                        cases[(platform, build_profile)] = case;
+                        cases[(environment, build_profile)] = case;
                     }
                     if !subtests.is_empty() {
-                        cases = ExpandedPropertyValue::from_query(|platform, build_profile| {
+                        cases = ExpandedPropertyValue::from_query(|environment, build_profile| {
                             let consistent_expected = subtests
                                 .iter()
                                 .map(|subtest| {
                                     let (_name, Subtest { properties }) = subtest;
                                     let expected =
                                         properties.expected.as_ref().unwrap_or(&Default::default())
-                                            [(platform, build_profile)];
+                                            [(environment, build_profile)];
                                     if let Some(SubtestOutcome::Pass) = expected.as_permanent() {
                                         Case::PermaPass
                                     } else {
                                         Case::Other
                                     }
                                 })
-                                .chain(iter::once(cases[(platform, build_profile)]))
+                                .chain(iter::once(cases[(environment, build_profile)]))
                                 .all_equal_value()
                                 .ok();
                             consistent_expected.unwrap_or(Case::Other)
@@ -1015,7 +1015,7 @@ fn run(cli: Cli) -> ExitCode {
                     }
                     // TODO: Just compare this multiple times (here _and_ above), and compare
                     // subtests afterwards.
-                    let value_across_all_platforms =
+                    let value_across_all_environments =
                         || cases.into_iter().map(|(_, case)| case).all_equal_value();
                     fn apply_criteria(
                         direction: UpdateBacklogDirection,
@@ -1033,12 +1033,12 @@ fn run(cli: Cli) -> ExitCode {
                     }
                     match criteria {
                         UpdateBacklogCriteria::PermaPassing {
-                            only_across_all_platforms,
+                            only_across_all_environments,
                         } => {
-                            if only_across_all_platforms {
+                            if only_across_all_environments {
                                 properties.implementation_status = apply_criteria(
                                     direction,
-                                    value_across_all_platforms().unwrap_or(Case::Other),
+                                    value_across_all_environments().unwrap_or(Case::Other),
                                 )
                                 .map(ExpandedPropertyValue::unconditional)
                                 .or(properties.implementation_status);
