@@ -845,12 +845,19 @@ where
                     debug_assert!(!by_environment.is_empty());
                     for (environment, t) in by_environment {
                         let environment = {
-                            let os_str = match environment {
-                                Environment::Windows => "win",
-                                Environment::Linux => "linux",
-                                Environment::MacOs => "mac",
+                            let (os, processor) = match environment {
+                                Environment::Windows => ("win", None),
+                                Environment::Linux => ("linux", None),
+                                Environment::MacOsIntel => ("mac", Some("x86_64")),
+                                Environment::MacOsArm => ("mac", Some("aarch64")),
                             };
-                            make_lazy_format!(|f| write!(f, "os == {os_str:?}"))
+                            make_lazy_format!(|f| {
+                                write!(f, "os == {os:?}")?;
+                                if let Some(processor) = processor {
+                                    write!(f, "and processor = {processor:?}")?;
+                                }
+                                Ok(())
+                            })
                         };
                         match t {
                             MaybeCollapsed::Collapsed(t) => {
