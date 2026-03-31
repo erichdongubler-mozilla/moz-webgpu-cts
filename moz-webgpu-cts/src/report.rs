@@ -1,3 +1,6 @@
+//! Data representation of WPT test reports. The conceptual entry point of this module is the
+//! [`ExecutionReport`] API.
+
 use serde::{
     de::{Deserializer, Error},
     Deserialize,
@@ -5,6 +8,8 @@ use serde::{
 
 use crate::metadata::{BuildProfile, Platform, SubtestOutcome, TestOutcome};
 
+/// A `wptreport.json` file emitted by `wptrunner` and parsed by `moz-webgpu-cts` (which means it
+/// adheres to the strict subset that `moz-webgpu-cts` supports).
 #[derive(Debug, Deserialize)]
 pub(crate) struct ExecutionReport {
     pub run_info: RunInfo,
@@ -12,6 +17,7 @@ pub(crate) struct ExecutionReport {
     pub entries: Vec<TestExecutionEntry>,
 }
 
+/// An [`ExecutionReport::run_info`].
 #[derive(Debug)]
 pub(crate) struct RunInfo {
     pub platform: Platform,
@@ -64,6 +70,7 @@ impl<'de> Deserialize<'de> for RunInfo {
     }
 }
 
+/// An entry in [`ExecutionReport::entries`].
 #[derive(Debug, Deserialize)]
 pub(crate) struct TestExecutionEntry {
     #[serde(rename = "test")]
@@ -72,6 +79,7 @@ pub(crate) struct TestExecutionEntry {
     pub result: TestExecutionResult,
 }
 
+/// A [`TestExecutionEntry::result`].
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
 pub(crate) enum TestExecutionResult {
@@ -86,6 +94,7 @@ pub(crate) enum TestExecutionResult {
     },
 }
 
+/// A subtest entry in [`TestExecutionResult`].
 #[derive(Debug, Deserialize)]
 pub(crate) struct SubtestExecutionResult {
     #[serde(rename = "name")]

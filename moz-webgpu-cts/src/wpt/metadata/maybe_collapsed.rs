@@ -1,3 +1,5 @@
+//! A module holding the [`MaybeCollapsed`] abstraction.
+
 use std::fmt::Debug;
 
 /// Similar to the ubiquitous `enum Either`, but with the implication that `Collapsed` values are

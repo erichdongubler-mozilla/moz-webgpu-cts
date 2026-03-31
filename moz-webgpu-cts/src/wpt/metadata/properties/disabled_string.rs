@@ -5,6 +5,9 @@ use std::{
 
 use serde::Serialize;
 
+/// A `disabled` property value; see also the `disabled` entry in [WPT upstream documentation].
+///
+/// [WPT upstream]: https://web-platform-tests.org/tools/wptrunner/docs/expectation.html#web-platform-tests-metadata
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct DisabledString(Cow<'static, str>);
 

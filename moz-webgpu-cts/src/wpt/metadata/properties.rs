@@ -1,3 +1,5 @@
+//! WPT properties' value representation for `moz-webgpu-cts`.
+
 use std::{
     collections::BTreeMap,
     fmt::{self, Debug, Display, Formatter},
@@ -16,10 +18,15 @@ pub use self::disabled_string::DisabledString;
 
 mod disabled_string;
 
-/// A non-empty set of expected outcomes in a [`Test`] or [`Subtest`].
+/// A non-empty set of expected outcomes in a [`Test`] or [`Subtest`]. See also the `expected`
+/// entry in [WPT upstream documentation].
+///
+/// [WPT upstream]: https://web-platform-tests.org/tools/wptrunner/docs/expectation.html#web-platform-tests-metadata
 ///
 /// The default expected test outcome is a "good" outcome, where testing passes. The `Out` type
 /// parameter should return this value in its implementation of `Default`.
+///
+/// Internally, this type is represented as a computationally efficient bitset.
 ///
 /// [`Test`]: crate::metadata::Test
 /// [`Subtest`]: crate::metadata::Subtest

@@ -1,3 +1,5 @@
+//! Implementation details for [`crate::process_reports()`].
+
 use std::{
     collections::BTreeMap,
     fmt::{Debug, Display},
