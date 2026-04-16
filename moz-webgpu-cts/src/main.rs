@@ -255,6 +255,8 @@ enum UpdateBacklogCriteria {
         #[clap(long)]
         only_across_all_platforms: bool,
     },
+    /// Remove tests that, at most, expect `PASS`, `TIMEOUT`, and `NOTRUN` outcomes from `backlog`.
+    PromoteNotNotPassing,
 }
 
 fn main() -> ExitCode {
@@ -965,6 +967,7 @@ fn run(cli: Cli) -> ExitCode {
             enum Case {
                 #[default]
                 PermaPass,
+                NotNotPass,
                 Other,
             }
             let mut found_write_err = false;
@@ -1003,6 +1006,12 @@ fn run(cli: Cli) -> ExitCode {
                                             [(platform, build_profile)];
                                     if let Some(SubtestOutcome::Pass) = expected.as_permanent() {
                                         Case::PermaPass
+                                    } else if expected.is_subset(
+                                        SubtestOutcome::Pass
+                                            | SubtestOutcome::Timeout
+                                            | SubtestOutcome::NotRun,
+                                    ) {
+                                        Case::NotNotPass
                                     } else {
                                         Case::Other
                                     }
@@ -1025,7 +1034,7 @@ fn run(cli: Cli) -> ExitCode {
                             Case::PermaPass if direction.can_promote() => {
                                 Some(ImplementationStatus::Implementing)
                             }
-                            Case::Other if direction.can_demote() => {
+                            Case::NotNotPass | Case::Other if direction.can_demote() => {
                                 Some(ImplementationStatus::Backlog)
                             }
                             _ => None,
@@ -1051,6 +1060,14 @@ fn run(cli: Cli) -> ExitCode {
                                             .unwrap_or_else(|| old_impl_status[key])
                                     },
                                 ));
+                            }
+                        }
+                        UpdateBacklogSubcommand::PromoteNotNotPassing => {
+                            if matches!(
+                                value_across_all_platforms(),
+                                Ok(Case::PermaPass | Case::NotNotPass)
+                            ) {
+                                properties.implementation_status = None;
                             }
                         }
                     }
