@@ -101,11 +101,11 @@ impl<V> Expr<V> {
                 .map(Expr::Value)
                 .or(expr.delimited_by(just('('), just(')')))
                 .pratt((
-                    prefix(3, op("not"), |c| Expr::Not(Box::new(c))),
-                    infix(left(2), op("=="), |c1, c2| {
+                    prefix(3, op("not"), |_op, c, _e| Expr::Not(Box::new(c))),
+                    infix(left(2), op("=="), |c1, _op, c2, _e| {
                         Expr::Eq(Box::new(c1), Box::new(c2))
                     }),
-                    infix(left(1), op("and"), |c1, c2| {
+                    infix(left(1), op("and"), |c1, _op, c2, _e| {
                         Expr::And(Box::new(c1), Box::new(c2))
                     }),
                 ))
