@@ -17,7 +17,9 @@ serde1 = ["dep:serde"]
 chumsky = { version = "1.0.0-alpha.6", features = ["label", "pratt"] }
 indexmap = { workspace = true, optional = true }
 lazy_format = { workspace = true }
+log = { workspace = true }
 serde = { workspace = true, features = ["derive"], optional = true }
 
 [dev-dependencies]
+env_logger = { workspace = true }
 insta = { workspace = true }
