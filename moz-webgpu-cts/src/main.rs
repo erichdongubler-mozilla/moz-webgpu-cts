@@ -1,3 +1,4 @@
+mod aggregate_timings_from_logs;
 mod file_spec;
 mod process_reports;
 mod report;
@@ -125,6 +126,11 @@ enum Subcommand {
         /// What do when only `SKIP` outcomes are found for tests and subtests.
         #[clap(value_enum, long, default_value_t = OnSkipOnly::Reconcile)]
         on_skip_only: OnSkipOnly,
+    },
+    AggregateTimingsFromLogs {
+        log_paths: Vec<PathBuf>,
+        #[clap(long = "glob", value_name = "LOG_GLOB")]
+        log_globs: Vec<String>,
     },
     /// Parse test metadata, apply automated fixups, and re-emit it in normalized form.
     #[clap(name = "fixup", alias = "fmt")]
@@ -313,6 +319,26 @@ fn run(cli: Cli) -> ExitCode {
                 },
                 on_skip_only.into(),
             ) {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(AlreadyReportedToCommandline) => ExitCode::FAILURE,
+            }
+        }
+        Subcommand::AggregateTimingsFromLogs {
+            log_paths,
+            log_globs,
+        } => {
+            let log_paths_res = FileSpec {
+                paths: log_paths,
+                globs: log_globs,
+            }
+            .into_paths("log file(s)");
+
+            let log_paths = match log_paths_res {
+                Ok(ok) => ok,
+                Err(AlreadyReportedToCommandline) => return ExitCode::FAILURE,
+            };
+
+            match aggregate_timings_from_logs::aggregate_timings_from_logs(browser, log_paths) {
                 Ok(()) => ExitCode::SUCCESS,
                 Err(AlreadyReportedToCommandline) => ExitCode::FAILURE,
             }
