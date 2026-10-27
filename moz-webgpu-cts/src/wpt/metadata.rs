@@ -608,7 +608,7 @@ fn format_file_properties(props: &FileProps) -> impl Display + '_ {
 /// upstream documentation].
 ///
 /// [WPT upstream]: https://web-platform-tests.org/tools/wptrunner/docs/expectation.html#web-platform-tests-metadata
-#[derive(Debug, Default, EnumSetType, Serialize, ValueEnum)]
+#[derive(Debug, Default, EnumSetType, Exhaust, Serialize, ValueEnum)]
 pub enum ImplementationStatus {
     /// Indicates that functionality governing test(s) is implemented or currently being
     /// implemented, and generally expected to conform to tests.
@@ -624,23 +624,20 @@ pub enum ImplementationStatus {
 
 impl Display for ImplementationStatus {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                Self::Implementing => Self::IMPLEMENTING,
-                Self::Backlog => Self::BACKLOG,
-                Self::NotImplementing => Self::NOT_IMPLEMENTING,
-            }
-        )
+        write!(f, "{}", self.as_str())
     }
 }
 
 impl ImplementationStatus {
     const IDENT: &'static str = "implementation-status";
-    const IMPLEMENTING: &'static str = "implementing";
-    const BACKLOG: &'static str = "backlog";
-    const NOT_IMPLEMENTING: &'static str = "not-implementing";
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Implementing => "implementing",
+            Self::Backlog => "backlog",
+            Self::NotImplementing => "not-implementing",
+        }
+    }
 
     fn property_ident_parser<'a>() -> impl Parser<'a, &'a str, (), ParseError<'a>> {
         just(Self::IDENT).to(())
@@ -648,11 +645,12 @@ impl ImplementationStatus {
 
     fn property_value_parser<'a>(
     ) -> impl Clone + Parser<'a, &'a str, ImplementationStatus, ParseError<'a>> {
-        choice((
-            just(Self::BACKLOG).to(ImplementationStatus::Backlog),
-            just(Self::IMPLEMENTING).to(ImplementationStatus::Implementing),
-            just(Self::NOT_IMPLEMENTING).to(ImplementationStatus::NotImplementing),
-        ))
+        // NOTE: `just` matches prefixes, so no variant's string may be a prefix of another's.
+        choice(
+            Self::exhaust()
+                .map(|status| just(status.as_str()).to(status))
+                .collect::<Vec<_>>(),
+        )
     }
 }
 
@@ -1263,7 +1261,7 @@ pub(crate) const CRASH: &str = "CRASH";
 pub(crate) const OK: &str = "OK";
 pub(crate) const ERROR: &str = "ERROR";
 
-#[derive(Debug, Default, Deserialize, EnumSetType, Hash, Serialize)]
+#[derive(Debug, Default, Deserialize, EnumSetType, Exhaust, Hash, Serialize)]
 #[enumset(serialize_repr = "list")]
 #[enumset(serialize_deny_unknown)]
 #[serde(rename_all = "UPPERCASE")]
@@ -1280,37 +1278,33 @@ pub enum TestOutcome {
 
 impl Display for TestOutcome {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                Self::Ok => OK,
-                Self::Pass => PASS,
-                Self::Fail => FAIL,
-                Self::Timeout => TIMEOUT,
-                Self::Crash => CRASH,
-                Self::Error => ERROR,
-                Self::Skip => SKIP,
-            }
-        )
+        write!(f, "{}", self.as_str())
     }
 }
 
 impl TestOutcome {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Ok => OK,
+            Self::Pass => PASS,
+            Self::Fail => FAIL,
+            Self::Timeout => TIMEOUT,
+            Self::Crash => CRASH,
+            Self::Error => ERROR,
+            Self::Skip => SKIP,
+        }
+    }
+
     pub(crate) fn parser<'a, I, E>() -> impl Parser<'a, I, TestOutcome, E> + Clone
     where
         I: Input<'a, Token = char> + StrInput<'a, char>,
         E: ParserExtra<'a, I>,
     {
-        choice((
-            keyword(OK).to(TestOutcome::Ok),
-            keyword(PASS).to(TestOutcome::Pass),
-            keyword(FAIL).to(TestOutcome::Fail),
-            keyword(CRASH).to(TestOutcome::Crash),
-            keyword(TIMEOUT).to(TestOutcome::Timeout),
-            keyword(ERROR).to(TestOutcome::Error),
-            keyword(SKIP).to(TestOutcome::Skip),
-        ))
+        choice(
+            Self::exhaust()
+                .map(|outcome| keyword(outcome.as_str()).to(outcome))
+                .collect::<Vec<_>>(),
+        )
     }
 }
 
@@ -1327,7 +1321,7 @@ impl<'a> Properties<'a> for TestProps<TestOutcome> {
     }
 }
 
-#[derive(Debug, Default, Deserialize, EnumSetType, Hash, Serialize)]
+#[derive(Debug, Default, Deserialize, EnumSetType, Exhaust, Hash, Serialize)]
 #[enumset(serialize_repr = "list")]
 #[enumset(serialize_deny_unknown)]
 #[serde(rename_all = "UPPERCASE")]
@@ -1341,31 +1335,61 @@ pub enum SubtestOutcome {
 
 impl Display for SubtestOutcome {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                Self::Pass => PASS,
-                Self::Fail => FAIL,
-                Self::Timeout => TIMEOUT,
-                Self::NotRun => NOTRUN,
-            }
-        )
+        write!(f, "{}", self.as_str())
     }
 }
 
 impl SubtestOutcome {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Pass => PASS,
+            Self::Fail => FAIL,
+            Self::Timeout => TIMEOUT,
+            Self::NotRun => NOTRUN,
+        }
+    }
+
     pub(crate) fn parser<'a, I, E>() -> impl Parser<'a, I, SubtestOutcome, E> + Clone
     where
         I: Input<'a, Token = char> + StrInput<'a, char>,
         E: ParserExtra<'a, I>,
     {
-        choice((
-            keyword(PASS).to(SubtestOutcome::Pass),
-            keyword(FAIL).to(SubtestOutcome::Fail),
-            keyword(TIMEOUT).to(SubtestOutcome::Timeout),
-            keyword(NOTRUN).to(SubtestOutcome::NotRun),
-        ))
+        choice(
+            Self::exhaust()
+                .map(|outcome| keyword(outcome.as_str()).to(outcome))
+                .collect::<Vec<_>>(),
+        )
+    }
+}
+
+#[test]
+fn enum_str_round_trip() {
+    for status in ImplementationStatus::exhaust() {
+        assert_eq!(
+            ImplementationStatus::property_value_parser()
+                .then_ignore(end())
+                .parse(status.as_str())
+                .into_result(),
+            Ok(status),
+        );
+    }
+    for outcome in TestOutcome::exhaust() {
+        assert_eq!(
+            TestOutcome::parser::<_, ParseError<'_>>()
+                .then_ignore(end())
+                .parse(outcome.as_str())
+                .into_result(),
+            Ok(outcome),
+        );
+    }
+    for outcome in SubtestOutcome::exhaust() {
+        assert_eq!(
+            SubtestOutcome::parser::<_, ParseError<'_>>()
+                .then_ignore(end())
+                .parse(outcome.as_str())
+                .into_result(),
+            Ok(outcome),
+        );
     }
 }
 
