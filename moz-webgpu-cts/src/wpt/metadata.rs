@@ -817,10 +817,24 @@ impl PlatformBeingParsed {
     }
 }
 
-#[derive(Clone, Debug)]
-enum LinuxVersion {
+#[derive(Clone, Copy, Debug, Enum, Exhaust, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+pub enum LinuxVersion {
     Ubuntu2204,
     Ubuntu2404,
+}
+
+impl LinuxVersion {
+    /// The value of `version` in both `wptreport.json`'s `run_info` and metadata conditionals.
+    pub(crate) fn version_str(self) -> &'static str {
+        match self {
+            Self::Ubuntu2204 => "Ubuntu 22.04",
+            Self::Ubuntu2404 => "Ubuntu 24.04",
+        }
+    }
+
+    pub(crate) fn from_version_str(s: &str) -> Option<Self> {
+        Self::exhaust().find(|version| version.version_str() == s)
+    }
 }
 
 fn format_test_properties<Out>(indentation: u8, property: &TestProps<Out>) -> impl Display + '_
@@ -890,8 +904,12 @@ where
                         let platform = {
                             let (os, version) = match platform {
                                 Platform::Windows => ("win", None),
-                                Platform::LinuxUbuntu2204 => ("linux", Some("Ubuntu 22.04")),
-                                Platform::LinuxUbuntu2404 => ("linux", Some("Ubuntu 24.04")),
+                                Platform::LinuxUbuntu2204 => {
+                                    ("linux", Some(LinuxVersion::Ubuntu2204.version_str()))
+                                }
+                                Platform::LinuxUbuntu2404 => {
+                                    ("linux", Some(LinuxVersion::Ubuntu2404.version_str()))
+                                }
                                 Platform::MacOs => ("mac", None),
                             };
                             make_lazy_format!(|f| {
@@ -1204,12 +1222,7 @@ where
                         Expr::Value(Value::Variable(var)),
                         Expr::Value(Value::Literal(Literal::String(lit))),
                     ) if var == "version" => {
-                        let version = match &**lit {
-                            "Ubuntu 22.04" => Some(LinuxVersion::Ubuntu2204),
-                            "Ubuntu 24.04" => Some(LinuxVersion::Ubuntu2404),
-                            _ => None,
-                        };
-                        if let Some(version) = version {
+                        if let Some(version) = LinuxVersion::from_version_str(lit) {
                             match &mut acc.platform {
                                 Some(PlatformBeingParsed::Linux(v @ None)) => *v = Some(version),
                                 Some(PlatformBeingParsed::Linux(Some(_version))) => {
